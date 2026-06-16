@@ -1,0 +1,51 @@
+# ─── Operating system ────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ─── IDE / Editors ───────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+*~
+nbproject/
+netbeans-build/
+
+# ─── Java ────────────────────────────────────────────────────────
+*.class
+build/
+out/
+bin/
+hs_err_pid*
+replay_pid*
+
+# ─── Maven ───────────────────────────────────────────────────────
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ─── Gradle (not used, but defensive) ────────────────────────────
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# ─── Logs / runtime / secrets ────────────────────────────────────
+*.log
+*.tmp
+.env
+.env.local
