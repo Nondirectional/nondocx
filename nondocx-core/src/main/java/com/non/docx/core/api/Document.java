@@ -39,8 +39,9 @@ import java.util.List;
  * paragraphs and tables are interleaved.
  *
  * <p><b>Sections ({@code sections()}, {@code section(int)}) are wired and cover page properties
- * (paper size, orientation, margins). Section-scoped {@code header()} / {@code footer()} accessors
- * are not yet wired; they arrive in Phase 5b.</b>
+ * (paper size, orientation, margins) plus section-scoped {@link com.non.docx.core.api.header.Header}
+ * / {@link com.non.docx.core.api.header.Footer} accessors. {@link #header()} and {@link #footer()}
+ * are conveniences that return the first section's default header / footer.</b>
  *
  * <p>{@code Document} implements {@link AutoCloseable}; closing it releases the underlying POI
  * resources. Content equality ({@code equals}/{@code hashCode}) is added in Phase 7.
@@ -275,7 +276,7 @@ public final class Document implements AutoCloseable {
                     throw new IndexOutOfBoundsException("section index " + index
                             + " out of bounds (document has " + sectPrs.size() + " sections)");
                 }
-                return new Section(sectPrs.get(index));
+                return new Section(delegate, sectPrs.get(index));
             }
 
             @Override
@@ -294,6 +295,36 @@ public final class Document implements AutoCloseable {
      */
     public Section section(int index) {
         return sections().get(index);
+    }
+
+    // ---------- header / footer (convenience) ----------
+
+    /**
+     * Returns the default (odd-page) header of the document's first section (section 0).
+     *
+     * <p>This is a convenience for {@code section(0).header()}. In a single-section document this is
+     * the document's header. In a multi-section document, prefer {@link Section#header()} to address
+     * each section's header individually.
+     *
+     * @return the default header of the first section (never {@code null})
+     * @throws com.non.docx.core.api.exception.DocxIOException if the header part cannot be created or attached
+     */
+    public com.non.docx.core.api.header.Header header() {
+        return section(0).header();
+    }
+
+    /**
+     * Returns the default (odd-page) footer of the document's first section (section 0).
+     *
+     * <p>This is a convenience for {@code section(0).footer()}. In a single-section document this is
+     * the document's footer. In a multi-section document, prefer {@link Section#footer()} to address
+     * each section's footer individually.
+     *
+     * @return the default footer of the first section (never {@code null})
+     * @throws com.non.docx.core.api.exception.DocxIOException if the footer part cannot be created or attached
+     */
+    public com.non.docx.core.api.header.Footer footer() {
+        return section(0).footer();
     }
 
     // ---------- save ----------

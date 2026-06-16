@@ -1,7 +1,15 @@
 package com.non.docx.core.api.section;
 
+import com.non.docx.core.api.exception.DocxIOException;
+import com.non.docx.core.api.header.Footer;
+import com.non.docx.core.api.header.Header;
 import com.non.docx.core.internal.poi.Mappers;
 import com.non.docx.core.internal.util.Objects;
+import org.apache.poi.ooxml.POIXMLException;
+import org.apache.poi.xwpf.model.XWPFHeaderFooterPolicy;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFFooter;
+import org.apache.poi.xwpf.usermodel.XWPFHeader;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageSz;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
@@ -30,31 +38,45 @@ import java.math.BigInteger;
  * purposes of orientation swapping; an unset {@code <w:pgMar>} attribute reads back as {@code 0};
  * an unset {@code orient} attribute reads back as {@link Orientation#PORTRAIT} (Word's default).
  *
- * <p>Content equality ({@code equals} / {@code hashCode}) compares the page properties — paper size,
- * orientation and the four margins — never the delegate reference. This is what makes round-trip
- * assertions work across two distinct {@code CTSectPr} instances. These methods serve comparison
- * and testing; they are not suited as a long-lived {@code HashMap} key, since the underlying
- * content can change at any time.
+ * <p><b>Header / footer.</b> {@link #header()} and {@link #footer()} expose the section-scoped
+ * default (odd-page) header and footer. Each is resolved through a section-scoped
+ * {@code XWPFHeaderFooterPolicy} bound to this section's {@code CTSectPr}: if a default header /
+ * footer is already attached it is returned, otherwise an empty one is created and attached on
+ * first access. First-page and even-page variants are out of scope for the MVP and remain reachable
+ * via {@code raw()}. The owning {@code XWPFDocument} is held only to build that policy; it is an
+ * internal helper, never exposed publicly and never part of content equality.
  *
- * <p><b>Header / footer.</b> Section-scoped header and footer accessors arrive in Phase 5b; this
- * type currently covers page properties only.
+ * <p>Content equality ({@code equals} / {@code hashCode}) compares the page properties — paper size,
+ * orientation and the four margins — never the delegate reference nor the owning document. (Header /
+ * footer content equality is served by {@link Header} / {@link Footer} themselves, since resolving
+ * them here would mutate the document on a read-only {@code equals} call.) This is what makes
+ * round-trip assertions work across two distinct {@code CTSectPr} instances. These methods serve
+ * comparison and testing; they are not suited as a long-lived {@code HashMap} key, since the
+ * underlying content can change at any time.
  */
 public final class Section {
 
+    private final XWPFDocument document;
     private final CTSectPr delegate;
 
     /**
      * Wraps the given OOXML section properties.
      *
      * <p>This constructor is the internal seam by which {@code Document} produces live section
-     * wrappers, so it accepts an XmlBeans / OOXML type by design (the same way other wrappers
-     * accept their backing {@code XWPF*} type). Users obtain sections via
+     * wrappers, so it accepts POI / XmlBeans types by design (the same way other wrappers accept
+     * their backing {@code XWPF*} type). Users obtain sections via
      * {@code Document.sections()} / {@code Document.section(int)} rather than constructing them.
      *
+     * <p>The {@code document} argument is the owning POI document; it is held only so this section
+     * can build a section-scoped {@code XWPFHeaderFooterPolicy} for {@link #header()} /
+     * {@link #footer()}. It is never exposed publicly and never participates in content equality.
+     *
+     * @param document the owning POI document (not {@code null})
      * @param delegate the backing {@code CTSectPr} (not {@code null})
-     * @throws IllegalArgumentException if {@code delegate} is {@code null}
+     * @throws IllegalArgumentException if either argument is {@code null}
      */
-    public Section(CTSectPr delegate) {
+    public Section(XWPFDocument document, CTSectPr delegate) {
+        this.document = Objects.requireNonNull(document, "document");
         this.delegate = Objects.requireNonNull(delegate, "delegate");
     }
 
@@ -198,6 +220,68 @@ public final class Section {
      */
     public int marginLeft() {
         return marginOf(CTPageMar::getLeft);
+    }
+
+    // ---------- header / footer ----------
+
+    /**
+     * Returns the section-scoped default (odd-page) header, creating and attaching an empty one on
+     * first access if none is present.
+     *
+     * <p>The header is resolved through a section-scoped {@code XWPFHeaderFooterPolicy} bound to this
+     * section's {@code CTSectPr}, so the returned header belongs to <em>this</em> section: in a
+     * multi-section document each {@code Section} carries its own default header. On first access an
+     * empty default header part is created and a {@code default} header reference is written onto
+     * this section's {@code CTSectPr}; subsequent calls return that same header (create-once).
+     *
+     * <p>POI exceptions raised while creating or attaching the header part are wrapped into a
+     * {@link DocxIOException}. First-page and even-page header variants are out of scope for the
+     * MVP and remain reachable via {@code raw()}.
+     *
+     * @return the default header for this section (never {@code null})
+     * @throws DocxIOException if the header part cannot be created or attached
+     */
+    public Header header() {
+        try {
+            XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
+            XWPFHeader header = policy.getDefaultHeader();
+            if (header == null) {
+                header = policy.createHeader(XWPFHeaderFooterPolicy.DEFAULT);
+            }
+            return new Header(header);
+        } catch (POIXMLException e) {
+            throw new DocxIOException("Failed to create section header", e);
+        }
+    }
+
+    /**
+     * Returns the section-scoped default (odd-page) footer, creating and attaching an empty one on
+     * first access if none is present.
+     *
+     * <p>The footer is resolved through a section-scoped {@code XWPFHeaderFooterPolicy} bound to this
+     * section's {@code CTSectPr}, so the returned footer belongs to <em>this</em> section: in a
+     * multi-section document each {@code Section} carries its own default footer. On first access an
+     * empty default footer part is created and a {@code default} footer reference is written onto
+     * this section's {@code CTSectPr}; subsequent calls return that same footer (create-once).
+     *
+     * <p>POI exceptions raised while creating or attaching the footer part are wrapped into a
+     * {@link DocxIOException}. First-page and even-page footer variants are out of scope for the
+     * MVP and remain reachable via {@code raw()}.
+     *
+     * @return the default footer for this section (never {@code null})
+     * @throws DocxIOException if the footer part cannot be created or attached
+     */
+    public Footer footer() {
+        try {
+            XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
+            XWPFFooter footer = policy.getDefaultFooter();
+            if (footer == null) {
+                footer = policy.createFooter(XWPFHeaderFooterPolicy.DEFAULT);
+            }
+            return new Footer(footer);
+        } catch (POIXMLException e) {
+            throw new DocxIOException("Failed to create section footer", e);
+        }
     }
 
     // ---------- escape hatch ----------
