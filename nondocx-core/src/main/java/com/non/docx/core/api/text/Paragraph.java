@@ -5,7 +5,9 @@ import com.non.docx.core.api.InlineElement;
 import com.non.docx.core.api.exception.DocxOperationException;
 import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.style.HeadingLevel;
+import com.non.docx.core.api.style.ListKind;
 import com.non.docx.core.internal.poi.Mappers;
+import com.non.docx.core.internal.poi.Numbering;
 import com.non.docx.core.internal.util.Objects;
 import org.apache.poi.xwpf.usermodel.IRunElement;
 import org.apache.poi.xwpf.usermodel.XWPFHyperlinkRun;
@@ -29,12 +31,15 @@ import java.util.List;
  * {@code inlineElements()} order, so a run followed by a hyperlink followed by a run stays in that
  * order.
  *
- * <p>Content equality ({@code equals} / {@code hashCode}) compares the ordered inline elements plus
- * the paragraph-level style (heading, alignment, indentation, line spacing), never the delegate
- * reference. This is what makes round-trip assertions work.
+ * <p>Content equality ({@code equals} / {@code hashCode}) compares the ordered inline elements,
+ * the paragraph-level style (heading, alignment, indentation, line spacing) and list membership
+ * (kind and nesting level), never the delegate reference. This is what makes round-trip
+ * assertions work.
  *
- * <p><b>Not yet implemented in this phase:</b> list membership ({@code list(ListKind, int)} and
- * {@code clearList()}) arrives in Phase 3b; this paragraph does not expose list mutators yet.
+ * <p><b>List membership:</b> {@link #list(ListKind, int)} marks this paragraph as a member of a
+ * bulleted or numbered list at a 0-based nesting level (0..8); {@link #clearList()} removes that
+ * membership. {@link #listKind()} and {@link #listLevel()} read it back and report {@code null}
+ * for a paragraph that is not part of any list.
  */
 public final class Paragraph implements BodyElement {
 
@@ -333,6 +338,57 @@ public final class Paragraph implements BodyElement {
         return delegate.getSpacingBetween();
     }
 
+    // ---------- list membership ----------
+
+    /**
+     * Marks this paragraph as a member of a list of the given kind at the given 0-based nesting
+     * level, and returns {@code this}. The level must be in the range {@code 0..8}. All paragraphs
+     * in the same list kind share one numbering definition on the document; they differ only by
+     * nesting level.
+     *
+     * @param kind  the list kind (not {@code null})
+     * @param level the 0-based nesting level ({@code 0..8})
+     * @return this paragraph
+     * @throws IllegalArgumentException      if {@code kind} is {@code null} or {@code level} is out of range
+     * @throws DocxOperationException        if this paragraph is not attached to a document
+     */
+    public Paragraph list(ListKind kind, int level) {
+        Objects.requireNonNull(kind, "kind");
+        Numbering.apply(delegate, kind, level);
+        return this;
+    }
+
+    /**
+     * Removes list membership from this paragraph and returns {@code this}. After this call
+     * {@link #listKind()} and {@link #listLevel()} report {@code null}.
+     *
+     * @return this paragraph
+     */
+    public Paragraph clearList() {
+        Numbering.clear(delegate);
+        return this;
+    }
+
+    /**
+     * Returns the list kind this paragraph belongs to, or {@code null} if it is not part of any
+     * list.
+     *
+     * @return the list kind, or {@code null} if this paragraph is not a list member
+     */
+    public ListKind listKind() {
+        return Numbering.kindOf(delegate);
+    }
+
+    /**
+     * Returns the 0-based nesting level of this paragraph within its list, or {@code null} if it
+     * is not part of any list. A list paragraph with no explicit level is reported as {@code 0}.
+     *
+     * @return the nesting level, or {@code null} if this paragraph is not a list member
+     */
+    public Integer listLevel() {
+        return Numbering.levelOf(delegate);
+    }
+
     // ---------- escape hatch ----------
 
     /**
@@ -362,13 +418,16 @@ public final class Paragraph implements BodyElement {
                 && this.alignment() == that.alignment()
                 && this.indentationLeft() == that.indentationLeft()
                 && this.indentationFirstLine() == that.indentationFirstLine()
-                && Double.doubleToLongBits(this.lineSpacing()) == Double.doubleToLongBits(that.lineSpacing());
+                && Double.doubleToLongBits(this.lineSpacing()) == Double.doubleToLongBits(that.lineSpacing())
+                && java.util.Objects.equals(this.listKind(), that.listKind())
+                && java.util.Objects.equals(this.listLevel(), that.listLevel());
     }
 
     @Override
     public int hashCode() {
         return java.util.Objects.hash(inlineElements(), heading(), alignment(),
-                indentationLeft(), indentationFirstLine(), lineSpacing());
+                indentationLeft(), indentationFirstLine(), lineSpacing(),
+                listKind(), listLevel());
     }
 
     // ---------- internals ----------
