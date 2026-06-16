@@ -235,7 +235,14 @@ public final class Document implements AutoCloseable {
      * @return the newly appended table
      */
     public Table addTable() {
-        return new Table(delegate.createTable());
+        XWPFTable created = delegate.createTable();
+        // POI pre-populates a new table with a default row; clear it so addTable() yields a
+        // genuinely empty table, matching nondocx's addX-exactly-one semantics (addParagraph /
+        // addRun add exactly one element with no phantom defaults).
+        while (created.getRows().size() > 0) {
+            created.removeRow(0);
+        }
+        return new Table(created);
     }
 
     // ---------- save ----------

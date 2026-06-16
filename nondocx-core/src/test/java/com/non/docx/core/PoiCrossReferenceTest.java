@@ -5,10 +5,12 @@ import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.style.HeadingLevel;
 import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
+import com.non.docx.core.api.table.Table;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFHyperlinkRun;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -97,6 +99,44 @@ class PoiCrossReferenceTest {
             }
             // multi-run paragraph concatenation matches POI
             assertThat(opened.paragraph(1).text()).isEqualTo("plain tail");
+        }
+    }
+
+    @Test
+    void nondocxTableMatchesPoiNativeTable(@TempDir Path tmp) throws Exception {
+        Path file = tmp.resolve("cross-table.docx");
+
+        Document original = Docx.create();
+        Table table = original.addTable();
+        table.addRow();                      // row 0
+        table.row(0).addCell().text("A1");
+        table.row(0).addCell().text("B1");
+        table.addRow();                      // row 1
+        table.row(1).addCell().text("A2");
+        table.row(1).addCell().text("B2");
+        original.save(file);
+
+        // Read the same bytes with raw POI — independent of our wrappers.
+        String p00, p01, p10, p11;
+        try (XWPFDocument poi = new XWPFDocument(Files.newInputStream(file))) {
+            XWPFTable poiTable = poi.getTables().get(0);
+            assertThat(poiTable.getRows()).hasSize(2);
+            assertThat(poiTable.getRow(0).getTableCells()).hasSize(2);
+            p00 = poiTable.getRow(0).getCell(0).getText();
+            p01 = poiTable.getRow(0).getCell(1).getText();
+            p10 = poiTable.getRow(1).getCell(0).getText();
+            p11 = poiTable.getRow(1).getCell(1).getText();
+        }
+
+        // Our wrapper must agree with POI's native extraction on the same fields.
+        try (Document opened = Docx.open(file)) {
+            Table our = opened.tables().get(0);
+            assertThat(our.rows()).hasSize(2);
+            assertThat(our.row(0).cells()).hasSize(2);
+            assertThat(our.row(0).cell(0).text()).isEqualTo(p00).isEqualTo("A1");
+            assertThat(our.row(0).cell(1).text()).isEqualTo(p01).isEqualTo("B1");
+            assertThat(our.row(1).cell(0).text()).isEqualTo(p10).isEqualTo("A2");
+            assertThat(our.row(1).cell(1).text()).isEqualTo(p11).isEqualTo("B2");
         }
     }
 }
