@@ -1,8 +1,10 @@
 package com.non.docx.core.internal.poi;
 
+import com.non.docx.core.api.section.Orientation;
 import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.style.HeadingLevel;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
 
 /**
  * Internal API — subject to change without notice.
@@ -114,5 +116,44 @@ public final class Mappers {
             default:
                 return null;
         }
+    }
+
+    /**
+     * Maps a nondocx {@link Orientation} to OOXML's {@link STPageOrientation}.
+     *
+     * @param orientation the nondocx orientation (not {@code null})
+     * @return the corresponding OOXML page orientation enum
+     */
+    public static STPageOrientation.Enum toPoi(Orientation orientation) {
+        if (orientation == null) {
+            throw new IllegalArgumentException("orientation must not be null");
+        }
+        switch (orientation) {
+            case PORTRAIT:
+                return STPageOrientation.PORTRAIT;
+            case LANDSCAPE:
+                return STPageOrientation.LANDSCAPE;
+            default:
+                throw new IllegalArgumentException("Unsupported orientation: " + orientation);
+        }
+    }
+
+    /**
+     * Maps an OOXML {@link STPageOrientation} back to a nondocx {@link Orientation}.
+     *
+     * <p>A {@code null} input (meaning orientation is unset on the section) maps to {@code null};
+     * callers apply Word's default of {@link Orientation#PORTRAIT} at the {@code Section} level.
+     *
+     * @param orientation the OOXML orientation, or {@code null} if unset
+     * @return the corresponding nondocx orientation, or {@code null} if the input was {@code null}
+     */
+    public static Orientation fromPoi(STPageOrientation.Enum orientation) {
+        if (orientation == null) {
+            return null;
+        }
+        if (orientation == STPageOrientation.LANDSCAPE) {
+            return Orientation.LANDSCAPE;
+        }
+        return Orientation.PORTRAIT;
     }
 }

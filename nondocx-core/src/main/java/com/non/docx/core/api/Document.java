@@ -1,6 +1,7 @@
 package com.non.docx.core.api;
 
 import com.non.docx.core.api.exception.DocxIOException;
+import com.non.docx.core.api.section.Section;
 import com.non.docx.core.api.table.Table;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.internal.util.Objects;
@@ -10,6 +11,9 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.xmlbeans.XmlCursor;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBody;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
 
 import java.io.File;
 import java.io.IOException;
@@ -34,8 +38,9 @@ import java.util.List;
  * views, while {@link #insertParagraph(int)} takes a body-order index to stay unambiguous when
  * paragraphs and tables are interleaved.
  *
- * <p><b>Section / header / footer APIs ({@code sections()}, {@code section(int)}, {@code header()},
- * {@code footer()}) are not yet wired; they arrive in Phase 5.</b>
+ * <p><b>Sections ({@code sections()}, {@code section(int)}) are wired and cover page properties
+ * (paper size, orientation, margins). Section-scoped {@code header()} / {@code footer()} accessors
+ * are not yet wired; they arrive in Phase 5b.</b>
  *
  * <p>{@code Document} implements {@link AutoCloseable}; closing it releases the underlying POI
  * resources. Content equality ({@code equals}/{@code hashCode}) is added in Phase 7.
@@ -245,6 +250,52 @@ public final class Document implements AutoCloseable {
         return new Table(created);
     }
 
+    // ---------- section views ----------
+
+    /**
+     * Returns a live view of the document's sections, in document order.
+     *
+     * <p>Each mid-document section break is stored on the paragraph that ends the section (its
+     * {@code <w:pPr>/<w:sectPr>}); the document body's final {@code <w:sectPr>} is the last
+     * section. This view walks the body in order, yielding one {@link Section} per section break
+     * followed by the final body section. A document therefore always has at least one section —
+     * the body section is created on first access if absent.
+     *
+     * <p>The returned list re-reads the underlying {@code XWPFDocument} on every access, so
+     * mutations (including those made via {@code raw()}) are reflected live.
+     *
+     * @return a live, unmodifiable list of sections in document order (never empty)
+     */
+    public List<Section> sections() {
+        return new AbstractList<Section>() {
+            @Override
+            public Section get(int index) {
+                List<CTSectPr> sectPrs = resolveSectionProperties();
+                if (index < 0 || index >= sectPrs.size()) {
+                    throw new IndexOutOfBoundsException("section index " + index
+                            + " out of bounds (document has " + sectPrs.size() + " sections)");
+                }
+                return new Section(sectPrs.get(index));
+            }
+
+            @Override
+            public int size() {
+                return resolveSectionProperties().size();
+            }
+        };
+    }
+
+    /**
+     * Returns the section at the given document-order index.
+     *
+     * @param index section index (0-based, into {@link #sections()})
+     * @return the section at that position
+     * @throws IndexOutOfBoundsException if {@code index} is out of range
+     */
+    public Section section(int index) {
+        return sections().get(index);
+    }
+
     // ---------- save ----------
 
     /**
@@ -341,6 +392,26 @@ public final class Document implements AutoCloseable {
             }
         }
         return modeled;
+    }
+
+    /**
+     * Collects the document's section-property elements in true document order: first every
+     * paragraph-level {@code <w:sectPr>} (each marks where a mid-document section ends), then the
+     * body's final {@code <w:sectPr>} as the last section. The body section is created on demand if
+     * absent, so the returned list is never empty and the document always exposes at least one
+     * section. Re-derived on every call so the {@code sections()} view stays live.
+     */
+    private List<CTSectPr> resolveSectionProperties() {
+        List<CTSectPr> sectPrs = new ArrayList<>();
+        for (XWPFParagraph paragraph : delegate.getParagraphs()) {
+            CTPPr pPr = paragraph.getCTP().getPPr();
+            if (pPr != null && pPr.isSetSectPr()) {
+                sectPrs.add(pPr.getSectPr());
+            }
+        }
+        CTBody body = delegate.getDocument().getBody();
+        sectPrs.add(body.isSetSectPr() ? body.getSectPr() : body.addNewSectPr());
+        return sectPrs;
     }
 
     private static BodyElement wrap(IBodyElement element) {

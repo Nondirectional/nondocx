@@ -1,0 +1,287 @@
+package com.non.docx.core.api.section;
+
+import com.non.docx.core.internal.poi.Mappers;
+import com.non.docx.core.internal.util.Objects;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageSz;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
+
+import java.math.BigInteger;
+
+/**
+ * A document section — the carrier of page properties (paper size, orientation, margins) for a span
+ * of the document body.
+ *
+ * <p>Holds an OOXML {@code CTSectPr} delegate and exposes a live view over it. Every read goes
+ * straight through to the delegate (there is no cached snapshot); every mutation writes through
+ * and returns {@code this} for chaining. The page-size, orientation and margin mutators keep the
+ * underlying {@code <w:pgSz>} / {@code <w:pgMar>} elements self-consistent — for example switching
+ * to {@link Orientation#LANDSCAPE} swaps the stored width/height so the larger dimension is the
+ * width, matching Word's own storage convention.
+ *
+ * <p><b>Paper size and orientation interact as follows.</b> {@link #paperSize(PaperSize)} stores the
+ * size's portrait dimensions. {@link #orientation(Orientation)} swaps those dimensions when the
+ * target orientation differs from the current aspect, so calling the two in either order leaves the
+ * section in a consistent state. {@link #paperSize()} resolves the logical paper size back from the
+ * stored dimensions using {@link PaperSize#fromDimensions(int, int)}, which is orientation-agnostic.
+ *
+ * <p><b>Defaults.</b> A {@code <w:pgSz>} with no stored dimensions is treated as A4 portrait for the
+ * purposes of orientation swapping; an unset {@code <w:pgMar>} attribute reads back as {@code 0};
+ * an unset {@code orient} attribute reads back as {@link Orientation#PORTRAIT} (Word's default).
+ *
+ * <p>Content equality ({@code equals} / {@code hashCode}) compares the page properties — paper size,
+ * orientation and the four margins — never the delegate reference. This is what makes round-trip
+ * assertions work across two distinct {@code CTSectPr} instances. These methods serve comparison
+ * and testing; they are not suited as a long-lived {@code HashMap} key, since the underlying
+ * content can change at any time.
+ *
+ * <p><b>Header / footer.</b> Section-scoped header and footer accessors arrive in Phase 5b; this
+ * type currently covers page properties only.
+ */
+public final class Section {
+
+    private final CTSectPr delegate;
+
+    /**
+     * Wraps the given OOXML section properties.
+     *
+     * <p>This constructor is the internal seam by which {@code Document} produces live section
+     * wrappers, so it accepts an XmlBeans / OOXML type by design (the same way other wrappers
+     * accept their backing {@code XWPF*} type). Users obtain sections via
+     * {@code Document.sections()} / {@code Document.section(int)} rather than constructing them.
+     *
+     * @param delegate the backing {@code CTSectPr} (not {@code null})
+     * @throws IllegalArgumentException if {@code delegate} is {@code null}
+     */
+    public Section(CTSectPr delegate) {
+        this.delegate = Objects.requireNonNull(delegate, "delegate");
+    }
+
+    // ---------- paper size ----------
+
+    /**
+     * Sets the paper size and returns {@code this}. Stores the size's portrait dimensions on the
+     * underlying {@code <w:pgSz>}; the {@code orient} flag is left untouched.
+     *
+     * @param size the paper size (not {@code null})
+     * @return this section
+     * @throws IllegalArgumentException if {@code size} is {@code null}
+     */
+    public Section paperSize(PaperSize size) {
+        Objects.requireNonNull(size, "size");
+        CTPageSz pgSz = ensurePgSz();
+        pgSz.setW(BigInteger.valueOf(size.widthTwips()));
+        pgSz.setH(BigInteger.valueOf(size.heightTwips()));
+        return this;
+    }
+
+    /**
+     * Resolves the logical paper size from the stored {@code <w:pgSz>} dimensions, or {@code null}
+     * if the dimensions do not match a known {@link PaperSize}.
+     *
+     * <p>Matching is orientation-agnostic (see {@link PaperSize#fromDimensions(int, int)}), so the
+     * same paper size is resolved whether the section is portrait or landscape. A section with no
+     * {@code <w:pgSz>} at all resolves to {@code null}.
+     *
+     * @return the paper size, or {@code null} if unset or unrecognized
+     */
+    public PaperSize paperSize() {
+        if (!delegate.isSetPgSz()) {
+            return null;
+        }
+        CTPageSz pgSz = delegate.getPgSz();
+        return PaperSize.fromDimensions((int) twipsOf(pgSz.getW()), (int) twipsOf(pgSz.getH()));
+    }
+
+    // ---------- orientation ----------
+
+    /**
+     * Sets the page orientation and returns {@code this}. Ensures {@code <w:pgSz>} exists, swaps the
+     * stored width/height when the target orientation requires it (landscape keeps the larger
+     * dimension as width; portrait keeps the smaller dimension as width), and writes the
+     * {@code orient} flag.
+     *
+     * <p>If {@code <w:pgSz>} has no stored dimensions, A4 portrait dimensions are assumed as the
+     * base before swapping, so orientation is always well-defined.
+     *
+     * @param orientation the orientation (not {@code null})
+     * @return this section
+     * @throws IllegalArgumentException if {@code orientation} is {@code null}
+     */
+    public Section orientation(Orientation orientation) {
+        Objects.requireNonNull(orientation, "orientation");
+        CTPageSz pgSz = ensurePgSz();
+        long w = dimOrDefault(pgSz.getW(), PaperSize.A4.widthTwips());
+        long h = dimOrDefault(pgSz.getH(), PaperSize.A4.heightTwips());
+        if (orientation == Orientation.LANDSCAPE && w <= h) {
+            long swap = w;
+            w = h;
+            h = swap;
+        } else if (orientation == Orientation.PORTRAIT && w > h) {
+            long swap = w;
+            w = h;
+            h = swap;
+        }
+        pgSz.setW(BigInteger.valueOf(w));
+        pgSz.setH(BigInteger.valueOf(h));
+        pgSz.setOrient(Mappers.toPoi(orientation));
+        return this;
+    }
+
+    /**
+     * Returns the page orientation. A section with no {@code <w:pgSz>}, or one whose {@code orient}
+     * flag is unset, is reported as {@link Orientation#PORTRAIT} (Word's default).
+     *
+     * @return the orientation (never {@code null})
+     */
+    public Orientation orientation() {
+        if (!delegate.isSetPgSz()) {
+            return Orientation.PORTRAIT;
+        }
+        STPageOrientation.Enum orient = delegate.getPgSz().getOrient();
+        Orientation mapped = Mappers.fromPoi(orient);
+        return mapped == null ? Orientation.PORTRAIT : mapped;
+    }
+
+    // ---------- margins ----------
+
+    /**
+     * Sets the four page margins (in twips) and returns {@code this}.
+     *
+     * @param topTwips    the top margin in twips
+     * @param rightTwips  the right margin in twips
+     * @param bottomTwips the bottom margin in twips
+     * @param leftTwips   the left margin in twips
+     * @return this section
+     */
+    public Section margins(int topTwips, int rightTwips, int bottomTwips, int leftTwips) {
+        CTPageMar pgMar = delegate.isSetPgMar() ? delegate.getPgMar() : delegate.addNewPgMar();
+        pgMar.setTop(BigInteger.valueOf(topTwips));
+        pgMar.setRight(BigInteger.valueOf(rightTwips));
+        pgMar.setBottom(BigInteger.valueOf(bottomTwips));
+        pgMar.setLeft(BigInteger.valueOf(leftTwips));
+        return this;
+    }
+
+    /**
+     * Returns the top margin in twips, or {@code 0} if not explicitly set.
+     *
+     * @return the top margin in twips, or {@code 0} if unset
+     */
+    public int marginTop() {
+        return marginOf(CTPageMar::getTop);
+    }
+
+    /**
+     * Returns the right margin in twips, or {@code 0} if not explicitly set.
+     *
+     * @return the right margin in twips, or {@code 0} if unset
+     */
+    public int marginRight() {
+        return marginOf(CTPageMar::getRight);
+    }
+
+    /**
+     * Returns the bottom margin in twips, or {@code 0} if not explicitly set.
+     *
+     * @return the bottom margin in twips, or {@code 0} if unset
+     */
+    public int marginBottom() {
+        return marginOf(CTPageMar::getBottom);
+    }
+
+    /**
+     * Returns the left margin in twips, or {@code 0} if not explicitly set.
+     *
+     * @return the left margin in twips, or {@code 0} if unset
+     */
+    public int marginLeft() {
+        return marginOf(CTPageMar::getLeft);
+    }
+
+    // ---------- escape hatch ----------
+
+    /**
+     * Returns the underlying OOXML section properties.
+     * <p>
+     * Modifications to the returned object affect the document immediately. Use with caution.
+     *
+     * @return the backing {@code CTSectPr} instance (same instance for the wrapper's lifetime)
+     */
+    public CTSectPr raw() {
+        return delegate;
+    }
+
+    // ---------- content equality ----------
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Section)) {
+            return false;
+        }
+        Section that = (Section) o;
+        return java.util.Objects.equals(this.paperSize(), that.paperSize())
+                && this.orientation() == that.orientation()
+                && this.marginTop() == that.marginTop()
+                && this.marginRight() == that.marginRight()
+                && this.marginBottom() == that.marginBottom()
+                && this.marginLeft() == that.marginLeft();
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(paperSize(), orientation(),
+                marginTop(), marginRight(), marginBottom(), marginLeft());
+    }
+
+    @Override
+    public String toString() {
+        return "Section{paperSize=" + paperSize()
+                + ", orientation=" + orientation()
+                + ", margins=[" + marginTop() + "," + marginRight()
+                + "," + marginBottom() + "," + marginLeft() + "]}";
+    }
+
+    // ---------- internals ----------
+
+    /**
+     * Returns the {@code <w:pgSz>} element, creating it if absent.
+     */
+    private CTPageSz ensurePgSz() {
+        return delegate.isSetPgSz() ? delegate.getPgSz() : delegate.addNewPgSz();
+    }
+
+    /**
+     * Reads a single margin, returning {@code 0} when {@code <w:pgMar>} or the specific attribute
+     * is unset.
+     */
+    private int marginOf(java.util.function.Function<CTPageMar, Object> getter) {
+        if (!delegate.isSetPgMar()) {
+            return 0;
+        }
+        Object value = getter.apply(delegate.getPgMar());
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        return 0;
+    }
+
+    /**
+     * Coerces a raw XmlBeans dimension ({@code BigInteger}-as-{@code Object}) to a long, returning
+     * {@code 0} when unset.
+     */
+    private static long twipsOf(Object value) {
+        return value instanceof Number ? ((Number) value).longValue() : 0L;
+    }
+
+    /**
+     * Coerces a raw XmlBeans dimension to a long, returning {@code defaultTwips} when unset.
+     */
+    private static long dimOrDefault(Object value, int defaultTwips) {
+        return value instanceof Number ? ((Number) value).longValue() : defaultTwips;
+    }
+}
