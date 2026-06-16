@@ -1,8 +1,10 @@
 package com.non.docx.core.internal.poi;
 
+import com.non.docx.core.api.image.ImageType;
 import com.non.docx.core.api.section.Orientation;
 import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.style.HeadingLevel;
+import org.apache.poi.common.usermodel.PictureType;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
 
@@ -10,9 +12,9 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
  * Internal API — subject to change without notice.
  *
  * <p>Enum mapping bridge between nondocx's POI-free value objects and Apache POI enums. All
- * {@code org.apache.poi.*} import needed for mapping is concentrated here so that the public value
- * objects in {@code com.non.docx.core.api.style} stay POI-free at the source level, not just at the
- * signature level.
+ * {@code org.apache.poi.*} imports needed for mapping are concentrated here so that the public value
+ * objects in {@code com.non.docx.core.api.style} / {@code com.non.docx.core.api.image} stay POI-free
+ * at the source level, not just at the signature level.
  */
 public final class Mappers {
 
@@ -155,5 +157,60 @@ public final class Mappers {
             return Orientation.LANDSCAPE;
         }
         return Orientation.PORTRAIT;
+    }
+
+    /**
+     * Maps a nondocx {@link ImageType} to Apache POI's {@link PictureType}.
+     *
+     * @param type the nondocx image type (not {@code null})
+     * @return the corresponding POI picture type
+     */
+    public static PictureType toPoi(ImageType type) {
+        if (type == null) {
+            throw new IllegalArgumentException("type must not be null");
+        }
+        switch (type) {
+            case PNG:
+                return PictureType.PNG;
+            case JPEG:
+                return PictureType.JPEG;
+            case GIF:
+                return PictureType.GIF;
+            case TIFF:
+                return PictureType.TIFF;
+            default:
+                throw new IllegalArgumentException("Unsupported image type: " + type);
+        }
+    }
+
+    /**
+     * Maps an Apache POI {@link PictureType} back to a nondocx {@link ImageType}.
+     *
+     * <p>Only the four image formats nondocx models are represented. CMYK JPEG collapses to
+     * {@link ImageType#JPEG}; every other POI picture type (BMP, EMF, WMF, …) maps to {@code null},
+     * meaning "format not modeled — reachable via {@code raw()}". This keeps real-world documents
+     * loading without loss while making the unmodeled case explicit.
+     *
+     * @param type the POI picture type, or {@code null} if unset
+     * @return the corresponding nondocx image type, or {@code null} if the input was {@code null} or
+     *         an unmodeled format
+     */
+    public static ImageType fromPoi(PictureType type) {
+        if (type == null) {
+            return null;
+        }
+        switch (type) {
+            case JPEG:
+            case CMYKJPEG:
+                return ImageType.JPEG;
+            case GIF:
+                return ImageType.GIF;
+            case TIFF:
+                return ImageType.TIFF;
+            case PNG:
+                return ImageType.PNG;
+            default:
+                return null;
+        }
     }
 }

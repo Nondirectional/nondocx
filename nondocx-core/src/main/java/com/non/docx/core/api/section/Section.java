@@ -3,6 +3,7 @@ package com.non.docx.core.api.section;
 import com.non.docx.core.api.exception.DocxIOException;
 import com.non.docx.core.api.header.Footer;
 import com.non.docx.core.api.header.Header;
+import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.internal.poi.Mappers;
 import com.non.docx.core.internal.util.Objects;
 import org.apache.poi.ooxml.POIXMLException;
@@ -16,6 +17,8 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
 
 import java.math.BigInteger;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * A document section — the carrier of page properties (paper size, orientation, margins) for a span
@@ -47,12 +50,14 @@ import java.math.BigInteger;
  * internal helper, never exposed publicly and never part of content equality.
  *
  * <p>Content equality ({@code equals} / {@code hashCode}) compares the page properties — paper size,
- * orientation and the four margins — never the delegate reference nor the owning document. (Header /
- * footer content equality is served by {@link Header} / {@link Footer} themselves, since resolving
- * them here would mutate the document on a read-only {@code equals} call.) This is what makes
- * round-trip assertions work across two distinct {@code CTSectPr} instances. These methods serve
- * comparison and testing; they are not suited as a long-lived {@code HashMap} key, since the
- * underlying content can change at any time.
+ * orientation and the four margins — <em>and</em> the section-scoped default header / footer
+ * paragraph content, never the delegate reference nor the owning document. The header / footer
+ * content is resolved read-only via {@code getDefaultHeader()} / {@code getDefaultFooter()}, which
+ * return {@code null} (and contribute an empty list) without creating anything when absent — so an
+ * {@code equals} call never mutates the document. This is what makes round-trip assertions work
+ * across two distinct {@code CTSectPr} instances. These methods serve comparison and testing; they
+ * are not suited as a long-lived {@code HashMap} key, since the underlying content can change at
+ * any time.
  */
 public final class Section {
 
@@ -313,13 +318,16 @@ public final class Section {
                 && this.marginTop() == that.marginTop()
                 && this.marginRight() == that.marginRight()
                 && this.marginBottom() == that.marginBottom()
-                && this.marginLeft() == that.marginLeft();
+                && this.marginLeft() == that.marginLeft()
+                && java.util.Objects.equals(this.defaultHeaderParagraphs(), that.defaultHeaderParagraphs())
+                && java.util.Objects.equals(this.defaultFooterParagraphs(), that.defaultFooterParagraphs());
     }
 
     @Override
     public int hashCode() {
         return java.util.Objects.hash(paperSize(), orientation(),
-                marginTop(), marginRight(), marginBottom(), marginLeft());
+                marginTop(), marginRight(), marginBottom(), marginLeft(),
+                defaultHeaderParagraphs(), defaultFooterParagraphs());
     }
 
     @Override
@@ -367,5 +375,39 @@ public final class Section {
      */
     private static long dimOrDefault(Object value, int defaultTwips) {
         return value instanceof Number ? ((Number) value).longValue() : defaultTwips;
+    }
+
+    // ---------- header / footer (read-only, for equality) ----------
+
+    /**
+     * Resolves this section's default header paragraphs read-only — without creating a header part
+     * when none is attached. Used by {@code equals} / {@code hashCode} so that a comparison never
+     * mutates the document. Returns an empty list when no default header is present or when
+     * resolution fails, so {@code equals} never throws.
+     */
+    private List<Paragraph> defaultHeaderParagraphs() {
+        try {
+            XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
+            XWPFHeader header = policy.getDefaultHeader();
+            return header == null ? Collections.emptyList() : new Header(header).paragraphs();
+        } catch (POIXMLException e) {
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Resolves this section's default footer paragraphs read-only — without creating a footer part
+     * when none is attached. Used by {@code equals} / {@code hashCode} so that a comparison never
+     * mutates the document. Returns an empty list when no default footer is present or when
+     * resolution fails, so {@code equals} never throws.
+     */
+    private List<Paragraph> defaultFooterParagraphs() {
+        try {
+            XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
+            XWPFFooter footer = policy.getDefaultFooter();
+            return footer == null ? Collections.emptyList() : new Footer(footer).paragraphs();
+        } catch (POIXMLException e) {
+            return Collections.emptyList();
+        }
     }
 }

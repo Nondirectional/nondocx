@@ -2,18 +2,27 @@ package com.non.docx.core.api.text;
 
 import com.non.docx.core.api.BodyElement;
 import com.non.docx.core.api.InlineElement;
+import com.non.docx.core.api.exception.DocxIOException;
 import com.non.docx.core.api.exception.DocxOperationException;
+import com.non.docx.core.api.image.Image;
+import com.non.docx.core.api.image.ImageType;
 import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.style.HeadingLevel;
 import com.non.docx.core.api.style.ListKind;
 import com.non.docx.core.internal.poi.Mappers;
 import com.non.docx.core.internal.poi.Numbering;
+import com.non.docx.core.internal.poi.Pictures;
 import com.non.docx.core.internal.util.Objects;
+import org.apache.poi.ooxml.POIXMLException;
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.xwpf.usermodel.IRunElement;
 import org.apache.poi.xwpf.usermodel.XWPFHyperlinkRun;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.xwpf.usermodel.XWPFPicture;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,10 +35,11 @@ import java.util.List;
  * (heading, alignment, indentation, line spacing) return {@code this} for chaining.
  *
  * <p>The <em>structural source of truth</em> for a paragraph's content is {@link #inlineElements()}:
- * the ordered sequence of runs and hyperlinks in reading order. {@link #runs()} is a type-filtered
- * view that keeps only the plain runs; round-trip equality is based on the full
- * {@code inlineElements()} order, so a run followed by a hyperlink followed by a run stays in that
- * order.
+ * the ordered sequence of runs, hyperlinks and inline images in reading order. A run that carries
+ * an embedded picture is surfaced in that view as an {@link Image} (not a {@link Run}), so images
+ * take part in the ordering and in content equality. {@link #runs()} is a type-filtered view that
+ * keeps only the plain runs; round-trip equality is based on the full {@code inlineElements()}
+ * order, so a run followed by a hyperlink followed by a run stays in that order.
  *
  * <p>Content equality ({@code equals} / {@code hashCode}) compares the ordered inline elements,
  * the paragraph-level style (heading, alignment, indentation, line spacing) and list membership
@@ -74,10 +84,12 @@ public final class Paragraph implements BodyElement {
     /**
      * Returns a live view of this paragraph's inline content in true reading order.
      *
-     * <p>The returned list contains the inline constructs nondocx models — runs and hyperlinks —
-     * preserving their order. Other inline constructs (for example structured document tags) are
-     * excluded; they remain reachable via {@code raw().getIRuns()}. The view is re-read from the
-     * delegate on every access, so mutations are reflected live.
+     * <p>The returned list contains the inline constructs nondocx models — runs, hyperlinks and
+     * inline images — preserving their order. A run that carries an embedded picture is surfaced
+     * here as an {@link Image} (a hyperlink run is always surfaced as a {@link Hyperlink}). Other
+     * inline constructs (for example structured document tags) are excluded; they remain reachable
+     * via {@code raw().getIRuns()}. The view is re-read from the delegate on every access, so
+     * mutations are reflected live.
      *
      * @return a live, unmodifiable list of inline elements in reading order
      */
@@ -192,6 +204,43 @@ public final class Paragraph implements BodyElement {
         XWPFHyperlinkRun hyperlink = delegate.createHyperlinkRun(url);
         hyperlink.setText(text);
         return new Hyperlink(hyperlink);
+    }
+
+    /**
+     * Appends a new inline image to this paragraph and returns a live wrapper for it.
+     *
+     * <p>OOXML embeds an inline picture <em>inside</em> a run (as a drawing). This method creates a
+     * fresh run holding only that picture (no text), so it appears as an {@link Image} in
+     * {@link #inlineElements()}. The {@code width} and {@code height} are in <em>pixels</em> at
+     * 96&nbsp;DPI and are converted to EMU internally (Apache POI's {@code addPicture} stores them as
+     * EMU); they survive a save → open round-trip exactly. POI / IO failures while embedding the
+     * picture are wrapped into a {@link DocxIOException} on this public surface.
+     *
+     * @param bytes  the raw picture bytes (not {@code null})
+     * @param type   the image format (not {@code null})
+     * @param width  the picture width in pixels (96&nbsp;DPI)
+     * @param height the picture height in pixels (96&nbsp;DPI)
+     * @return the newly appended image
+     * @throws IllegalArgumentException  if {@code bytes} or {@code type} is {@code null}
+     * @throws DocxIOException           if the picture cannot be embedded
+     */
+    public Image addImage(byte[] bytes, ImageType type, int width, int height) {
+        Objects.requireNonNull(bytes, "bytes");
+        Objects.requireNonNull(type, "type");
+        XWPFRun run = delegate.createRun();
+        try {
+            // Apache POI's addPicture stores width/height verbatim as EMU on the <wp:extent>, so
+            // convert pixel inputs (the unit this API exposes) to EMU first for an exact round-trip.
+            XWPFPicture picture = run.addPicture(
+                    new ByteArrayInputStream(bytes),
+                    Mappers.toPoi(type),
+                    "image",
+                    Pictures.emuFromPixels(width),
+                    Pictures.emuFromPixels(height));
+            return new Image(picture);
+        } catch (IOException | InvalidFormatException | POIXMLException e) {
+            throw new DocxIOException("Failed to add inline image", e);
+        }
     }
 
     /**
@@ -450,11 +499,18 @@ public final class Paragraph implements BodyElement {
 
     /**
      * Wraps a POI inline element as a nondocx inline element. {@code XWPFHyperlinkRun} is checked
-     * before {@code XWPFRun} because the former subclasses the latter.
+     * before {@code XWPFRun} because the former subclasses the latter. A plain run that carries an
+     * embedded picture is surfaced as an {@link Image}; otherwise it is surfaced as a {@link Run}.
      */
     private static InlineElement wrap(IRunElement element) {
         if (element instanceof XWPFHyperlinkRun) {
             return new Hyperlink((XWPFHyperlinkRun) element);
+        }
+        if (element instanceof XWPFRun) {
+            XWPFRun run = (XWPFRun) element;
+            if (!run.getEmbeddedPictures().isEmpty()) {
+                return new Image(run.getEmbeddedPictures().get(0));
+            }
         }
         return new Run((XWPFRun) element);
     }
