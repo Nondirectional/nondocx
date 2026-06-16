@@ -6,6 +6,7 @@ import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 
 import java.util.AbstractList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * A row within a {@link Table} — an ordered sequence of cells from left to right.
@@ -103,6 +104,41 @@ public final class Row {
                     + " out of bounds (row has " + size + " cells)");
         }
         delegate.removeCell(index);
+    }
+
+    /**
+     * Appends a new cell, writes the given text into it, and returns this row for chaining.
+     *
+     * <p>This is a construction convenience over {@link #addCell()} followed by
+     * {@link Cell#text(String)}: it appends one cell and sets its text, so the common case of a
+     * single-value cell reads as {@code row.cell("A1")}. No new domain logic is introduced.
+     *
+     * @param text the text to write into the new cell (not {@code null})
+     * @return this row
+     * @throws IllegalArgumentException if {@code text} is {@code null}
+     */
+    public Row cell(String text) {
+        Objects.requireNonNull(text, "text");
+        addCell().text(text);
+        return this;
+    }
+
+    /**
+     * Appends a new cell, applies the given configurator to it, and returns this row for chaining.
+     *
+     * <p>This is a construction convenience over {@link #addCell()}: it appends one cell and hands
+     * the live {@link Cell} to the configurator, so the caller can populate multi-paragraph or
+     * styled cells directly. No new domain logic is introduced.
+     *
+     * @param config the cell configurator, operating on the live cell (not {@code null})
+     * @return this row
+     * @throws IllegalArgumentException if {@code config} is {@code null}
+     */
+    public Row cell(Consumer<Cell> config) {
+        Objects.requireNonNull(config, "config");
+        Cell appended = addCell();
+        config.accept(appended);
+        return this;
     }
 
     /**

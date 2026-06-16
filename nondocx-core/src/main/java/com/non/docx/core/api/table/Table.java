@@ -7,6 +7,7 @@ import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 
 import java.util.AbstractList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * A table — a body-level block of rows and cells.
@@ -106,6 +107,25 @@ public final class Table implements BodyElement {
                     + " out of bounds (table has " + size + " rows)");
         }
         delegate.removeRow(index);
+    }
+
+    /**
+     * Appends a new row, applies the given configurator to it, and returns this table for chaining.
+     *
+     * <p>This is a construction convenience over {@link #addRow()}: it appends one row and hands the
+     * live {@link Row} to the configurator, so the caller can populate its cells directly (for
+     * example {@code table.row(r -> r.cell("A1").cell("B1"))}). No new domain logic is introduced —
+     * this method only orchestrates {@code addRow()}.
+     *
+     * @param config the row configurator, operating on the live row (not {@code null})
+     * @return this table
+     * @throws IllegalArgumentException if {@code config} is {@code null}
+     */
+    public Table row(Consumer<Row> config) {
+        Objects.requireNonNull(config, "config");
+        Row appended = addRow();
+        config.accept(appended);
+        return this;
     }
 
     /**
