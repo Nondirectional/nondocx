@@ -7,16 +7,16 @@ package com.non.docx.core.api.style;
  * the {@code internal} bridge layer.
  */
 public enum HeadingLevel {
-    /** Level 1 heading (Word style {@code Heading1}). */
-    H1,
-    /** Level 2 heading (Word style {@code Heading2}). */
-    H2,
-    /** Level 3 heading (Word style {@code Heading3}). */
-    H3,
-    /** Level 4 heading (Word style {@code Heading4}). */
-    H4,
-    /** Level 5 heading (Word style {@code Heading5}). */
-    H5,
-    /** Level 6 heading (Word style {@code Heading6}). */
-    H6
+  /** Level 1 heading (Word style {@code Heading1}). */
+  H1,
+  /** Level 2 heading (Word style {@code Heading2}). */
+  H2,
+  /** Level 3 heading (Word style {@code Heading3}). */
+  H3,
+  /** Level 4 heading (Word style {@code Heading4}). */
+  H4,
+  /** Level 5 heading (Word style {@code Heading5}). */
+  H5,
+  /** Level 6 heading (Word style {@code Heading6}). */
+  H6
 }
