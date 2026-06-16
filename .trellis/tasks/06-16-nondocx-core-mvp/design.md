@@ -71,25 +71,31 @@ nondocx/
 com.non.docx.core
 ├── Docx.java                    ← 静态工厂门面 (open/create，不持有状态)
 ├── api/                         ← 公开领域模型 (核心深封区)
-│   ├── Document.java            (持有 XWPFDocument)
+│   ├── BodyElement.java         (正文块顺序抽象)
+│   ├── InlineElement.java       (段内顺序抽象)
+│   ├── Document.java            (持有 XWPFDocument, implements AutoCloseable)
 │   ├── text/
-│   │   ├── Paragraph.java       (持有 XWPFParagraph)
-│   │   ├── Run.java             (持有 XWPFRun)
-│   │   └── Hyperlink.java
+│   │   ├── Paragraph.java       (持有 XWPFParagraph, implements BodyElement)
+│   │   ├── Run.java             (持有 XWPFRun, implements InlineElement)
+│   │   └── Hyperlink.java       (持有 XWPFHyperlinkRun, implements InlineElement)
 │   ├── table/
-│   │   ├── Table.java           (持有 XWPFTable)
+│   │   ├── Table.java           (持有 XWPFTable, implements BodyElement)
 │   │   ├── Row.java             (持有 XWPFTableRow)
 │   │   └── Cell.java            (持有 XWPFTableCell)
 │   ├── section/
-│   │   └── Section.java         (页面属性: 纸张/页边距/横竖向)
+│   │   ├── Section.java         (页面属性 + section-scoped header/footer)
+│   │   ├── PaperSize.java       (A4 / Letter / ...)
+│   │   └── Orientation.java     (PORTRAIT / LANDSCAPE)
 │   ├── image/
-│   │   └── Image.java           (内联图片)
+│   │   ├── Image.java           (内联图片, implements InlineElement)
+│   │   └── ImageType.java       (PNG/JPEG/GIF/...)
 │   ├── header/
 │   │   ├── Header.java
 │   │   └── Footer.java
 │   ├── style/                   ← 样式值对象 (对齐/缩进/字体等)
 │   │   ├── Alignment.java       (枚举)
 │   │   ├── HeadingLevel.java    (H1–H6 枚举)
+│   │   ├── ListKind.java        (BULLET / NUMBERED)
 │   │   └── RunStyle.java
 │   └── exception/               ← 公开异常 (用户需 catch)
 │       ├── DocxException.java
@@ -107,6 +113,14 @@ com.non.docx.core
 │   └── util/                    XmlBeans / 反射 / 资源清理辅助
 └── (spi/ 预留为空 — 未来扩展点)
 ```
+
+### 3.1 顺序模型：`BodyElement` / `InlineElement`
+
+- `Document.bodyElements()` 是正文结构真相源，按 Word body 顺序返回 `Paragraph` / `Table`
+- `Paragraph` / `Table` 实现 `BodyElement`
+- `Paragraph.inlineElements()` 是段内结构真相源，按顺序返回 `Run` / `Hyperlink` / `Image`
+- `Run` / `Hyperlink` / `Image` 实现 `InlineElement`
+- `paragraphs()` / `tables()` / `runs()` 保留为类型过滤视图，便于常见场景；round-trip equality 以顺序视图为准
 
 ## 4. API 设计
 
@@ -126,31 +140,41 @@ public final class Docx {
 }
 ```
 
+流所有权契约：
+
+- `open(InputStream)` 不关闭调用方传入的流；内部先缓冲/复制内容，再创建 `Document`
+- `save(OutputStream)` 不关闭调用方传入的流
+- `Document.close()` 负责释放底层 `XWPFDocument` / `OPCPackage` 资源
+
 ### 4.2 领域对象 `Document`（可变 Live Object）
 
-持有 `XWPFDocument delegate`，承载内容操作与保存：
+持有 `XWPFDocument delegate`，承载内容操作、顺序视图与保存：
 
 ```java
-public final class Document {
+public final class Document implements AutoCloseable {
     private final XWPFDocument delegate;
 
-    // 段落集合访问 + 增删改
+    // 正文顺序视图（结构真相源）
+    public List<BodyElement> bodyElements();
+    public BodyElement bodyElement(int i);
+
+    // 类型过滤视图 + 增删改
     public List<Paragraph> paragraphs();
     public Paragraph paragraph(int i);
     public Paragraph addParagraph();
     public Paragraph addParagraph(String text);   // 便捷重载
-    public Paragraph insertParagraph(int i);
-    public void removeParagraph(int i);
+    public Paragraph insertParagraph(int bodyIndex);
+    public void removeParagraph(int paragraphIndex);
 
     // 表格
     public List<Table> tables();
     public Table addTable();
 
-    // 分节 / 页面属性
+    // 分节 / 页面属性 / 分节级页眉页脚
     public List<Section> sections();
     public Section section(int i);
 
-    // 页眉页脚
+    // 便捷访问：等价于 section(0).header()/footer()
     public Header header();
     public Footer footer();
 
@@ -159,17 +183,54 @@ public final class Document {
     public void save(Path path);
     public void save(OutputStream out);
 
+    // 生命周期
+    @Override
+    public void close();
+
     // 逃生舱
     public XWPFDocument raw();
 }
 ```
 
-### 4.3 可变对象的链式 mutator 命名
+约定：
 
-`Paragraph` / `Run` 等采用 **返回 `this` 的链式 mutator**（而非 `setXxx`）：
+- `bodyElements()` 保留段落 / 表格的真实顺序，是结构比较与 round-trip equality 的真相源
+- `paragraphs()` / `tables()` 是类型过滤视图；`paragraph(int)` 与 `removeParagraph(int)` 作用于过滤后的段落索引
+- `insertParagraph(int bodyIndex)` 作用于正文 body 顺序索引，避免表格与段落混排时语义歧义
+- 存在多个 section 时，优先使用 `Section.header()` / `Section.footer()`；`Document.header()` / `footer()` 仅是首个 section 的便捷代理
+
+### 4.3 `Paragraph` / `Run` / `Hyperlink` / `Image`
+
+`Paragraph` / `Run` 等采用 **返回 `this` 的链式 mutator**（而非 `setXxx`）。段内内容以 `InlineElement` 顺序视图为准：
 
 ```java
-public final class Run {
+public final class Paragraph implements BodyElement {
+    public List<InlineElement> inlineElements();
+    public InlineElement inlineElement(int i);
+
+    // 便捷过滤视图
+    public List<Run> runs();
+    public Run run(int i);
+
+    // 段内新增元素
+    public Run addRun();
+    public Run addRun(String text);
+    public Hyperlink addHyperlink(String text, String url);
+    public Image addImage(byte[] bytes, ImageType type, int width, int height);
+    public void removeInlineElement(int i);
+
+    // 段落级样式
+    public Paragraph heading(HeadingLevel level);
+    public Paragraph alignment(Alignment alignment);
+    public Paragraph indent(int leftTwips, int firstLineTwips);
+    public Paragraph lineSpacing(double multiple);
+    public Paragraph list(ListKind kind, int level);   // 0-based nesting
+    public Paragraph clearList();
+
+    public XWPFParagraph raw();
+}
+
+public final class Run implements InlineElement {
     public Run text(String t);        // 返回 this
     public Run bold();
     public Run italic();
@@ -183,9 +244,32 @@ public final class Run {
 }
 ```
 
-用法：`run.text("hi").bold().fontSize(12)`。
+`Hyperlink` 与 `Image` 也实现 `InlineElement`，分别暴露 URL/text 与图片元信息读写；`runs()` 仅作为文本 run 的过滤视图，顺序比较以 `inlineElements()` 为准。
 
-### 4.4 构造轨 Builder
+### 4.4 `Section` / `Header` / `Footer`
+
+`Section` 表示一个 Word 分节，既承载页面属性，也承载 **section-scoped** 的页眉页脚：
+
+```java
+public final class Section {
+    public Section paperSize(PaperSize size);
+    public Section orientation(Orientation orientation);
+    public Section margins(int topTwips, int rightTwips, int bottomTwips, int leftTwips);
+
+    public Header header();
+    public Footer footer();
+
+    public CTSectPr raw();
+}
+```
+
+约定：
+
+- `Document.sections()` 返回按文档顺序排列的 section live view
+- 多 section 场景下，页眉/页脚的内容相等比较以 section 维度进行，而非全局单例
+- `Header` / `Footer` MVP 暴露 paragraph-oriented API；更复杂的表格/绘图场景走 `raw()` 逃生舱
+
+### 4.5 构造轨 Builder
 
 从零快速构造，与可变对象解耦：
 
@@ -197,7 +281,7 @@ Document doc = DocumentBuilder.start()
     .build();
 ```
 
-### 4.5 逃生舱 `raw()`
+### 4.6 逃生舱 `raw()`
 
 所有核心类型提供 `raw()`，返回持有的 `XWPF*` delegate（**同一实例**，修改立即反映）。契约：
 
@@ -214,14 +298,15 @@ RuntimeException
     ├── DocxIOException          (包装 IOException / POI OpenXML4J / POIXML)
     │     └── cause 保留原始异常，getCause() 可取
     ├── DocxFormatException      (docx 损坏 / 格式非法，带文件路径)
-    ├── DocxOperationException   (逻辑错，带上下文如段落索引)
-    │     └── 子类: NoSuchElementException / IllegalArgumentException
+    ├── DocxOperationException   (领域操作失败，带上下文如段落索引 / body 位置)
+    │     └── 参数与索引错误优先复用 JDK `IllegalArgumentException` / `IndexOutOfBoundsException`
     └── UnsupportedFeatureException  (功能不在封装范围 → 提示用 raw())
 ```
 
 规则：
 - 全部继承 `RuntimeException`，用户不强制 catch
-- 所有 POI 异常包装为自建类型，用户无需 import `org.apache.poi.*` 异常
+- 除 `raw()` 逃生舱外，POI 异常包装为自建类型，用户无需 import `org.apache.poi.*` 异常
+- 参数错误与索引错误优先复用 JDK 标准异常；文档 IO / 格式 / 领域操作失败走 `DocxException` 体系
 - 异常消息**英文**
 - 异常携带文档上下文（文件路径 / 元素索引）便于定位
 
@@ -237,6 +322,8 @@ RuntimeException
 **核心验收手段：深粒度领域对象 `equals`**。
 
 - 核心类型（`Paragraph` / `Run` / `Table` / `RunStyle` 等）实现**内容相等** `equals/hashCode`：仅比较内容字段（文本、样式、结构），**不含** `delegate` 引用
+- 内容相等覆盖 `bodyElements()` / `inlineElements()` 的顺序、列表属性、section 页面属性，以及 section-scoped header/footer 内容
+- 这些对象同时是 **mutable live view**；`equals/hashCode` 主要服务于比较与测试，不建议作为长期 `HashMap` / `HashSet` key 使用
 - 往返测试：
 
 ```java
@@ -274,7 +361,8 @@ assertThat(readBack).isEqualTo(original);   // 深粒度内容相等
 **读取并修改**：
 ```java
 Document doc = Docx.open(Paths.get("in.docx"));   // Docx 门面 → Document
-doc.paragraph(0).run(0).text();                    // Document → Paragraph → Run (代理 delegate)
+doc.bodyElements().get(0);                          // 正文顺序视图（结构真相源）
+doc.paragraph(0).run(0).text();                    // Document → Paragraph → Run (过滤视图代理 delegate)
 doc.addParagraph("新增段落").runs().get(0).bold(); // 可变 Live Object，改底层 XWPFDocument
 doc.save(Paths.get("out.docx"));                   // Document 持有 XWPFDocument，直接写
 ```

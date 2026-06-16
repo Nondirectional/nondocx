@@ -36,12 +36,15 @@
 - [ ] `api/exception/DocxException.java`（根，继承 RuntimeException，带 message/cause 构造）
 - [ ] `api/exception/DocxIOException.java`（包装 IOException / POI IO 异常）
 - [ ] `api/exception/DocxFormatException.java`（带文件路径字段）
-- [ ] `api/exception/DocxOperationException.java`（带上下文字段）+ 子类 `NoSuchElementException` / `IllegalArgumentException`（复用 JDK 或自建，自建避免歧义则放 exception 包）
+- [ ] `api/exception/DocxOperationException.java`（带上下文字段；参数/索引错误优先复用 JDK `IllegalArgumentException` / `IndexOutOfBoundsException`）
 - [ ] `api/exception/UnsupportedFeatureException.java`
 - [ ] 所有异常 Javadoc 首行英文说明，消息模板英文
 - [ ] `api/style/Alignment.java`（枚举：LEFT/CENTER/RIGHT/JUSTIFY，映射 POI ParagraphAlignment）
 - [ ] `api/style/HeadingLevel.java`（H1–H6 枚举）
 - [ ] `api/style/RunStyle.java`（内联样式值对象：bold/italic/underline/font/size/color，实现内容相等 equals/hashCode）
+- [ ] `api/style/ListKind.java`（BULLET / NUMBERED）
+- [ ] `api/BodyElement.java`（正文块顺序抽象，供 `Paragraph` / `Table` 实现）
+- [ ] `api/InlineElement.java`（段内顺序抽象，供 `Run` / `Hyperlink` / `Image` 实现）
 
 **验证**：`mvn -q -pl nondocx-core test-compile`；为 RunStyle 写 `RunStyleTest`（equals/hashCode）。
 
@@ -53,26 +56,30 @@
 
 - [ ] `internal/util/`：`Streams.java`（InputStream→byte[] / close quiet）、`Objects.java`（requireNonNull 带上下文消息）—— Javadoc 标 `Internal API`
 - [ ] `internal/poi/`：`Mappers.java` 占位（ParagraphAlignment ↔ Alignment 等映射，随各类型填充）
-- [ ] `api/Document.java`：持有 `final XWPFDocument delegate`，实现 paragraphs()/paragraph(i)/addParagraph()/addParagraph(text)/insertParagraph(i)/removeParagraph(i)/tables()/addTable()/save(File/Path/OutputStream)/raw()
+- [ ] `api/Document.java`：持有 `final XWPFDocument delegate`，先实现 bodyElements()/bodyElement(i)/paragraphs()/paragraph(i)/addParagraph()/addParagraph(text)/insertParagraph(bodyIndex)/removeParagraph(i)/tables()/addTable()/save(File/Path/OutputStream)/close()/raw()；`sections()/section(i)/header()/footer()` 接通推迟到 Phase 5
 - [ ] `Docx.java`：静态工厂 open(File/Path/InputStream) + create()，open 失败抛 DocxIOException/DocxFormatException
 - [ ] save() 内部 try/catch POI IO 异常包装为 DocxIOException
 
 **验证**：写 `DocumentOpenSaveTest`：`Docx.create()` → `save(tmp)` → `Docx.open(tmp)` 不抛异常，round-trip 基本通路。
 
-**Review Gate 2**：确认 Document/Docx 入口签名与 design.md §4.1/§4.2 一致。
+**Review Gate 2**：确认 `Docx` / `Document` 的 IO、生命周期、正文顺序视图与段落/表格入口签名已稳定；section/header/footer 相关 API 明确留待 Phase 5 接通。
 
 ---
 
 ## Phase 3 · text 包（Paragraph / Run / Hyperlink）— 第 1+2 档
 
 - [ ] `api/text/Run.java`：持有 `XWPFRun`，链式 mutator（text/bold/italic/underline/fontSize/font/color 返回 this）+ getter + 内容相等 equals/hashCode + raw()
-- [ ] `api/text/Paragraph.java`：持有 `XWPFParagraph`，runs()/run(i)/addRun()/addRun(text)/removeRun(i) + 段落样式（style/alignment/indent/heading via HeadingLevel）链式 + raw() + 内容相等
+- [ ] `api/text/Paragraph.java`：持有 `XWPFParagraph`，inlineElements()/inlineElement(i)/runs()/run(i)/addRun()/addRun(text)/addHyperlink()/removeInlineElement(i) + 段落样式（style/alignment/indent/heading/list/lineSpacing）链式 + raw() + 内容相等
 - [ ] `api/text/Hyperlink.java`：持有 `XWPFHyperlinkRun`，url/text + raw()
-- [ ] Document.paragraphs()/tables() 返回的 List 是包装视图（每次 get 现场包装 `XWPFParagraph`→`Paragraph`）
+- [ ] `Document.paragraphs()/tables()/bodyElements()` 返回的 List 是包装视图（每次 get 现场包装 `XWPFParagraph`→`Paragraph`）；`Paragraph.inlineElements()` 在本 Phase 先覆盖 `Run` / `Hyperlink`，图片接入推迟到 Phase 5
 
 **验证**：
 - `RunTest`：mutator 链生效，round-trip 读写样式（bold/size/font/color）
 - `ParagraphTest`：增删 run、对齐、标题样式 round-trip
+- `HyperlinkTest`：text/url round-trip
+- `ParagraphListTest`：`list(kind, level)` + `clearList()` round-trip
+- `ParagraphSpacingTest`：`lineSpacing(double)` round-trip
+- `InlineElementOrderTest`：`Run` / `Hyperlink` 的顺序视图正确
 - POI 交叉参照：用 `XWPFDocument` 原生读，断言文本一致
 
 ---
@@ -85,17 +92,24 @@
 - [ ] Document.tables()/addTable() 接通
 
 **验证**：`TableTest` round-trip（含多行多列、单元格文本），POI 交叉参照。
+- `BodyElementOrderTest`：paragraph → table → paragraph 的混排顺序在 `bodyElements()` 中保持正确，且与 `paragraphs()` / `tables()` 过滤视图一致。
 
 ---
 
 ## Phase 5 · section + image + header/footer — 第 2+3 档
 
-- [ ] `api/section/Section.java`：页面属性（纸张大小 PaperSize 枚举 A4/Letter、页边距、横竖向 Orientation 枚举）+ raw()（映射 CT_SectPr）
-- [ ] `api/image/Image.java`：插入（addPicture bytes/type/width/height）+ 读取元信息 + raw()
+- [ ] `api/section/Section.java`：页面属性（纸张大小、页边距、横竖向）+ section-scoped `Header` / `Footer` + raw()（映射 CT_SectPr）
+- [ ] `api/section/PaperSize.java`：A4 / Letter / ... 纸张枚举
+- [ ] `api/section/Orientation.java`：PORTRAIT / LANDSCAPE 枚举
+- [ ] `api/image/Image.java`：内联图片模型 + 插入（addPicture bytes/type/width/height）+ 读取元信息 + raw()
+- [ ] `api/image/ImageType.java`：PNG/JPEG/GIF/... 类型枚举
 - [ ] `api/header/Header.java` + `Footer.java`：持有 `XWPFHeader`/`XWPFFooter`，复用 Paragraph 模型 + raw()
-- [ ] Document.sections()/section(i)/header()/footer() 接通
+- [ ] 回填 `Paragraph.addImage(...)` 与 `inlineElements()` 的图片接入，使 `Image` 参与段内顺序视图与内容相等比较
+- [ ] 回填 `api/Document.java`：接通 `sections()/section(i)/header()/footer()`
 
 **验证**：`SectionTest`（页面属性 round-trip）、`ImageTest`（插入图片 round-trip，断言图片存在）、`HeaderFooterTest`。
+
+**Review Gate 5**：确认多 section 的读取、默认 section 行为、section-scoped header/footer 关系，以及相关 equality 语义全部自洽。
 
 ---
 
@@ -112,10 +126,10 @@
 
 ## Phase 7 · 测试基础设施 + 往返保真总测
 
-- [ ] `src/test/resources/ooxml/`：手写 OOXML 模板（plain.xml / styled.xml / table.xml / list.xml / section-header.xml）
+- [ ] `src/test/resources/ooxml/`：手写 OOXML 模板（plain.xml / styled.xml / table.xml / mixed-body.xml / hyperlink.xml / image-inline.xml / list.xml / list-nested.xml / section-header-footer.xml）
 - [ ] `internal/TestDocxPackager`（test 作用域，打包 OOXML 模板 → .docx）
 - [ ] `src/test/resources/fixtures/`：放 1-2 个真实 Word 固件（标注来源）
-- [ ] `RoundTripTest`：构造完整文档（标题+段落+表格+图片+列表+分节+页眉页脚）→ save → open → `assertThat(readBack).isEqualTo(original)` 深粒度相等
+- [ ] `RoundTripTest`：构造完整文档（标题+段落+表格+图片+列表+分节+页眉页脚）→ save → open → `assertThat(readBack).isEqualTo(original)` 深粒度相等（比较 body/inline 顺序、list、section header/footer）
 - [ ] `PoiCrossReferenceTest`：POI 原生读取同一文件，断言文本一致
 
 **验证**：`mvn -q -pl nondocx-core test` 全绿。这是验收标准核心。
@@ -143,7 +157,7 @@
 - [ ] 往返保真深粒度 equals 通过（RoundTripTest 绿）
 - [ ] 第 1/2 档 + 第 3 档（页面属性+页眉页脚）读写闭环
 - [ ] 所有核心类型提供 raw()
-- [ ] 异常为自建 DocxException 体系，零 POI 异常泄漏
+- [ ] 除 `raw()` 外，公开 API 异常为自建 DocxException 体系
 - [ ] `mvn verify` 在 JDK 11/17/21 矩阵全绿
 - [ ] `spotless:check` 通过
 - [ ] 父 POM + nondocx-core + LICENSE + README 齐全
@@ -158,7 +172,7 @@
 |------|------|------|
 | POI 某特性 API 不足 | Phase 3-5 发现 XWPF* 缺能力 | 降级为 `raw()` + `UnsupportedFeatureException` 提示，记入 design.md 权衡 |
 | 往返保真失败（POI 写入自动补全/规范化字段） | Phase 7 equals 不等 | 排查差异字段；若属 POI 规范化副作用，在 equals 中排除该字段并记录原因 |
-| 图片/页眉 round-trip 不稳 | Phase 5/7 | 这些字段在 equals 中标为 best-effort，README 注明已知限制 |
+| 图片/页眉 round-trip 不稳 | Phase 5/7 | 收缩 MVP scope 或补充稳定映射规则；不通过降低 `equals` 严格度绕过验收 |
 | `com.non` 无法发 Maven Central | 未来发布 | 不影响 MVP；发布单独任务改 groupId |
 
 ## 不在本任务实现

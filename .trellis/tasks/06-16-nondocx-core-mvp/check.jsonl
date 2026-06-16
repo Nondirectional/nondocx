@@ -1,1 +1,9 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/tasks/06-16-nondocx-core-mvp/prd.md","reason":"Acceptance source of truth for verifying MVP coverage, round-trip fidelity, and out-of-scope boundaries."}
+{"file":".trellis/tasks/06-16-nondocx-core-mvp/design.md","reason":"Verification reference for public API contracts, equality semantics, resource lifecycle, and raw() behavior."}
+{"file":".trellis/tasks/06-16-nondocx-core-mvp/implement.md","reason":"Checklist for phase-specific validation commands, review gates, and expected test coverage."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Audit exception behavior against the custom DocxException rules and raw() carve-out."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Audit fluent API style, content equality, testing expectations, and banned implementation shortcuts."}
+{"file":".trellis/spec/backend/poi-bridge.md","reason":"Verify wrapper/delegate behavior, no-cache policy, and zero POI leakage outside raw()."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Verify package placement and public/internal boundary conformance."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check for duplicated mapping/adapter logic and missed abstraction opportunities during review."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check that api/, builder/, and internal/ responsibilities remain cleanly separated."}

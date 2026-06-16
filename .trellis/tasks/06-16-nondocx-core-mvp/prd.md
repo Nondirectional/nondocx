@@ -34,12 +34,12 @@ MVP 覆盖以下 docx 概念，均要求**读 + 写双向**闭环。分为三档
 
 - **Image** — 图片插入与读取（内联图片）
 - **Hyperlink** — 超链接
-- **列表 / 编号** — 有序 / 无序列表
+- **列表 / 编号** — 有序 / 无序列表（支持嵌套层级，作为段落级属性）
 
 ### 第 3 档 · 部分（性价比优先）
 
 - **页面属性** — 纸张大小、页边距、横竖向、分节 (`Section`)
-- **页眉 / 页脚** — `Header` / `Footer`
+- **页眉 / 页脚** — section-scoped `Header` / `Footer`
 
 ## 非功能需求 (Non-Functional Requirements)
 
@@ -68,8 +68,8 @@ MVP 覆盖以下 docx 概念，均要求**读 + 写双向**闭环。分为三档
 - [ ] 第 1 档功能全部读写闭环
 - [ ] 第 2 档功能全部读写闭环
 - [ ] 第 3 档（页面属性 + 页眉页脚）读写闭环
-- [ ] 所有核心 API 类型提供 `raw()` 逃生舱，返回对应 `XWPF*` 类型
-- [ ] 异常为自建 `DocxException` 体系（全 unchecked），用户无需 import `org.apache.poi.*` 异常
+- [ ] 所有核心 API 类型提供 `raw()` 逃生舱，返回对应 `XWPF*` 类型；`raw()` 路径可直接透传 POI 原生异常
+- [ ] 除 `raw()` 外，公开 API 的异常均为自建 `DocxException` 体系（全 unchecked），用户无需 import `org.apache.poi.*` 异常
 - [ ] `mvn verify` 在 JDK 11 / 17 / 21 三档 CI 矩阵全绿
 - [ ] `spotless:check` 通过
 - [ ] 项目脚手架齐全：父 POM、`nondocx-core` 模块、LICENSE (Apache 2.0)、README（英文）
