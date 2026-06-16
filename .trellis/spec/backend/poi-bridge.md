@@ -149,6 +149,65 @@ are also equal (this is what makes round-trip assertions work).
 
 ---
 
+
+## Implementation Notes — POI behavior gotchas
+
+> These are non-obvious Apache POI behaviors the nondocx wrappers had to adapt to during MVP
+> implementation (task `06-16-nondocx-core-mvp`). Future maintainers and agents MUST read these
+> before touching the bridge — they are not obvious from POI's own Javadoc.
+
+### N1 — Wrapper constructors accept a POI type (internal seam)
+Each wrapper's constructor takes its backing `XWPF*` (or `CTSectPr`) by design — e.g.
+`Document(XWPFDocument)`, `Paragraph(XWPFParagraph)`, `Section(XWPFDocument, CTSectPr)`. This is the
+ONLY public signature (besides `raw()`) that mentions a POI/XmlBeans type. It is required because
+`Docx` (base package), `Document` (api), `Paragraph` (api.text), `Table` (api.table) live in
+different packages, so cross-package construction needs a public ctor. Each ctor Javadoc documents
+this as the "internal seam". This is consistent with Rule 2's `new Paragraph(backing.get(i))`
+example and is an accepted exception to the "zero POI in signatures" rule.
+
+### N2 — POI pre-populates created tables/rows/cells (strip them)
+`XWPFDocument.createTable()`, `XWPFTable.createRow()` and `XWPFTableRow.createCell()` inject
+default children (a default row, mirror-grid cells, an empty paragraph). To keep nondocx's
+`addX = exactly one X` semantics, the creation paths (`Document.addTable`, `Table.addRow`,
+`Row.addCell`) **strip the pre-populated children** via POI's own `removeRow`/`removeCell`/
+`removeParagraph` before returning. Do NOT skip the stripping or content equality and round-trip
+assertions break.
+
+### N3 — `XWPFRun.addPicture` width/height are EMU, not pixels
+POI 5.2.5 stores the `width`/`height` args of `addPicture(...)` **verbatim as EMU** on
+`<wp:extent>` (no pixel→EMU conversion). So `Paragraph.addImage(bytes, type, wPx, hPx)` converts
+pixels→EMU via `internal/poi/Pictures.emuFromPixels` (× `Units.EMU_PER_PIXEL` = 9525) before
+calling POI, and `Image.width()/height()` convert EMU→pixels back. This is why image round-trip is
+exact to the pixel.
+
+### N4 — Clear list membership with `unsetNumPr`, never `setNumID(null)`
+`XWPFParagraph.setNumID(null)` leaves an **empty** `<w:numId val=""/>`, which XmlBeans rejects as
+an invalid integer on the next save/open (`XmlValueOutOfRange`). `internal/poi/Numbering.clear()`
+uses `paragraph.getCTP().getPPr().unsetNumPr()` to remove the whole `<w:numPr/>` element instead.
+
+### N5 — Header/footer are create-on-access; resolve read-only for equality
+`Section.header()`/`footer()` create+attach a default header/footer part if none exists
+(create-once, via `XWPFHeaderFooterPolicy(document, sectPr)`). Because that mutates the document,
+`Section.equals`/`hashCode` resolve header/footer content **read-only** via
+`getDefaultHeader()`/`getDefaultFooter()` (null→empty list, no creation, `catch POIXMLException`).
+Never call the create-on-access `header()`/`footer()` from inside `equals`.
+
+### N6 — Inline images live INSIDE a run; a picture-bearing run is surfaced as `Image`
+OOXML embeds an image as a drawing inside a run, not as a sibling of runs. nondocx models it as an
+`InlineElement`: in `Paragraph.inlineElements()`, a run that carries an embedded picture is
+wrapped as an `Image` (not a `Run`); `XWPFHyperlinkRun` is checked first (it subclasses `XWPFRun`).
+`Paragraph.addImage` creates a pure-image run. A run carrying BOTH text and an image is an MVP
+edge case (text not separately surfaced; reachable via `raw()`).
+
+### N7 — Content equality compares PARSED values, not raw XML (why round-trip is clean)
+All `equals`/`hashCode` compare values parsed through the public getters (e.g. `listKind()`/
+`listLevel()`, not the raw `numId`; `isBold()`/`font()`/`color()`, not the raw `rPr` XML). So
+write-side normalization POI may inject (empty `rPr`/`pPr`, re-allocated numbering ids, default
+attributes) is **invisible to equality**, and `RoundTripTest` passes without any field exclusion.
+Keep it this way: never compare raw XmlBeans fragments in `equals`.
+
+---
+
 ## Out-of-Scope feature policy
 
 When you encounter a docx feature that is NOT in the deep-wrap scope:

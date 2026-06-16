@@ -196,13 +196,19 @@ public final class Paragraph implements BodyElement {
    * @param url the hyperlink's target URL (not {@code null})
    * @return the newly appended hyperlink
    * @throws IllegalArgumentException if {@code text} or {@code url} is {@code null}
+   * @throws DocxIOException if the hyperlink run cannot be created (for example a POI relationship
+   *     failure)
    */
   public Hyperlink addHyperlink(String text, String url) {
     Objects.requireNonNull(text, "text");
     Objects.requireNonNull(url, "url");
-    XWPFHyperlinkRun hyperlink = delegate.createHyperlinkRun(url);
-    hyperlink.setText(text);
-    return new Hyperlink(hyperlink);
+    try {
+      XWPFHyperlinkRun hyperlink = delegate.createHyperlinkRun(url);
+      hyperlink.setText(text);
+      return new Hyperlink(hyperlink);
+    } catch (POIXMLException e) {
+      throw new DocxIOException("Failed to create hyperlink", e);
+    }
   }
 
   /**

@@ -36,11 +36,13 @@ Also relevant: [../guides/](../guides/) — general thinking guides (code reuse,
 ## How these guidelines were filled
 
 1. **Source of truth**: task `06-16-nondocx-core-mvp` artifacts (`prd.md` / `design.md` /
-   `implement.md`), since the library has no committed code yet. These specs encode the
-   **design intent** agreed during planning.
-2. **Recalibration**: once the first classes land in `06-16-nondocx-core-mvp`, re-read 2-3 real
-   examples per rule and update the "Examples" sections with real file links. The rules
-   themselves should stay stable.
+   `implement.md`). These specs encoded the **design intent** agreed during planning; the MVP has
+   since been **implemented and verified** (111 tests, round-trip green) in that task.
+2. **Recalibration (done)**: the MVP is implemented. The per-topic "Examples" sections still
+   point at the design doc; the load-bearing real-code knowledge — non-obvious Apache POI behaviors
+   the wrappers adapt to — is captured in
+   [poi-bridge.md → Implementation Notes — POI behavior gotchas](./poi-bridge.md). Read that before
+   touching the bridge. The rules themselves stayed stable.
 3. **Document reality, not ideals**: if a rule below ever disagrees with shipped code, the
    **code wins** — fix the spec, not silently the code.
 
