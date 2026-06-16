@@ -44,7 +44,18 @@ import java.util.List;
  * are conveniences that return the first section's default header / footer.</b>
  *
  * <p>{@code Document} implements {@link AutoCloseable}; closing it releases the underlying POI
- * resources. Content equality ({@code equals}/{@code hashCode}) is added in Phase 7.
+ * resources.
+ *
+ * <p><b>Content equality.</b> {@code equals} / {@code hashCode} compare content derived from the
+ * delegate — the ordered {@link #bodyElements()} sequence and the ordered {@link #sections()}
+ * sequence — and never the delegate reference itself. Two documents are equal when their body
+ * element sequence (paragraphs and tables in true Word-body order) and their section sequence
+ * (page properties plus section-scoped default header / footer content) are element-by-element
+ * content-equal. This is exactly what round-trip assertions need: a document saved then reopened
+ * is necessarily backed by a different {@code XWPFDocument} instance yet compares equal to the
+ * original. {@code Document} is a mutable live object; {@code equals} / {@code hashCode} serve
+ * comparison and testing and are not suited as a long-lived {@code HashMap} key, since the
+ * underlying content can change at any time.
  */
 public final class Document implements AutoCloseable {
 
@@ -406,6 +417,55 @@ public final class Document implements AutoCloseable {
      */
     public XWPFDocument raw() {
         return delegate;
+    }
+
+    // ---------- content equality ----------
+
+    /**
+     * Compares this document to another for content equality.
+     *
+     * <p>Two documents are equal when their ordered body element sequences (paragraphs and tables
+     * in true Word-body order) are element-by-element content-equal <em>and</em> their ordered
+     * section sequences (page properties plus section-scoped default header / footer content) are
+     * element-by-element content-equal. The comparison is driven entirely by the content views
+     * {@link #bodyElements()} and {@link #sections()} and never touches the backing
+     * {@code XWPFDocument} reference, so a document saved then reopened — necessarily backed by a
+     * different {@code XWPFDocument} instance — compares equal to the original. This is the
+     * round-trip fidelity contract.
+     *
+     * <p>{@code Document} is a mutable live object; this method and {@link #hashCode()} serve
+     * comparison and testing and are not suited as a long-lived {@code HashMap} key, since the
+     * underlying content can change at any time.
+     *
+     * @param o the object to compare against
+     * @return {@code true} if {@code o} is a {@code Document} with equal body and section content
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Document)) {
+            return false;
+        }
+        Document that = (Document) o;
+        return java.util.Objects.equals(this.bodyElements(), that.bodyElements())
+                && java.util.Objects.equals(this.sections(), that.sections());
+    }
+
+    /**
+     * Returns a content-based hash code for this document, consistent with {@link #equals(Object)}.
+     *
+     * @return the hash code over the body element and section sequences
+     */
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(bodyElements(), sections());
+    }
+
+    @Override
+    public String toString() {
+        return "Document{bodyElements=" + bodyElements().size() + '}';
     }
 
     // ---------- internals ----------
