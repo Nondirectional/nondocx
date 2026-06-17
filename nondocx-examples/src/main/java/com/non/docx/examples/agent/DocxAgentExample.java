@@ -24,8 +24,8 @@ import java.nio.file.StandardCopyOption;
  *   <li>nonchain 侧：如何用 {@link ToolRegistry#scan(Object)} 把一个实例类的 {@link
  *       com.non.chain.tool.ToolDef @ToolDef} 方法批量注册为工具， 再用 {@link Agent.Builder} 组装出 LLM + 工具循环的
  *       Agent。
- *   <li>nondocx 侧：{@link DocxAgentTools} 把 docx 的「段落 / run / 表格单元格 / 超链接」 链式活对象模型逐段暴露给 LLM，让 Agent
- *       在不碰 POI 的情况下完成读取与编辑。
+ *   <li>nondocx 侧：{@link DocxAgentTools} 把 docx 的「段落 / run / 表格单元格 / 超链接 / 页眉页脚」 链式活对象模型逐段暴露给 LLM，并提供 {@code search_text} 跨容器文本搜索，
+ *       让 Agent 在不碰 POI 的情况下完成读取与编辑。
  * </ol>
  *
  * <p><b>运行前置</b>：环境变量 {@code DASHSCOPE_API_KEY}（阿里云灵积平台 API Key）。 未设置时本示例无法端到端运行（会启动失败），但模块本身可正常编译。
@@ -51,10 +51,16 @@ public final class DocxAgentExample {
           + "不要编造文件路径——所有路径都在用户消息里给出。"
           + "所有索引从 0 开始。若工具返回「错误：...」字符串，说明索引越界或句柄失效，"
           + "请先调用对应的 read_*/get_*_count 重新确认结构后再重试。"
+          // search_text 的引导：按文本找位置时务必先用它一次定位，再 replace_*，
+          // 避免逐段 read_paragraph 盲读造成大量 LLM 往返。
+          + "需要按文本内容定位位置（如「把『项目进度』改成…」）时，"
+          + "优先用 search_text 一次性拿到坐标，再用 replace_run_text/replace_table_cell_run_text 修改，"
+          + "不要逐个 read_paragraph 盲读。页眉页脚里的文本也能被 search_text 命中，"
+          + "需要其结构细节时用 read_header/read_footer。"
           + "用简洁中文汇报。";
 
   public static void main(String[] args) throws Exception {
-    LLM llm = new DashscopeLLM("qwen-plus").maxCompletionTokens(1024);
+    LLM llm = new DashscopeLLM("qwen3.7-plus").maxCompletionTokens(1024);
     DocxAgentTools tools = new DocxAgentTools();
     ToolRegistry registry = new ToolRegistry().scan(tools);
 

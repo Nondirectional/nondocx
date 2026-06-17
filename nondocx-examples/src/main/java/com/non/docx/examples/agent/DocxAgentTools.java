@@ -9,9 +9,12 @@ import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.poi.xwpf.model.XWPFHeaderFooterPolicy;
 
 /**
  * 把 nondocx 的 docx 读写能力包装为一组细粒度工具，交给 nonchain Agent 调用。
@@ -408,7 +411,334 @@ public final class DocxAgentTools {
     return "已修改：段落 " + paragraphIndex + " 超链接 " + hyperlinkIndex + " 的 URL → " + url;
   }
 
+  // ==================== E. 文本搜索（横切所有容器，一次定位） ====================
+
+  /** search_text 的默认命中数上限（max_results 未传时使用），平衡"够用"与返回体长度。 */
+  private static final int SEARCH_DEFAULT_MAX = 50;
+
+  /**
+   * 在整份文档里搜索 keyword，一次返回所有命中位置的坐标。
+   *
+   * <p><b>为什么需要这个工具。</b> 现有的 {@code read_paragraph} / {@code read_table_cell} 都是
+   * <em>按索引寻址</em>——知道位置才能读。但 Agent 要改某段文字时，往往不知道它在第几段、第几个单元格，
+   * 只能 {@code get_paragraph_count} → 逐个 {@code read_paragraph} 盲读，每步都是一轮 LLM 往返，
+   * 定位特别慢。本工具把"线性扫描"从 Agent 循环里搬出来：一次调用遍历正文段落、表格所有单元格、
+   * 各 section 的页眉页脚段落，直接吐出所有命中坐标。
+   *
+   * <p><b>遍历范围（OOXML 三层对应）：</b>
+   *
+   * <ul>
+   *   <li><b>正文段落</b> —— {@code doc.paragraphs()}，对应 {@code word/document.xml} 里 body 直属的
+   *       {@code <w:p>}。
+   *   <li><b>表格单元格内段落</b> —— {@code doc.tables().get(t).rows().get(r).cells().get(c).paragraphs()}，
+   *       对应 {@code <w:tbl>} → {@code <w:tr>} → {@code <w:tc>} 内的 {@code <w:p>}。表格 cell 内才再有段落，
+   *       这就是为什么表格寻址比段落深三层。
+   *   <li><b>页眉 / 页脚段落</b> —— {@code doc.sections().get(s).header()/footer()}（只读，null=不存在），
+   *       对应独立 ZIP part（{@code header1.xml} / {@code footer1.xml}），通过 section 的 {@code <w:sectPr>} 引用。
+   * </ul>
+   *
+   * <p><b>命中粒度。</b> 用段落 {@code text()}（POI 拼好的纯文本）做匹配——天然跨 run，
+   * 即使"项"+"目进度"分属两个 run 也能命中整词"项目进度"。返回里另附"哪个 run 含命中"
+   * （逐 run 找首个 {@code text()} 含关键词的），便于直接喂给 {@code replace_run_text}。
+   *
+   * <p><b>匹配规则。</b> {@code exact=false}（默认）忽略大小写 + 子串包含；{@code exact=true} 精确相等。
+   *
+   * <p><b>命中上限。</b> 由 {@code max_results} 控制：{@code >0} 为上限；{@code 0} 或负数表示不限（全部返回）。
+   * 默认 {@value #SEARCH_DEFAULT_MAX}。命中数达到上限时会提示"可能还有更多，请缩小关键词"。
+   * 某个词在文档里分布极广时，Agent 可主动传更大的 max_results（或 0 不限）拿全量，自行取舍。
+   *
+   * @param keyword 要找的文本
+   * @param exact 是否精确匹配（默认 false=忽略大小写的子串包含）
+   * @param maxResults 命中数上限；>0 为上限，0 或负数表示不限（默认 {@value #SEARCH_DEFAULT_MAX}）
+   * @return 所有命中坐标的多行纯文本；无命中时返回提示串
+   */
+  @ToolDef(
+      name = "search_text",
+      description =
+          "在整份文档（正文段落 + 表格单元格 + 页眉 + 页脚）里搜索 keyword，"
+              + "一次返回所有命中位置坐标（段落级匹配，标注含命中的 run）。"
+              + "max_results 控制上限：>0 为上限，0 或负数=不限（默认 50）。"
+              + "按文本改内容前优先用它定位，不要逐段 read 盲读。")
+  public String searchText(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "keyword", description = "要查找的文本") String keyword,
+      @ToolParam(
+              name = "exact",
+              description = "true=精确相等；false（默认）=忽略大小写的子串包含")
+          boolean exact,
+      @ToolParam(
+              name = "max_results",
+              description = "命中数上限：>0 为上限，0 或负数=不限（默认 50）。命中很多时可调大或传 0")
+          Integer maxResults) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    // 用 Integer 而非 int：LLM 不传该参数时 nonchain 会注入 null，
+    // 包装类型能安全接住 null，这里再归一化为默认值（避免基本类型收到 null 触发 NPE）。
+    // 归一化：null 或 <=0 视为不限（用极大值，循环自然由真实命中数收尾）；>0 原样用。
+    int limit =
+        (maxResults == null || maxResults <= 0) ? Integer.MAX_VALUE : maxResults;
+    List<String> hits = new ArrayList<>();
+
+    // 1) 正文段落
+    var paragraphs = doc.paragraphs();
+    for (int i = 0; i < paragraphs.size() && hits.size() < limit; i++) {
+      Paragraph p = paragraphs.get(i);
+      String hit = matchBodyParagraph(i, p, keyword, exact);
+      if (hit != null) {
+        hits.add(hit);
+      }
+    }
+
+    // 2) 表格单元格内段落
+    var tables = doc.tables();
+    for (int t = 0; t < tables.size() && hits.size() < limit; t++) {
+      var rows = tables.get(t).rows();
+      for (int r = 0; r < rows.size() && hits.size() < limit; r++) {
+        var cells = rows.get(r).cells();
+        for (int c = 0; c < cells.size() && hits.size() < limit; c++) {
+          var paras = cells.get(c).paragraphs();
+          for (int pi = 0; pi < paras.size() && hits.size() < limit; pi++) {
+            String hit = matchCellParagraph(t, r, c, pi, paras.get(pi), keyword, exact);
+            if (hit != null) {
+              hits.add(hit);
+            }
+          }
+        }
+      }
+    }
+
+    // 3) 页眉 / 页脚。读写分离后 Section.header()/footer() 本身就是只读的（null=不存在），
+    //    所以这里直接遍历、null 跳过即可，不会再像旧 API 那样"读一遍凭空创建空页眉"。
+    var sections = doc.sections();
+    for (int s = 0; s < sections.size() && hits.size() < limit; s++) {
+      searchHeaderFooter(sections.get(s).header(), "页眉", s, keyword, exact, hits, limit);
+      searchHeaderFooter(sections.get(s).footer(), "页脚", s, keyword, exact, hits, limit);
+    }
+
+    // 大文档可能命中数远超上限。上面三段循环都以 hits.size() < limit 为条件提前退出，
+    // 所以一旦 hits.size() 达到 limit，就说明至少还没扫完，提示 Agent 缩小关键词。
+    // （limit == Integer.MAX_VALUE 即"不限"时，hits.size() 不可能 >= 它，自然不会误报。）
+    boolean possiblyMore = hits.size() >= limit;
+
+    if (hits.isEmpty()) {
+      return "未找到「" + keyword + "」";
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append("找到 ").append(hits.size()).append(" 处「").append(keyword).append("」：\n");
+    for (int i = 0; i < hits.size(); i++) {
+      sb.append('[').append(i + 1).append("] ").append(hits.get(i));
+      if (i < hits.size() - 1) {
+        sb.append('\n');
+      }
+    }
+    if (possiblyMore) {
+      sb.append("\n（已达 ").append(limit).append(" 处上限，可能还有更多；请用更长的关键词缩小范围，或调大 max_results）");
+    }
+    return sb.toString();
+  }
+
+  /** 正文段落命中 → "正文段落 N · run R 含命中\n文本: ..."；未命中返回 null。 */
+  private static String matchBodyParagraph(
+      int paragraphIndex, Paragraph p, String keyword, boolean exact) {
+    if (!matches(p.text(), keyword, exact)) {
+      return null;
+    }
+    int runIdx = firstRunContaining(p, keyword, exact);
+    return "正文段落 "
+        + paragraphIndex
+        + " · run "
+        + runIdx
+        + " 含命中\n文本: "
+        + p.text();
+  }
+
+  /** 表格单元格段落命中 → "表格(t,r,c) 段落 P · run R 含命中\n文本: ..."；未命中返回 null。 */
+  private static String matchCellParagraph(
+      int t, int r, int c, int paragraphIndex, Paragraph p, String keyword, boolean exact) {
+    if (!matches(p.text(), keyword, exact)) {
+      return null;
+    }
+    int runIdx = firstRunContaining(p, keyword, exact);
+    return "表格("
+        + t
+        + ","
+        + r
+        + ","
+        + c
+        + ") 段落 "
+        + paragraphIndex
+        + " · run "
+        + runIdx
+        + " 含命中\n文本: "
+        + p.text();
+  }
+
+  /** 页眉/页脚段落命中 → "[页眉|页脚] section=S 段落 P · run R 含命中\n文本: ..."；未命中返回 null。 */
+  private static String matchHeaderFooterParagraph(
+      String kind, int sectionIndex, int paragraphIndex, Paragraph p, String keyword, boolean exact) {
+    if (!matches(p.text(), keyword, exact)) {
+      return null;
+    }
+    int runIdx = firstRunContaining(p, keyword, exact);
+    return kind
+        + " section="
+        + sectionIndex
+        + " 段落 "
+        + paragraphIndex
+        + " · run "
+        + runIdx
+        + " 含命中\n文本: "
+        + p.text();
+  }
+
+  /**
+   * 遍历一个页眉/页脚的段落做搜索匹配，命中追加进 hits。{@code headerOrFooter} 为 null（该 section 无此 part）时直接返回。
+   *
+   * <p>读写分离后 {@code Section.header()}/{@code footer()} 不存在时返回 null 而非创建空 part，
+   * 所以这里只需 null 跳过即可安全只读遍历，无需像旧版那样自建 POI 解析。
+   */
+  private static void searchHeaderFooter(
+      Object headerOrFooter,
+      String kind,
+      int sectionIndex,
+      String keyword,
+      boolean exact,
+      List<String> hits,
+      int limit) {
+    if (headerOrFooter == null) {
+      return;
+    }
+    List<Paragraph> paras =
+        headerOrFooter instanceof com.non.docx.core.api.header.Header
+            ? ((com.non.docx.core.api.header.Header) headerOrFooter).paragraphs()
+            : ((com.non.docx.core.api.header.Footer) headerOrFooter).paragraphs();
+    for (int pi = 0; pi < paras.size() && hits.size() < limit; pi++) {
+      String hit = matchHeaderFooterParagraph(kind, sectionIndex, pi, paras.get(pi), keyword, exact);
+      if (hit != null) {
+        hits.add(hit);
+      }
+    }
+  }
+
+
+  /** 段落文本是否命中关键词。 */
+  private static boolean matches(String text, String keyword, boolean exact) {
+    if (exact) {
+      return text.equals(keyword);
+    }
+    return text.toLowerCase().contains(keyword.toLowerCase());
+  }
+
+  /**
+   * 段落内首个 text() 含关键词的 run 索引；找不到（例如关键词横跨多个 run）返回 -1。
+   *
+   * <p>这里按 {@code runs()}（普通 run）计数，与 {@code replace_run_text} 的 run_index 语义一致。
+   * 超链接里的文本不计入 run 索引，如需改超链接文本用 {@code update_hyperlink_text}。
+   */
+  private static int firstRunContaining(Paragraph p, String keyword, boolean exact) {
+    var runs = p.runs();
+    for (int i = 0; i < runs.size(); i++) {
+      if (matches(runs.get(i).text(), keyword, exact)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  // ==================== F. 页眉 / 页脚（读取） ====================
+
+  /**
+   * 读取页眉某段的结构摘要（文本 + run 数 + 超链接数），风格对齐 {@code read_paragraph}。
+   *
+   * @param sectionIndex section 索引（0 起）；单 section 文档用 0
+   * @param paragraphIndex 页眉内段落索引（0 起）
+   */
+  @ToolDef(
+      name = "read_header",
+      description = "读取第 section_index 个 section 的默认页眉里第 paragraph_index 段（均 0 起）的结构摘要")
+  public String readHeader(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "section_index", description = "section 索引（0 起）") int sectionIndex,
+      @ToolParam(name = "paragraph_index", description = "页眉内段落索引（0 起）") int paragraphIndex) {
+    return readHeaderFooterParagraph(docId, sectionIndex, paragraphIndex, /* isHeader= */ true);
+  }
+
+  /**
+   * 读取页脚某段的结构摘要，语义同 {@link #readHeader} 但针对页脚。
+   */
+  @ToolDef(
+      name = "read_footer",
+      description = "读取第 section_index 个 section 的默认页脚里第 paragraph_index 段（均 0 起）的结构摘要")
+  public String readFooter(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "section_index", description = "section 索引（0 起）") int sectionIndex,
+      @ToolParam(name = "paragraph_index", description = "页脚内段落索引（0 起）") int paragraphIndex) {
+    return readHeaderFooterParagraph(docId, sectionIndex, paragraphIndex, /* isHeader= */ false);
+  }
+
+  /**
+   * 页眉/页脚段落读取的共享实现。
+   *
+   * <p><b>OOXML 三层递进：</b>
+   *
+   * <ul>
+   *   <li><b>OOXML</b>：页眉页脚不在 {@code word/document.xml} 的 body 里，而是独立 ZIP part
+   *       （{@code header1.xml} / {@code footer1.xml}），通过 section 的 {@code <w:sectPr>} 里的
+   *       {@code <w:headerReference>} / {@code <w:footerReference>} 引用。
+   *   <li><b>POI</b>：{@link XWPFHeaderFooterPolicy} 负责按某个 {@code sectPr} 解析出已附加的页眉页脚 part。
+   *       关键区别：{@code getDefaultHeader()} 只读返回（不存在返回 null），而
+   *       {@code createHeader(DEFAULT)} 会<em>新建</em>并附加一个 part——后者会修改文档。
+   *   <li><b>nondocx</b>：读写分离后，{@code Section.header()}/{@code footer()} 就是 POI
+   *       {@code getDefaultHeader/Footer()} 的只读映射（null=不存在）；需要创建时用 {@code ensureHeader()}/{@code
+   *       ensureFooter()}。所以本工具直接调 {@code header()}/{@code footer()} 即可安全只读，
+   *       不必像旧版那样在 core 外自建一份只读解析——这正是读写分离带来的简化。
+   * </ul>
+   */
+  private String readHeaderFooterParagraph(
+      String docId, int sectionIndex, int paragraphIndex, boolean isHeader) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    var sections = doc.sections();
+    if (outOfBounds(sectionIndex, sections.size())) {
+      return indexError("section 索引", sectionIndex, sections.size());
+    }
+    // 读写分离后 header()/footer() 只读返回，null 表示该 section 未设置页眉/页脚。
+    Object hf =
+        isHeader ? sections.get(sectionIndex).header() : sections.get(sectionIndex).footer();
+    if (hf == null) {
+      // 用提示串而非"错误"，让 Agent 知道这里确实没有内容，而不是索引算错。
+      return (isHeader ? "页眉" : "页脚") + " section=" + sectionIndex + " 不存在（该 section 未设置页眉/页脚）";
+    }
+    List<Paragraph> paras =
+        isHeader
+            ? ((com.non.docx.core.api.header.Header) hf).paragraphs()
+            : ((com.non.docx.core.api.header.Footer) hf).paragraphs();
+    if (outOfBounds(paragraphIndex, paras.size())) {
+      return indexError((isHeader ? "页眉" : "页脚") + "内段落索引", paragraphIndex, paras.size());
+    }
+    Paragraph p = paras.get(paragraphIndex);
+    int runCount = p.runs().size();
+    long hyperlinkCount = hyperlinkCount(p);
+    return (isHeader ? "页眉" : "页脚")
+        + " section="
+        + sectionIndex
+        + " 段落 "
+        + paragraphIndex
+        + "\n文本: "
+        + p.text()
+        + "\nrun 数: "
+        + runCount
+        + "\n超链接数: "
+        + hyperlinkCount;
+  }
+
+
   // ==================== 内部辅助 ====================
+
 
   /** 段落内超链接计数（从 inlineElements 过滤 Hyperlink，而非 runs()）。 */
   private static long hyperlinkCount(Paragraph p) {
