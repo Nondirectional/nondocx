@@ -147,3 +147,36 @@ Implemented the full nondocx-core MVP (docx read/write library over Apache POI) 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: core 页眉页脚读写分离与 examples Agent 工具增强
+
+**Date**: 2026-06-18
+**Task**: core 页眉页脚读写分离与 examples Agent 工具增强
+**Branch**: `main`
+
+### Summary
+
+两个紧密耦合主题一起落地：(1) core 页眉页脚读写分离——header()/footer() 改纯只读（null=不存在，永不动文档），新增 ensureHeader()/ensureFooter() 显式创建路径，Document 对称委托，equals/hashCode 不再需私有绕过；spec poi-bridge.md N5/N8 同步重写。(2) examples Agent 工具增强——新增 search_text（横切正文/表格/页眉/页脚一次定位，把线性扫描搬出 Agent 循环）、read_header/read_footer（受益于只读 API）；DocxAgentExample 加 search_text prompt 引导 + 升级 qwen3.7-plus；新增 InteractiveDocxAgentExample REPL（MessageWindowChatMemory 多轮记忆 + 流式回显）。验证：core 124 测试全绿、examples 编译全绿。任务 06-18-header-footer-split-agent-tools 已归档。关键沉淀：读写分离是 API 安全根本解（非私有绕过补丁）；Agent 工具应成对提供按索引/按内容寻址；可选参数用包装类型接 nonchain 的 null 注入。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b2642a8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
