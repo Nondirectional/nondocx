@@ -252,6 +252,38 @@ POI has **no** API to mutate a hyperlink's target URL. The only path is to rebui
 
 **Rule**: nondocx's `Hyperlink.url(String)` implements the rebuild above, wraps OpenXML4J/XmlBeans failures as `DocxIOException` (cause preserved), and its Javadoc spells out the cache caveat. Round-trip tests assert only after `save → reopen`. Any future code that mutates OPC relationships for hyperlinks (or any rId-bearing run) must follow the same pattern and must not rely on the in-memory cache reflecting the change immediately.
 
+### N11 — TOC 有两种 OOXML 形态(域 / SDT),POI 无高级 API;TocEntry 不可变值,诚实偏离 Rule 1
+
+Word 目录(Table of Contents)在 OOXML 里**不是一个独立元素**,而是藏在正文段落里的内容。它有**两种形态**,较新 Word 默认用第二种,nondocx 两种都解析:
+
+**形态一 —— 大域(field),较早的 Word**:正文里一个跨多段的域,由 `fldChar`(begin/separate/end)与以 `TOC ` 开头的 `instrText` 界定;begin 与 end 之间的段落是条目。
+
+```
+<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>
+<w:r><w:instrText> TOC ... </w:instrText></w:r>     ← 指令文本以 "TOC " 开头
+<w:r><w:fldChar w:fldCharType="separate"/></w:r>
+…缓存可见文本:每个条目是一个 <w:p>,pStyle=TOC1..TOC9,
+  内容常包在 <w:hyperlink w:anchor="_Toc..."> 内:标题 + <w:tab/> + 页码…
+<w:r><w:fldChar w:fldCharType="end"/></w:r>
+```
+
+**形态二 —— SDT 内容控件,较新的 Word**:整个 TOC 被包进一个 `<w:sdt>/<w:sdtContent>`,其内每个条目是一个段落(`pStyle=TOC1..TOC9`,内容在 CTP 级 `<w:hyperlink w:anchor=...>` 内),且**首个条目段落本身承载 TOC 域的 begin**,收尾段承载 end;条目的页码是一个**嵌套的 `PAGEREF` 子域**的可见结果(不是普通文本)。
+
+**POI 的两个坑(都得绕过)**:① POI 没有任何 `XWPFToc` 高级 API,域字符当普通 `XWPFRun` 吐出,条目可见内容在 CTP 级 `<w:hyperlink>` 内、`XWPFParagraph.getRuns()` 不暴露。② `XWPFDocument.getParagraphs()` **不返回 SDT 内的段落**——形态二对它完全不可见。
+
+**Rule(解析策略)**: nondocx 把脏活收进 `internal/poi/TocFields`(`findToc` + `collectParagraphs` + `parseEntries`),对外只暴露 `api/toc/TableOfContents` 与 `api/toc/TocEntry` 两个 POI-free 类型。三步:
+1. **穿透 SDT 收集段落**:从 `CTBody` 出发,用 `XmlCursor` 按文档顺序遍历直接子,遇到 `<w:p>` 直接收、遇到 `<w:sdt>` 下钻到 `<w:sdtContent>` 收其内 `<w:p>`,汇成统一序列(每段 `new XWPFParagraph(CTP, doc)` 重包,使两种形态走同一条解析路径)。仅穿透一层(嵌套 SDT-in-SDT 罕见,属已知限制)。
+2. **定位 TOC 区间**:在统一序列里,靠「段内含 `instrText` 以 `TOC ` 开头的 begin 域」定位首段(`PAGEREF` 子域不误判——指令以 `PAGEREF` 开头),再用域深度计数器配对到 end,界定区间。
+3. **识别条目**:区间内<b>凡有 `TOC1..TOC9` 样式(退而 `<w:outlineLvl>`+1)且有可见文本的段落</b>都解析为条目——不依赖 separate/end 边界,故同时兼容形态一(条目夹在 begin/end 间)与形态二(begin 与首条目同段、每条目自带 PAGEREF 子域)。层级取 `TOC1..TOC9` 样式尾数字;页码 = 条目最后一个非空 `<w:t>`(形态二即 PAGEREF 可见结果);锚点 = 包裹超链接的 `w:anchor`。单条目解析失败时跳过而非抛异常(防御式)。`dirty` 走 `xgetDirty()` 取字符串值(跨精简/full schema 稳定)。
+
+**对 Rule 1 的诚实偏离(已记录)**: Rule 1 要求每个 `api/` 类型持有单个 `final XWPF*` 委托、读写穿透、`TocEntry` 也应是 holding-wrapper。但 TOC **没有专属 POI 委托类型**(域横跨多段落),条目也没有干净的 per-entry POI 句柄,且条目本质是 Word 渲染分页后的**缓存快照**(改它等于篡改缓存,下次刷新被覆盖)。因此:
+- `TableOfContents` 持有 `XWPFDocument` 作为委托(像 `Section` 持 doc+sectPr 那样),`raw()` 返回该文档;`entries()` 每次调用**当场重算**、不缓存,守住「无字段快照」精神。
+- `TocEntry` 是**不可变解析值**(标题/层级/页码/锚点四字段,构造时一次解析),不是 holding-wrapper。
+
+这是对抽象诚实的选择:把没有干净 POI 句柄的东西硬包成活对象会得到一个会撒谎的抽象。该偏差已在 `TableOfContents` / `TocEntry` 的 Javadoc 与本条注明。
+
+**范围(只读)**: 创建/刷新目录需 Word 的分页引擎计算页码,POI 无此能力,属 `raw()` / `UnsupportedFeatureException` 范畴。v1 只取首个 TOC。回归:`TableOfContentsTest`(含形态一 `parsesTocEntries`、形态二 `parsesTocInsideSdtBlock`、`tocSurvivesRoundTrip`);真实文档验证:1072.docx(SDT 形态,20 条目全解析)。
+
 ---
 
 ## Out-of-Scope feature policy

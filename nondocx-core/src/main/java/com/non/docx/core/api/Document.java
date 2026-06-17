@@ -321,8 +321,8 @@ public final class Document implements AutoCloseable {
   /**
    * 以只读方式返回文档第一个章节（章节 0）的默认（奇数页）页眉；不存在时返回 {@code null}，绝不创建。
    *
-   * <p>这是 {@code section(0).header()} 的便捷方法，遵循读写分离：只读遍历用本方法，写入用 {@link
-   * #ensureHeader()}。详见 {@link Section#header()}。
+   * <p>这是 {@code section(0).header()} 的便捷方法，遵循读写分离：只读遍历用本方法，写入用 {@link #ensureHeader()}。详见 {@link
+   * Section#header()}。
    *
    * @return 第一个章节的默认页眉，不存在则返回 {@code null}
    */
@@ -361,6 +361,32 @@ public final class Document implements AutoCloseable {
     return section(0).ensureFooter();
   }
 
+  // ---------- 目录（TOC，只读） ----------
+
+  /**
+   * 以只读方式返回文档首个目录（Table of Contents）；不存在时返回 {@code null}，绝不创建。
+   *
+   * <p>目录在 OOXML 里不是一个独立元素，而是正文里的一个<b>域</b>（由 {@code fldChar} 界定）。POI 没有 {@code XWPFToc} 高级
+   * API，nondocx 把「找域 → 解析条目」收进 {@code internal/poi/TocFields}，对外只暴露 {@link
+   * com.non.docx.core.api.toc.TableOfContents} / {@link com.non.docx.core.api.toc.TocEntry} 两个干净类型。
+   * 详见 {@link com.non.docx.core.api.toc.TableOfContents} 的三层说明与 poi-bridge.md N11。
+   *
+   * <p><b>只读。</b> 创建/刷新目录（需 Word 分页引擎计算页码）超出范围，属 {@code raw()} 范畴。本方法不动文档。
+   *
+   * <p><b>多 TOC 文档。</b> v1 只取首个 TOC 域；一份文档里有多个目录（罕见）时，后续的不可见，需走 {@code raw()}。
+   *
+   * <p><b>不参与 {@code Document.equals}。</b> {@code equals} 比较的是 {@link #bodyElements()}(段落 + 表格)与
+   * {@link #sections()} 序列,TOC 不单独纳入。域形态的 TOC 嵌在正文段落里,其 run/超链接已隐式计入 body 相等性; SDT 形态的 TOC 是 {@code
+   * <w:sdt>} 容器,目前不在 {@code bodyElements()} 的建模范围内(仅段落/表格),故 SDT 形态 的 TOC 内容<b>不参与</b> {@code
+   * equals}——这是已知的不对称(读得到但比较不到),如需对 SDT-TOC 做往返断言,直接比较 {@code toc().entries()}。
+   *
+   * @return 首个目录，不存在则返回 {@code null}
+   */
+  public com.non.docx.core.api.toc.TableOfContents toc() {
+    return com.non.docx.core.internal.poi.TocFields.findToc(delegate).isPresent()
+        ? new com.non.docx.core.api.toc.TableOfContents(delegate)
+        : null;
+  }
 
   // ---------- save ----------
 

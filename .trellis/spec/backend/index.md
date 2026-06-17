@@ -72,7 +72,9 @@ These are the load-bearing conventions; each links to its full treatment.
 ## Scope Boundaries (what these specs intentionally do NOT cover)
 
 Deferred / out-of-MVP — do not spec prematurely:
-- TOC, document metadata, footnotes/endnotes (PRD Out of Scope)
+- **TOC** — **已落地为只读支持**（`api/toc/TableOfContents` + `TocEntry` + `Document.toc()`，见
+  [poi-bridge.md N11](./poi-bridge.md)）。创建/刷新目录（需 Word 分页引擎）仍为 raw-only。
+- Document metadata, footnotes/endnotes (PRD Out of Scope)
 - Tracked changes, fields, OLE, OMML math, watermarks, text boxes, shapes (raw-only via `raw()`)
 - JPMS `module-info.java` (pre-1.0)
 - Logging framework (introduce spec when adopted)
