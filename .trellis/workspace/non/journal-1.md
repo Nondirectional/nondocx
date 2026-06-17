@@ -111,3 +111,39 @@ Implemented the full nondocx-core MVP (docx read/write library over Apache POI) 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: examples 中新增 nonchain Agent docx 示例
+
+**Date**: 2026-06-17
+**Task**: examples 中新增 nonchain Agent docx 示例
+**Branch**: `main`
+
+### Summary
+
+在 nondocx-examples 新增 nonchain Agent docx 示例：DocxAgentTools（会话/正文/表格/超链接四组 @ToolDef 工具，统一返回 String、越界返回中文错误串）+ DocxAgentExample（DashscopeLLM + ToolRegistry.scan 组装 Agent，两段流程：读取汇报→编辑保存）+ 固定样例输入文档与结构自检测试。端到端用真实 LLM 跑通并核验 agent-edited.docx。过程中发现并根治 POI N9（Run.text/Hyperlink.text 追加而非替换）与 N10（超链接 URL 重建关系），补 round-trip 回归测试，core 共 121 测试全过，poi-bridge.md 沉淀两条 gotcha。父 pom 加 chain 0.8.4 依赖管理并修复原 XML 结构错位。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f258faf` | (see git log) |
+| `6efa5ab` | (see git log) |
+| `179222e` | (see git log) |
+| `9210cce` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
