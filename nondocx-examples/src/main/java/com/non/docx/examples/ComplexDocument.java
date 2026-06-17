@@ -13,7 +13,7 @@ import java.nio.file.Path;
 /**
  * 综合示例：生成一份完整的「项目报告」文档，演示 nondocx 大部分 API 的组合使用。
  *
- * <p>包含：页面设置、页眉页脚、标题、段落格式化、表格、列表、超链接、图片。</p>
+ * <p>包含：页面设置、页眉页脚、标题、段落格式化、表格、列表、超链接、图片。
  */
 public final class ComplexDocument {
 
@@ -53,8 +53,8 @@ public final class ComplexDocument {
       doc.addParagraph("\n");
       doc.addParagraph("一、项目概况").heading(HeadingLevel.H2);
 
-      doc.addParagraph("本项目旨在开发一套基于 Apache POI 的 Fluent 风格 docx 读写库——nondocx。"
-          + "经过两个月的迭代开发，核心功能已完成。");
+      doc.addParagraph(
+          "本项目旨在开发一套基于 Apache POI 的 Fluent 风格 docx 读写库——nondocx。" + "经过两个月的迭代开发，核心功能已完成。");
 
       doc.addParagraph("主要技术指标如下：");
 

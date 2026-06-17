@@ -10,11 +10,13 @@ import java.nio.file.Path;
  * 演示页面设置：纸张大小、方向、边距。
  *
  * <p>OOXML 中页面属性存储在章节属性 {@code <w:sectPr>} 下：
+ *
  * <ul>
- *   <li>{@code <w:pgSz>} — 纸张大小（width/height）和方向（orient 标志）</li>
- *   <li>{@code <w:pgMar>} — 四边边距（top/right/bottom/left，单位：缇，1 缇 = 1/20 磅）</li>
+ *   <li>{@code <w:pgSz>} — 纸张大小（width/height）和方向（orient 标志）
+ *   <li>{@code <w:pgMar>} — 四边边距（top/right/bottom/left，单位：缇，1 缇 = 1/20 磅）
  * </ul>
- * nondocx 的 {@code Section} 封装了这些操作，自动处理方向与尺寸的交换逻辑。</p>
+ *
+ * nondocx 的 {@code Section} 封装了这些操作，自动处理方向与尺寸的交换逻辑。
  */
 public final class PageSetupExample {
 
@@ -40,10 +42,15 @@ public final class PageSetupExample {
 
       System.out.println("  纸张大小: " + doc.section(0).paperSize());
       System.out.println("  方向:     " + doc.section(0).orientation());
-      System.out.println("  边距:     top=" + doc.section(0).marginTop()
-          + " right=" + doc.section(0).marginRight()
-          + " bottom=" + doc.section(0).marginBottom()
-          + " left=" + doc.section(0).marginLeft());
+      System.out.println(
+          "  边距:     top="
+              + doc.section(0).marginTop()
+              + " right="
+              + doc.section(0).marginRight()
+              + " bottom="
+              + doc.section(0).marginBottom()
+              + " left="
+              + doc.section(0).marginLeft());
 
       doc.save(output);
       System.out.println("已保存: " + output.toAbsolutePath());

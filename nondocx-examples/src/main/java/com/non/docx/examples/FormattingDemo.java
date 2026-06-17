@@ -10,9 +10,8 @@ import java.nio.file.Path;
 /**
  * 演示段落标题、对齐方式，以及 Run 级别的粗体/斜体/下划线/字体/字号/颜色。
  *
- * <p>OOXML 中，每个 Run ({@code <w:r>}) 携带可选的格式化属性 ({@code <w:rPr>})：
- * {@code <w:b>}（粗体）、{@code <w:i>}（斜体）、{@code <w:u>}（下划线）、
- * {@code <w:rFonts>}（字体）、{@code <w:sz>}（字号）、{@code <w:color>}（颜色）。</p>
+ * <p>OOXML 中，每个 Run ({@code <w:r>}) 携带可选的格式化属性 ({@code <w:rPr>})： {@code <w:b>}（粗体）、{@code
+ * <w:i>}（斜体）、{@code <w:u>}（下划线）、 {@code <w:rFonts>}（字体）、{@code <w:sz>}（字号）、{@code <w:color>}（颜色）。
  */
 public final class FormattingDemo {
 
@@ -33,8 +32,7 @@ public final class FormattingDemo {
       doc.addParagraph("左对齐（默认）");
       doc.addParagraph("居中对齐").alignment(Alignment.CENTER);
       doc.addParagraph("右对齐").alignment(Alignment.RIGHT);
-      doc.addParagraph("两端对齐文本：这是一段较长的文字，用于演示两端对齐的效果。")
-          .alignment(Alignment.JUSTIFY);
+      doc.addParagraph("两端对齐文本：这是一段较长的文字，用于演示两端对齐的效果。").alignment(Alignment.JUSTIFY);
 
       // ---- Run 级格式化 ----
       // 段落内的每个 Run 是独立的格式化单元：

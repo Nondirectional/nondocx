@@ -7,9 +7,8 @@ import java.nio.file.Path;
 /**
  * 演示超链接。
  *
- * <p>OOXML 中，超链接用 {@code <w:hyperlink>} 包裹 {@code <w:r>} 实现，
- * 并通过 {@code <w:hyperlink r:id="...">} 引用文档关系中的目标 URL。
- * nondocx 的 {@code Paragraph.addHyperlink(text, url)} 隐藏了这些细节。</p>
+ * <p>OOXML 中，超链接用 {@code <w:hyperlink>} 包裹 {@code <w:r>} 实现， 并通过 {@code <w:hyperlink r:id="...">}
+ * 引用文档关系中的目标 URL。 nondocx 的 {@code Paragraph.addHyperlink(text, url)} 隐藏了这些细节。
  */
 public final class HyperlinkExample {
 
@@ -37,7 +36,8 @@ public final class HyperlinkExample {
       p = doc.addParagraph();
       p.addHyperlink("Apache POI 官网", "https://poi.apache.org/");
       p.addRun(" | ");
-      p.addHyperlink("OOXML 规范 ECMA-376",
+      p.addHyperlink(
+          "OOXML 规范 ECMA-376",
           "https://www.ecma-international.org/publications-and-standards/standards/ecma-376/");
 
       doc.save(output);

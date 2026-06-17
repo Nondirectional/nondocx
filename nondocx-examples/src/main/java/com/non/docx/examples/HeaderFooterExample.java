@@ -2,19 +2,19 @@ package com.non.docx.examples;
 
 import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
-import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.section.PaperSize;
+import com.non.docx.core.api.style.Alignment;
 import java.nio.file.Path;
 
 /**
  * 演示页眉和页脚。
  *
- * <p>OOXML 中，页眉/页脚是独立的 ZIP 部分 ({@code word/header*.xml}、{@code word/footer*.xml})，
- * 通过章节属性 ({@code <w:sectPr>}) 中的 {@code <w:headerReference>} / {@code <w:footerReference>} 引用。</p>
+ * <p>OOXML 中，页眉/页脚是独立的 ZIP 部分 ({@code word/header*.xml}、{@code word/footer*.xml})， 通过章节属性 ({@code
+ * <w:sectPr>}) 中的 {@code <w:headerReference>} / {@code <w:footerReference>} 引用。
  *
- * <p>nondocx 通过 {@code Document.header()} 和 {@code Document.footer()} 提供便捷访问，
- * 内部委托 POI 的 {@code XWPFHeaderFooterPolicy} 在首次访问时自动创建页眉/页脚部分。
- * 为了让生成结果在 WPS 等对极简 {@code <w:sectPr>} 更敏感的消费者里更稳定地显示，本示例还会显式写入页面大小与页边距。</p>
+ * <p>nondocx 通过 {@code Document.header()} 和 {@code Document.footer()} 提供便捷访问， 内部委托 POI 的 {@code
+ * XWPFHeaderFooterPolicy} 在首次访问时自动创建页眉/页脚部分。 为了让生成结果在 WPS 等对极简 {@code <w:sectPr>}
+ * 更敏感的消费者里更稳定地显示，本示例还会显式写入页面大小与页边距。
  */
 public final class HeaderFooterExample {
 

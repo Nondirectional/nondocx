@@ -8,9 +8,8 @@ import java.nio.file.Path;
 /**
  * 演示项目符号列表和编号列表，包括嵌套层级。
  *
- * <p>OOXML 中列表编号通过 {@code <w:numPr>}（编号属性）实现，引用独立的编号定义部分
- * ({@code word/numbering.xml})。nondocx 的 {@code Paragraph.list(ListKind, int)} 自动管理
- * 编号定义。</p>
+ * <p>OOXML 中列表编号通过 {@code <w:numPr>}（编号属性）实现，引用独立的编号定义部分 ({@code word/numbering.xml})。nondocx 的
+ * {@code Paragraph.list(ListKind, int)} 自动管理 编号定义。
  */
 public final class ListExample {
 

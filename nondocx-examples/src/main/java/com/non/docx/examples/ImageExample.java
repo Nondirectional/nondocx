@@ -13,10 +13,10 @@ import javax.imageio.ImageIO;
 /**
  * 演示在文档中嵌入内联图片。
  *
- * <p>OOXML 中，图片以 {@code <w:drawing>} 嵌入在 Run 内部，引用 {@code word/media/} 目录下的文件。
- * nondocx 的 {@code Paragraph.addImage(bytes, type, width, height)} 隐藏了这些复杂细节。</p>
+ * <p>OOXML 中，图片以 {@code <w:drawing>} 嵌入在 Run 内部，引用 {@code word/media/} 目录下的文件。 nondocx 的 {@code
+ * Paragraph.addImage(bytes, type, width, height)} 隐藏了这些复杂细节。
  *
- * <p>本例在运行时生成纯色 PNG 图片，无需依赖外部图片文件。</p>
+ * <p>本例在运行时生成纯色 PNG 图片，无需依赖外部图片文件。
  */
 public final class ImageExample {
 

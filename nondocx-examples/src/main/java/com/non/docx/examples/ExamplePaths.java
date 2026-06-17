@@ -5,7 +5,7 @@ import java.nio.file.Path;
 /**
  * 示例模块的共享工具方法。
  *
- * <p>所有示例的输出文件统一写入此目录。该目录已在 {@code .gitignore} 中忽略。</p>
+ * <p>所有示例的输出文件统一写入此目录。该目录已在 {@code .gitignore} 中忽略。
  */
 public final class ExamplePaths {
 
