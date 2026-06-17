@@ -180,3 +180,36 @@ Implemented the full nondocx-core MVP (docx read/write library over Apache POI) 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 给 Agent 加读取 TOC 能力(支持域与 SDT 两种形态)
+
+**Date**: 2026-06-18
+**Task**: 给 Agent 加读取 TOC 能力(支持域与 SDT 两种形态)
+**Branch**: `main`
+
+### Summary
+
+core 新增 TableOfContents/TocEntry + Document.toc(),解析逻辑收进 internal/poi/TocFields。关键:用 XmlCursor 穿透 <w:sdt>/<w:sdtContent> 收集段落(POI getParagraphs() 不返回 SDT 内段落),按 TOC1..9 样式识别条目,兼容域形态(老式大域)与 SDT 形态(每条目自带 PAGEREF 子域)。examples 新增 read_toc 工具 + sample-toc-input.docx。spec N11 沉淀两种形态与解析策略。坑:第一版只支持域形态,把 SDT 写成「尽力而为/盲区」,1072.docx 实测踩穿——真实 Word 普遍是 SDT 形态。教训:别拿自己手搓的样例当全部真相。core 128 + examples 2 测试绿,1072.docx 实测读出 20 条。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `37ed527` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

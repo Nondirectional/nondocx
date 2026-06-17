@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-06-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~182 | Active |
+| `journal-1.md` | ~215 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-06-18 | 给 Agent 加读取 TOC 能力(支持域与 SDT 两种形态) | `37ed527` | `main` |
 | 4 | 2026-06-18 | core 页眉页脚读写分离与 examples Agent 工具增强 | `b2642a8` | `main` |
 | 3 | 2026-06-17 | examples 中新增 nonchain Agent docx 示例 | `f258faf`, `6efa5ab`, `179222e`, `9210cce` | `main` |
 | 2 | 2026-06-17 | 新增 examples 模块与开发者协作规范 | `ca2b75b`, `df2ef88` | `main` |
