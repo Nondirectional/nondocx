@@ -77,3 +77,37 @@ Implemented the full nondocx-core MVP (docx read/write library over Apache POI) 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 新增 examples 模块与开发者协作规范
+
+**Date**: 2026-06-17
+**Task**: 新增 examples 模块与开发者协作规范
+**Branch**: `main`
+
+### Summary
+
+新增 nondocx-examples 模块（ComplexDocument 综合示例 + 9 个独立示例），添加开发者协作规范（AGENTS.md 偏好说明、teaching-approach.md 教学指南），更新目录结构文档，启用 session_auto_commit。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ca2b75b` | (see git log) |
+| `df2ef88` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
