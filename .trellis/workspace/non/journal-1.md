@@ -28,3 +28,52 @@ Implemented the full nondocx-core MVP (docx read/write library over Apache POI) 
   programmatic construction + POI cross-reference); first-page/even-page header variants.
 
 
+
+# 2026-06-17 — 创建 nondocx-examples 示例模块
+#
+# - 创建新 Maven 模块 `nondocx-examples`，继承 parent POM，依赖 `nondocx-core`
+# - 9 个示例文件，全部通过编译，并成功运行生成 docx
+# - 文件结构：
+#   - `HelloWorld.java` — 最简创建→写入→保存
+#   - `FormattingDemo.java` — 标题/对齐/Run 级格式化
+#   - `TableExample.java` — 表格 + row(Consumer) 链式填充
+#   - `ListExample.java` — 项目符号/编号/嵌套层级
+#   - `HeaderFooterExample.java` — 页眉/页脚
+#   - `HyperlinkExample.java` — 超链接
+#   - `PageSetupExample.java` — 纸张/方向/边距
+#   - `ImageExample.java` — 内联图片（运行时生成 PNG）
+#   - `ComplexDocument.java` — 综合示例：完整项目报告
+# - 所有输出到 `target/examples-output/`（已加入 .gitignore）
+# - 更新父 POM 的 `<modules>`、`.gitignore`、`directory-structure.md`
+
+## Session 1: 排查 WPS 页眉页脚不显示 + core 落盘兼容性补全
+
+**Date**: 2026-06-17
+**Task**: 排查 WPS 页眉页脚不显示 + core 落盘兼容性补全
+**Branch**: `main`
+
+### Summary
+
+定位到 HeaderFooterExample 生成文档在 WPS 中页眉页脚不显示的根因——缺少显式 pgSz/pgMar。在 Section.header()/footer() 首次创建路径补齐缺失页面设置（A4 + 1 英寸边距），只补缺失不覆盖已有。补充测试、Javadoc、README 与 spec 文档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0d273d6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
