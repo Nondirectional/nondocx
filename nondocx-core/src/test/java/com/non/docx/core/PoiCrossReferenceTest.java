@@ -21,9 +21,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Cross-reference check: build a document with the nondocx API, then read the same file back with a
- * <em>raw</em> {@code XWPFDocument} and assert that nondocx's writes and reads agree with POI's own
- * native extraction. This guards against the "self-testing self" blind spot of a POI wrapper.
+ * 交叉引用检查：使用 nondocx API 构建文档，然后用原始 {@code XWPFDocument} 读取同一文件， 并断言 nondocx 的写入和读取与 POI
+ * 自身的原生提取一致。这验证了 nondocx 的 POI 包装器不引入层间不匹配。
  */
 class PoiCrossReferenceTest {
 
@@ -38,25 +37,25 @@ class PoiCrossReferenceTest {
     original.addParagraph().addHyperlink("site", "https://example.com/cross");
     original.save(file);
 
-    // Read the same bytes with raw POI — independent of our wrappers.
+    // 用原始 POI 读取同一字节——独立于我们的包装器。
     List<XWPFParagraph> poiParas;
     try (XWPFDocument poi = new XWPFDocument(Files.newInputStream(file))) {
       poiParas = poi.getParagraphs();
 
-      // heading written by nondocx is the heading style id POI reads back
+      // nondocx 写入的标题是 POI 读回的标题样式 ID
       assertThat(poiParas.get(0).getStyle()).isEqualTo("Heading1");
       assertThat(poiParas.get(0).getText()).isEqualTo("Chapter One");
 
-      // inline style + alignment written by nondocx match POI's native extraction
+      // nondocx 写入的内联样式 + 对齐方式与 POI 的原生提取一致
       assertThat(poiParas.get(1).getRuns().get(0).isBold()).isTrue();
       assertThat(poiParas.get(1).getAlignment()).isEqualTo(ParagraphAlignment.CENTER);
 
-      // hyperlink URL written by nondocx resolves through POI's relationship part
+      // nondocx 写入的超链接 URL 通过 POI 的关系部分解析
       XWPFHyperlinkRun poiLink = (XWPFHyperlinkRun) poiParas.get(2).getIRuns().get(0);
       assertThat(poiLink.getHyperlink(poi).getURL()).isEqualTo("https://example.com/cross");
     }
 
-    // Now read via nondocx and assert the wrapper agrees with POI on the same fields.
+    // 现在通过 nondocx 读取，并断言包装器在与 POI 相同的字段上一致。
     try (Document opened = Docx.open(file)) {
       assertThat(opened.paragraph(0).heading()).isEqualTo(HeadingLevel.H1);
       assertThat(opened.paragraph(0).text()).isEqualTo(poiParas.get(0).getText());
@@ -72,8 +71,8 @@ class PoiCrossReferenceTest {
 
   @Test
   void nondocxReadMatchesPoiNativeTextPerParagraph(@TempDir Path tmp) throws Exception {
-    // For each paragraph, nondocx's concatenated text must equal what raw POI extracts from the
-    // same file — an independent confirmation that our read path matches POI's.
+    // 对于每个段落，nondocx 的拼接文本必须等于原始 POI 从同一文件中提取的内容——
+    // 这是对我们的读取路径与 POI 一致的独立确认。
     Path file = tmp.resolve("cross-read.docx");
 
     Document original = Docx.create();
@@ -96,7 +95,7 @@ class PoiCrossReferenceTest {
             .as("paragraph %d text matches POI native", i)
             .isEqualTo(poiParas.get(i).getText());
       }
-      // multi-run paragraph concatenation matches POI
+      // 多 run 段落拼接与 POI 一致
       assertThat(opened.paragraph(1).text()).isEqualTo("plain tail");
     }
   }
@@ -107,15 +106,15 @@ class PoiCrossReferenceTest {
 
     Document original = Docx.create();
     Table table = original.addTable();
-    table.addRow(); // row 0
+    table.addRow(); // 第 0 行
     table.row(0).addCell().text("A1");
     table.row(0).addCell().text("B1");
-    table.addRow(); // row 1
+    table.addRow(); // 第 1 行
     table.row(1).addCell().text("A2");
     table.row(1).addCell().text("B2");
     original.save(file);
 
-    // Read the same bytes with raw POI — independent of our wrappers.
+    // 用原始 POI 读取同一字节——独立于我们的包装器。
     String p00, p01, p10, p11;
     try (XWPFDocument poi = new XWPFDocument(Files.newInputStream(file))) {
       XWPFTable poiTable = poi.getTables().get(0);
@@ -127,7 +126,7 @@ class PoiCrossReferenceTest {
       p11 = poiTable.getRow(1).getCell(1).getText();
     }
 
-    // Our wrapper must agree with POI's native extraction on the same fields.
+    // 我们的包装器必须与 POI 在同一字段上的原生提取一致。
     try (Document opened = Docx.open(file)) {
       Table our = opened.tables().get(0);
       assertThat(our.rows()).hasSize(2);

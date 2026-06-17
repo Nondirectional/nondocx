@@ -9,15 +9,13 @@ import com.non.docx.core.internal.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * Fluent construction track for assembling a {@link Document} from scratch.
+ * 流式构建轨道，用于从零组装一个 {@link Document}。
  *
- * <p>This is the "construction track" from the design (design.md §4.5): a thin orchestrator over
- * nondocx's mutable live objects. Every method delegates to the live {@link Document} / {@link
- * Paragraph} / {@link Table} building blocks ({@code addParagraph}, {@code addTable}, {@code
- * addRun}, ...). No run, paragraph, or table behavior is duplicated here — the builder only
- * composes those blocks, so any style or round-trip semantics live in exactly one place.
+ * <p>这是设计文档（design.md §4.5）中定义的"构建轨道"：对 nondocx 可变活动对象的轻量编排器。 每个方法都委托给活动对象 {@link Document} /
+ * {@link Paragraph} / {@link Table} 的构建块 （{@code addParagraph}、{@code addTable}、{@code
+ * addRun}……）。这里不重复 run、段落或表格的 任何行为——构建器只组合这些块，因此所有样式或往返语义都只存在于一个位置。
  *
- * <p>Typical usage:
+ * <p>典型用法：
  *
  * <pre>{@code
  * Document doc = DocumentBuilder.start()
@@ -27,17 +25,13 @@ import java.util.function.Consumer;
  *     .build();
  * }</pre>
  *
- * <p>The configurator lambdas ({@link #paragraph(Consumer)}, {@link #table(Consumer)}) receive the
- * live {@code Paragraph} / {@code Table} directly, so callers get the full run / cell / style API
- * for free — there is no parallel "builder-only" vocabulary to learn.
+ * <p>配置器 lambda（{@link #paragraph(Consumer)}、{@link #table(Consumer)}）直接接收活动对象 {@code Paragraph} /
+ * {@code Table}，因此调用方可以免费获得完整的 run / cell / 样式 API—— 无需学习一套并行的"仅构建器"词汇。
  *
- * <p>The builder accumulates into a single underlying {@link Document} across the whole chain. The
- * {@link Document} returned by {@link #build()} is the very same mutable live-object document used
- * throughout nondocx (its delegate is an {@code XWPFDocument}); the caller owns it and is
- * responsible for closing it.
+ * <p>构建器在整个链中累积到一个底层 {@link Document}。{@link #build()} 返回的 {@link Document} 正是 nondocx
+ * 中一直使用的可变活动对象文档（其委托是一个 {@code XWPFDocument}）；调用方拥有 它并负责关闭它。
  *
- * <p>This class references only {@code api/} types plus {@link Docx} — no POI types appear in its
- * signatures.
+ * <p>此类仅引用 {@code api/} 类型及 {@link Docx}——其签名中不出现 POI 类型。
  */
 public final class DocumentBuilder {
 
@@ -48,23 +42,23 @@ public final class DocumentBuilder {
   }
 
   /**
-   * Starts a new builder over a fresh, empty document.
+   * 在一个新的空文档上启动一个新构建器。
    *
-   * @return a new builder backed by {@code Docx.create()}
+   * @return 由 {@code Docx.create()} 支持的新构建器
    */
   public static DocumentBuilder start() {
     return new DocumentBuilder(Docx.create());
   }
 
   /**
-   * Appends a heading paragraph with the given level and text, and returns this builder.
+   * 追加一个具有给定级别和文本的标题段落，并返回此构建器。
    *
-   * <p>This is a convenience for {@code addParagraph().heading(level).addRun(text)}.
+   * <p>这是 {@code addParagraph().heading(level).addRun(text)} 的便捷方法。
    *
-   * @param level the heading level (not {@code null})
-   * @param text the heading text (not {@code null})
-   * @return this builder
-   * @throws IllegalArgumentException if {@code level} or {@code text} is {@code null}
+   * @param level 标题级别（不能为 {@code null}）
+   * @param text 标题文本（不能为 {@code null}）
+   * @return 此构建器
+   * @throws IllegalArgumentException 如果 {@code level} 或 {@code text} 为 {@code null}
    */
   public DocumentBuilder heading(HeadingLevel level, String text) {
     Objects.requireNonNull(level, "level");
@@ -74,13 +68,13 @@ public final class DocumentBuilder {
   }
 
   /**
-   * Appends a new paragraph carrying the given plain text, and returns this builder.
+   * 追加一个携带给定纯文本的新段落，并返回此构建器。
    *
-   * <p>This is a convenience for {@link Document#addParagraph(String)}.
+   * <p>这是 {@link Document#addParagraph(String)} 的便捷方法。
    *
-   * @param text the paragraph text (not {@code null})
-   * @return this builder
-   * @throws IllegalArgumentException if {@code text} is {@code null}
+   * @param text 段落文本（不能为 {@code null}）
+   * @return 此构建器
+   * @throws IllegalArgumentException 如果 {@code text} 为 {@code null}
    */
   public DocumentBuilder paragraph(String text) {
     document.addParagraph(text);
@@ -88,17 +82,16 @@ public final class DocumentBuilder {
   }
 
   /**
-   * Appends a new, empty paragraph, applies the given configurator to it, and returns this builder.
+   * 追加一个新的空段落，对其应用给定配置器，并返回此构建器。
    *
-   * <p>The configurator operates on the live {@link Paragraph}, so it has the full run and
-   * paragraph-style API available — for example {@code .paragraph(p ->
-   * p.addRun("hi").bold().fontSize(14))} or {@code .paragraph(p ->
-   * p.heading(HeadingLevel.H2).addRun("section"))}. No run or style logic is duplicated here; every
-   * call reaches the live {@code Paragraph}.
+   * <p>配置器操作活动对象 {@link Paragraph}，因此它拥有完整的 run 和段落样式 API—— 例如 {@code .paragraph(p ->
+   * p.addRun("hi").bold().fontSize(14))} 或 {@code .paragraph(p ->
+   * p.heading(HeadingLevel.H2).addRun("section"))}。 此处不重复任何 run 或样式逻辑；每次调用都到达活动对象 {@code
+   * Paragraph}。
    *
-   * @param config the paragraph configurator, operating on the live paragraph (not {@code null})
-   * @return this builder
-   * @throws IllegalArgumentException if {@code config} is {@code null}
+   * @param config 段落配置器，操作活动段落（不能为 {@code null}）
+   * @return 此构建器
+   * @throws IllegalArgumentException 如果 {@code config} 为 {@code null}
    */
   public DocumentBuilder paragraph(Consumer<Paragraph> config) {
     Objects.requireNonNull(config, "config");
@@ -108,16 +101,15 @@ public final class DocumentBuilder {
   }
 
   /**
-   * Appends a new, empty table, applies the given configurator to it, and returns this builder.
+   * 追加一个新的空表格，对其应用给定配置器，并返回此构建器。
    *
-   * <p>The configurator operates on the live {@link Table}, so it has the full row / cell API
-   * available — for example {@code .table(t -> t.row(r -> r.cell("A1").cell("B1")).row(r ->
-   * r.cell("A2").cell("B2")))}. No row or cell logic is duplicated here; every call reaches the
-   * live {@code Table}.
+   * <p>配置器操作活动对象 {@link Table}，因此它拥有完整的行/单元格 API—— 例如 {@code .table(t -> t.row(r ->
+   * r.cell("A1").cell("B1")).row(r -> r.cell("A2").cell("B2")))}。此处不重复任何行或单元格逻辑；每次调用都到达 活动对象 {@code
+   * Table}。
    *
-   * @param config the table configurator, operating on the live table (not {@code null})
-   * @return this builder
-   * @throws IllegalArgumentException if {@code config} is {@code null}
+   * @param config 表格配置器，操作活动表格（不能为 {@code null}）
+   * @return 此构建器
+   * @throws IllegalArgumentException 如果 {@code config} 为 {@code null}
    */
   public DocumentBuilder table(Consumer<Table> config) {
     Objects.requireNonNull(config, "config");
@@ -127,14 +119,12 @@ public final class DocumentBuilder {
   }
 
   /**
-   * Returns the assembled document.
+   * 返回已组装好的文档。
    *
-   * <p>The returned document is the live, mutable document accumulated throughout this builder
-   * chain. It is the same kind of {@link Document} obtained from {@link Docx#create()} or {@link
-   * Docx#open}, so it composes with the rest of the API (save it, keep mutating it, etc.). The
-   * caller owns it and should close it when done.
+   * <p>返回的文档是在此构建器链中累积的活动可变文档。它与从 {@link Docx#create()} 或 {@link Docx#open} 获得的 {@link Document}
+   * 是同一类型，因此可与 API 的其他部分组合 （保存它、继续修改它等）。调用方拥有它，并应在使用完毕后关闭它。
    *
-   * @return the assembled document (never {@code null})
+   * @return 已组装的文档（从不 {@code null}）
    */
   public Document build() {
     return document;

@@ -12,10 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies that the document body preserves the true interleaved order of paragraphs and tables,
- * that {@code paragraphs()} / {@code tables()} are consistent filtered views of that order, and
- * that the order survives a round trip. This guards the {@code BodyElement} ordering contract
- * (design §3.1).
+ * 验证文档正文保留段落和表格的真实交错顺序， 且 {@code paragraphs()} / {@code tables()} 是该顺序的一致过滤视图， 并验证该顺序在往返后存活。此测试守卫着
+ * {@code BodyElement} 排序契约 （设计文档 §3.1）。
  */
 class BodyElementOrderTest {
 
@@ -30,7 +28,7 @@ class BodyElementOrderTest {
     original.addParagraph("P2");
     original.save(file);
 
-    // in-memory order
+    // 内存中的顺序
     assertInterleavedOrder(original.bodyElements(), original);
 
     try (Document opened = Docx.open(file)) {
@@ -47,11 +45,11 @@ class BodyElementOrderTest {
     assertThat(body.get(1)).isInstanceOf(Table.class);
     assertThat(body.get(2)).isInstanceOf(Paragraph.class);
 
-    // filtered views are consistent projections of the same order
+    // 过滤视图是同一顺序的一致投影
     assertThat(doc.paragraphs()).as("paragraphs() is the Paragraph-only filtered view").hasSize(2);
     assertThat(doc.tables()).as("tables() is the Table-only filtered view").hasSize(1);
 
-    // the filtered paragraphs are exactly the two body paragraphs, in order
+    // 过滤后的段落正好是按顺序的两个正文段落
     assertThat(doc.paragraph(0)).isEqualTo(body.get(0));
     assertThat(doc.paragraph(1)).isEqualTo(body.get(2));
     assertThat(doc.tables().get(0)).isEqualTo(body.get(1));
@@ -68,7 +66,7 @@ class BodyElementOrderTest {
 
     List<BodyElement> body = doc.bodyElements();
     assertThat(body).hasSize(5);
-    // expected type sequence: P, T, P, P, T (in call order)
+    // 预期的类型序列：P、T、P、P、T（按调用顺序）
     assertThat(body.get(0)).isInstanceOf(Paragraph.class);
     assertThat(body.get(1)).isInstanceOf(Table.class);
     assertThat(body.get(2)).isInstanceOf(Paragraph.class);
@@ -78,7 +76,7 @@ class BodyElementOrderTest {
     assertThat(doc.paragraphs()).hasSize(3); // a, b, c
     assertThat(doc.tables()).hasSize(2);
 
-    // the filtered paragraphs preserve their body order, not a re-sort
+    // 过滤后的段落保持其正文顺序，而非重新排序
     assertThat(doc.paragraph(0).text()).isEqualTo("a");
     assertThat(doc.paragraph(1).text()).isEqualTo("b");
     assertThat(doc.paragraph(2).text()).isEqualTo("c");

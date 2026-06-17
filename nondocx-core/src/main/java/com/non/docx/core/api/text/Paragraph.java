@@ -207,7 +207,7 @@ public final class Paragraph implements BodyElement {
       hyperlink.setText(text);
       return new Hyperlink(hyperlink);
     } catch (POIXMLException e) {
-      throw new DocxIOException("Failed to create hyperlink", e);
+      throw new DocxIOException("无法创建超链接", e);
     }
   }
 
@@ -245,7 +245,7 @@ public final class Paragraph implements BodyElement {
               Pictures.emuFromPixels(height));
       return new Image(picture);
     } catch (IOException | InvalidFormatException | POIXMLException e) {
-      throw new DocxIOException("Failed to add inline image", e);
+      throw new DocxIOException("无法添加内联图像", e);
     }
   }
 

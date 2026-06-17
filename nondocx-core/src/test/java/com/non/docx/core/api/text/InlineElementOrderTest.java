@@ -11,9 +11,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies that a paragraph's {@code inlineElements()} preserves the true reading order of runs and
- * hyperlinks, that {@code runs()} is the Run-only filtered view (hyperlinks excluded), and that the
- * order survives a round-trip.
+ * 验证段落的 {@code inlineElements()} 保留 run 和超链接的真实阅读顺序， {@code runs()} 是仅 run 的过滤视图（排除了超链接），
+ * 且该顺序在往返后存活。
  */
 class InlineElementOrderTest {
 
@@ -83,7 +82,7 @@ class InlineElementOrderTest {
     p.addHyperlink("link", "https://example.com/");
     p.addRun("b");
 
-    p.removeInlineElement(1); // remove the hyperlink
+    p.removeInlineElement(1); // 移除超链接
 
     assertThat(p.inlineElements()).hasSize(2);
     assertThat(p.runs()).hasSize(2);

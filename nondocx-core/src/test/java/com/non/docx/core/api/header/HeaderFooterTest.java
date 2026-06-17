@@ -9,15 +9,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies that section-scoped {@link Header} / {@link Footer} round-trip through save → open, that
- * {@code Document.header()} / {@code Document.footer()} delegate to the first section, and that
- * header / footer content equality is driven by their ordered paragraphs (design §4.4, §7).
+ * 验证节作用域的 {@link Header} / {@link Footer} 在保存→打开往返中存活， 且 {@code Document.header()} / {@code
+ * Document.footer()} 委托给第一个节， 以及页眉/页脚内容相等性由其有序段落驱动（设计文档 §4.4、§7）。
  *
- * <p>The MVP exposes the default (odd-page) header / footer only. Multi-section header / footer
- * distinctness is intentionally not asserted here: POI has no clean public API for inserting a
- * mid-body section break, and the design treats section-scoped header/footer primarily via {@code
- * Section.header()} / {@code Section.footer()} on each {@code Section} rather than via a global.
- * Single-section header / footer is exercised thoroughly below.
+ * <p>MVP 仅暴露默认（奇数页）页眉/页脚。有意不在此处断言多节页眉/页脚 的区分性：POI 没有干净的公 共 API 用于在正文中间插入分节符， 设计文档主要通过每个 {@code
+ * Section} 上的 {@code Section.header()} / {@code Section.footer()} 而非全局方式处理节作用域的页眉/页脚。
+ * 下面充分测试了单节页眉/页脚。
  */
 class HeaderFooterTest {
 
@@ -58,7 +55,7 @@ class HeaderFooterTest {
     Document doc = Docx.create();
     doc.header().addParagraph().addRun("Shared header");
 
-    // Document.header() is a convenience for section(0).header(); both resolve the same content.
+    // Document.header() 是 section(0).header() 的便捷方法；两者解析相同的内容。
     assertThat(doc.header()).isEqualTo(doc.section(0).header());
     assertThat(doc.header().text()).isEqualTo(doc.section(0).header().text());
   }
@@ -74,7 +71,7 @@ class HeaderFooterTest {
 
   @Test
   void headerIsCreateOnce() {
-    // First access creates and attaches an empty default header; later calls return that header.
+    // 首次访问创建并附加一个空的默认页眉；后续调用返回该页眉。
     Document doc = Docx.create();
     Header first = doc.header();
     first.addParagraph().addRun("Persistent");
@@ -108,11 +105,11 @@ class HeaderFooterTest {
     Document c = Docx.create();
     c.header().addParagraph().addRun("Different");
 
-    // same paragraph content → equal (even though backed by distinct XWPFHeader instances)
+    // 相同的段落内容→相等（即使由不同的 XWPFHeader 实例支持）
     assertThat(a.header()).isEqualTo(b.header());
     assertThat(a.header().hashCode()).isEqualTo(b.header().hashCode());
 
-    // differing content → not equal
+    // 不同的内容→不相等
     assertThat(a.header()).isNotEqualTo(c.header());
   }
 
@@ -136,7 +133,7 @@ class HeaderFooterTest {
   void emptyHeaderIsEqualToOtherEmptyHeader() {
     Document a = Docx.create();
     Document b = Docx.create();
-    // both headers created but no paragraphs added
+    // 两个页眉都已创建，但未添加段落
     a.header();
     b.header();
     assertThat(a.header()).isEqualTo(b.header());
@@ -147,7 +144,7 @@ class HeaderFooterTest {
     Document doc = Docx.create();
     doc.header().addParagraph().addRun("Same text");
     doc.footer().addParagraph().addRun("Same text");
-    // a header and a footer are different types even with identical paragraph content
+    // 页眉和页脚是不同的类型，即使段落内容相同
     assertThat(doc.header()).isNotEqualTo(doc.footer());
     assertThat(doc.footer()).isNotEqualTo(doc.header());
   }

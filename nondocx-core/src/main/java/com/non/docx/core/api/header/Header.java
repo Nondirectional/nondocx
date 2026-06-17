@@ -7,52 +7,44 @@ import java.util.List;
 import org.apache.poi.xwpf.usermodel.XWPFHeader;
 
 /**
- * A document header — a section-scoped container of paragraphs rendered at the top of each page.
+ * 文档页眉 — 章节级别的段落容器，渲染在每页顶部。
  *
- * <p>Holds an Apache POI {@code XWPFHeader} delegate and exposes a live view over it. Reads go
- * straight through to the delegate; there is no cached snapshot. Every mutation is write-through.
+ * <p>持有 Apache POI {@code XWPFHeader} 委托，并在其上暴露活跃视图。读取 直接穿透到委托；没有缓存快照。每次修改都是直接写入。
  *
- * <p>A header is <em>not</em> a body element — it lives outside the document body, attached to a
- * {@link com.non.docx.core.api.section.Section} via a header reference. Its content is an ordered
- * sequence of paragraphs, returned by {@link #paragraphs()}. Content equality ({@code equals} /
- * {@code hashCode}) compares that ordered paragraph sequence, never the delegate reference, so two
- * headers over distinct POI instances but with the same paragraphs are equal — this is what makes
- * round-trip assertions work.
+ * <p>页眉 <em>不是</em> 正文元素 — 它位于文档正文之外，通过页眉引用附加到 {@link com.non.docx.core.api.section.Section}。其内容是 由
+ * {@link #paragraphs()} 返回的有序段落序列。内容相等性（{@code equals} / {@code hashCode}）比较该有序段落序列，从不比较委托引用，因此两个
+ * 基于不同 POI 实例但具有相同段落的页眉是相等的 — 这就是 往返断言能正常工作的原因。
  *
- * <p>{@link #text()} returns the header's concatenated plain text. {@link #addParagraph()} appends
- * a new, empty paragraph and returns a live wrapper for it.
+ * <p>{@link #text()} 返回页眉的拼接纯文本。{@link #addParagraph()} 追加 一个新的空段落并返回其活跃包装器。
  *
- * <p>This is a <em>mutable live object</em>. Its {@code equals} / {@code hashCode} serve comparison
- * and round-trip assertions; they are not suited as a long-lived {@code HashMap} key, since the
- * underlying content can change at any time.
+ * <p>这是一个 <em>可变的活动对象</em>。其 {@code equals} / {@code hashCode} 用于比较 和往返断言；它们不适合作为长期存在的 {@code
+ * HashMap} 键，因为 底层内容随时可能改变。
  *
- * <p><b>Scope.</b> The MVP exposes the default (odd-page) header only. First-page and even-page
- * header variants are out of scope and reachable via {@code raw()}.
+ * <p><b>范围。</b> MVP 只暴露默认（奇数页）页眉。首页和偶数页 页眉变体不在范围内，可通过 {@code raw()} 访问。
  */
 public final class Header {
 
   private final XWPFHeader delegate;
 
   /**
-   * Wraps the given POI header.
+   * 封装给定的 POI 页眉。
    *
-   * <p>This constructor is the internal seam by which {@link com.non.docx.core.api.section.Section}
-   * produces live header wrappers, so it accepts a POI type by design. Users obtain headers via
-   * {@code Section.header()} / {@code Document.header()} rather than constructing them directly.
+   * <p>此构造函数是 {@link com.non.docx.core.api.section.Section} 生成活跃页眉包装器的内部接缝， 因此它有意接受 POI 类型。用户通过
+   * {@code Section.header()} / {@code Document.header()} 获取页眉，而不是直接构造它们。
    *
-   * @param delegate the backing POI header (not {@code null})
-   * @throws IllegalArgumentException if {@code delegate} is {@code null}
+   * @param delegate 底层的 POI 页眉（不能为 {@code null}）
+   * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
    */
   public Header(XWPFHeader delegate) {
     this.delegate = Objects.requireNonNull(delegate, "delegate");
   }
 
   /**
-   * Returns a live view of this header's paragraphs in reading order.
+   * 返回此页眉的段落的活跃视图，按阅读顺序排列。
    *
-   * <p>The view is re-read from the delegate on every access, so mutations are reflected live.
+   * <p>每次访问时都会从委托重新读取视图，因此变更会实时反映。
    *
-   * @return a live, unmodifiable list of paragraphs
+   * @return 活跃、不可修改的段落列表
    */
   public List<Paragraph> paragraphs() {
     return new AbstractList<Paragraph>() {
@@ -69,46 +61,46 @@ public final class Header {
   }
 
   /**
-   * Returns the paragraph at the given index.
+   * 返回指定索引处的段落。
    *
-   * @param index paragraph index (0-based, into {@link #paragraphs()})
-   * @return the paragraph at that position
-   * @throws IndexOutOfBoundsException if {@code index} is out of range
+   * @param index 段落索引（从 0 开始，指向 {@link #paragraphs()}）
+   * @return 该位置的段落
+   * @throws IndexOutOfBoundsException 如果 {@code index} 超出范围
    */
   public Paragraph paragraph(int index) {
     return paragraphs().get(index);
   }
 
   /**
-   * Appends a new, empty paragraph to this header and returns a live wrapper for it.
+   * 向此页眉追加一个新的空段落，并返回其活跃包装器。
    *
-   * @return the newly appended paragraph
+   * @return 新追加的段落
    */
   public Paragraph addParagraph() {
     return new Paragraph(delegate.createParagraph());
   }
 
   /**
-   * Returns this header's concatenated plain text (all paragraphs joined in reading order).
+   * 返回此页眉的拼接纯文本（所有段落按阅读顺序连接）。
    *
-   * @return the header text (possibly empty, never {@code null})
+   * @return 页眉文本（可能为空，从不返回 {@code null}）
    */
   public String text() {
     return delegate.getText();
   }
 
   /**
-   * Returns the underlying POI header.
+   * 返回底层的 POI 页眉。
    *
-   * <p>Modifications to the returned object affect the document immediately. Use with caution.
+   * <p>对返回对象的修改会立即影响文档。请谨慎使用。
    *
-   * @return the backing {@code XWPFHeader} instance (same instance for the wrapper's lifetime)
+   * @return 底层的 {@code XWPFHeader} 实例（包装器生命周期内同一实例）
    */
   public XWPFHeader raw() {
     return delegate;
   }
 
-  // ---------- content equality ----------
+  // ---------- 内容相等 ----------
 
   @Override
   public boolean equals(Object o) {

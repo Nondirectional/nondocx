@@ -7,55 +7,47 @@ import org.apache.poi.xwpf.usermodel.XWPFHyperlink;
 import org.apache.poi.xwpf.usermodel.XWPFHyperlinkRun;
 
 /**
- * A hyperlink — an inline fragment whose visible text links to a target (typically an external
- * URL).
+ * 超链接 — 其可见文本链接到目标（通常是外部 URL）的内联片段。
  *
- * <p>Holds an Apache POI {@code XWPFHyperlinkRun} delegate (which itself extends {@code XWPFRun})
- * and exposes its display text and target URL. Reads go straight through to the delegate; there is
- * no cached snapshot.
+ * <p>持有 Apache POI {@code XWPFHyperlinkRun} 委托（它本身扩展了 {@code XWPFRun}） 并暴露其显示文本和目标 URL。读取直接穿透到委托；
+ * 没有缓存快照。
  *
- * <p><b>URL resolution.</b> OOXML stores a hyperlink as a run carrying a relationship id (rId); the
- * actual target lives in the document's relationship part. {@link #url()} follows that rId through
- * the owning document to the external target. The document is reached via the run's own {@code
- * getDocument()} reference, so no extra parameter is needed; if the relationship cannot be resolved
- * (for example the run is detached from its document, or the hyperlink targets an internal anchor
- * rather than a URL), {@code url()} returns {@code null}.
+ * <p><b>URL 解析。</b> OOXML 将超链接存储为携带关系 id（rId）的运行； 实际目标存在于文档的关系部分。{@link #url()} 通过所属文档跟踪该 rId 到
+ * 外部目标。通过运行自己的 {@code getDocument()} 引用访问文档， 因此不需要额外参数；如果无法解析关系 （例如运行与其文档分离，或超链接指向内部锚点 而非
+ * URL），{@code url()} 返回 {@code null}。
  *
- * <p>Content equality compares the visible text and the resolved URL, never the delegate reference.
+ * <p>内容相等性比较可见文本和已解析的 URL，从不比较委托引用。
  */
 public final class Hyperlink implements InlineElement {
 
   private final XWPFHyperlinkRun delegate;
 
   /**
-   * Wraps the given POI hyperlink run.
+   * 封装给定的 POI 超链接运行。
    *
-   * <p>This constructor is the internal seam by which {@link Paragraph} produces live hyperlink
-   * wrappers, so it accepts a POI type by design. Users normally obtain hyperlinks via {@code
-   * Paragraph.addHyperlink(...)} rather than constructing them.
+   * <p>此构造函数是 {@link Paragraph} 生成活跃超链接包装器的内部接缝， 因此它有意接受 POI 类型。用户通常通过 {@code
+   * Paragraph.addHyperlink(...)} 获取超链接，而不是直接构造它们。
    *
-   * @param delegate the backing POI hyperlink run (not {@code null})
-   * @throws IllegalArgumentException if {@code delegate} is {@code null}
+   * @param delegate 底层的 POI 超链接运行（不能为 {@code null}）
+   * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
    */
   public Hyperlink(XWPFHyperlinkRun delegate) {
     this.delegate = Objects.requireNonNull(delegate, "delegate");
   }
 
   /**
-   * Returns the hyperlink's visible (display) text.
+   * 返回超链接的可见（显示）文本。
    *
-   * @return the visible text (possibly empty, never {@code null})
+   * @return 可见文本（可能为空，从不返回 {@code null}）
    */
   public String text() {
     return delegate.text();
   }
 
   /**
-   * Resolves and returns the hyperlink's target URL, following the run's relationship id to the
-   * document's relationship part.
+   * 解析并返回超链接的目标 URL，跟踪运行的关系 id 到 文档的关系部分。
    *
-   * @return the target URL, or {@code null} if this hyperlink targets an internal anchor or the
-   *     relationship cannot be resolved
+   * @return 目标 URL，如果此超链接指向内部锚点或无法解析关系则返回 {@code null}
    */
   public String url() {
     XWPFDocument document = delegate.getDocument();
@@ -67,12 +59,11 @@ public final class Hyperlink implements InlineElement {
   }
 
   /**
-   * Returns the underlying POI hyperlink run.
+   * 返回底层的 POI 超链接运行。
    *
-   * <p>Modifications to the returned object affect the document immediately. Use with caution.
+   * <p>对返回对象的修改会立即影响文档。请谨慎使用。
    *
-   * @return the backing {@code XWPFHyperlinkRun} instance (same instance for the wrapper's
-   *     lifetime)
+   * @return 底层的 {@code XWPFHyperlinkRun} 实例（包装器生命周期内同一实例）
    */
   public XWPFHyperlinkRun raw() {
     return delegate;

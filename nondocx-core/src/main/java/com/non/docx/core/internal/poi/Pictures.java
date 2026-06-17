@@ -10,46 +10,43 @@ import org.openxmlformats.schemas.drawingml.x2006.main.CTTransform2D;
 import org.openxmlformats.schemas.drawingml.x2006.picture.CTPicture;
 
 /**
- * Internal API — subject to change without notice.
+ * 内部 API——恕不另行通知即可更改。
  *
- * <p>Reads geometry and payload off an Apache POI {@link XWPFPicture} so that the public {@code
- * Image} type can stay free of POI / XmlBeans imports at the source level.
+ * <p>从 Apache POI {@link XWPFPicture} 中读取几何数据和负载，以便公有 {@code Image} 类型 在源代码层面保持无 POI / XmlBeans 导入。
  *
- * <p>Dimensions are read from the picture's drawing extent, which Apache POI stores in EMU, and
- * converted to pixels using {@link Units#EMU_PER_PIXEL} (9525 EMU per pixel at 96&nbsp;DPI). That
- * is the exact inverse of what {@code XWPFRun.addPicture} writes (it multiplies pixel inputs by
- * {@code EMU_PER_PIXEL}), so the pixel values survive a save → open round-trip without rounding.
+ * <p>尺寸从图片的绘图范围读取，Apache POI 以 EMU 存储，并使用 {@link Units#EMU_PER_PIXEL} 转换为像素（96&nbsp;DPI 下每像素 9525
+ * EMU）。这正是 {@code XWPFRun.addPicture} 写入的 逆运算（它将像素输入乘以 {@code EMU_PER_PIXEL}），因此像素值在保存→打开往返中
+ * 无舍入错误地存活。
  */
 public final class Pictures {
 
   private Pictures() {}
 
   /**
-   * Returns the picture's width in pixels (96&nbsp;DPI), or {@code 0} if no extent is stored.
+   * 返回图片的宽度（像素，96&nbsp;DPI），如果没有存储范围则返回 {@code 0}。
    *
-   * @param picture the POI picture (not {@code null})
-   * @return the width in pixels, or {@code 0}
+   * @param picture POI 图片（不能为 {@code null}）
+   * @return 宽度（像素），或 {@code 0}
    */
   public static int widthPixels(XWPFPicture picture) {
     return emuToPixels(extent(picture, true));
   }
 
   /**
-   * Returns the picture's height in pixels (96&nbsp;DPI), or {@code 0} if no extent is stored.
+   * 返回图片的高度（像素，96&nbsp;DPI），如果没有存储范围则返回 {@code 0}。
    *
-   * @param picture the POI picture (not {@code null})
-   * @return the height in pixels, or {@code 0}
+   * @param picture POI 图片（不能为 {@code null}）
+   * @return 高度（像素），或 {@code 0}
    */
   public static int heightPixels(XWPFPicture picture) {
     return emuToPixels(extent(picture, false));
   }
 
   /**
-   * Returns the picture's stored format as a POI {@link PictureType}, or {@code null} if the
-   * picture carries no data part.
+   * 返回图片的存储格式作为 POI {@link PictureType}，如果图片没有数据部分则返回 {@code null}。
    *
-   * @param picture the POI picture (not {@code null})
-   * @return the POI picture type, or {@code null}
+   * @param picture POI 图片（不能为 {@code null}）
+   * @return POI 图片类型，或 {@code null}
    */
   public static PictureType pictureTypeOf(XWPFPicture picture) {
     XWPFPictureData data = picture.getPictureData();
@@ -57,10 +54,10 @@ public final class Pictures {
   }
 
   /**
-   * Returns the raw picture bytes, or an empty array if the picture carries no data part.
+   * 返回原始图片字节，如果图片没有数据部分则返回空数组。
    *
-   * @param picture the POI picture (not {@code null})
-   * @return the picture bytes (never {@code null})
+   * @param picture POI 图片（不能为 {@code null}）
+   * @return 图片字节（从不 {@code null}）
    */
   public static byte[] bytesOf(XWPFPicture picture) {
     XWPFPictureData data = picture.getPictureData();
@@ -68,25 +65,22 @@ public final class Pictures {
   }
 
   /**
-   * Converts a pixel dimension (96&nbsp;DPI) to EMU, the unit Apache POI's {@code addPicture}
-   * stores on the picture extent. This is the exact inverse of {@link #widthPixels} / {@link
-   * #heightPixels}: {@code emuFromPixels(p)} &times; read-back yields {@code p} unchanged.
+   * 将像素尺寸（96&nbsp;DPI）转换为 EMU——Apache POI 的 {@code addPicture} 在图片范围上 存储的单位。这是 {@link #widthPixels}
+   * / {@link #heightPixels} 的精确逆运算： {@code emuFromPixels(p)} × 读回得到未改变的 {@code p}。
    *
-   * <p>Apache POI's {@code XWPFRun.addPicture(..., int width, int height)} treats the width /
-   * height as EMU (it stores them verbatim on the {@code <wp:extent>}), so callers working in
-   * pixels must convert first.
+   * <p>Apache POI 的 {@code XWPFRun.addPicture(..., int width, int height)} 将宽度/高度 视为
+   * EMU（它直接将它们原样存储在 {@code <wp:extent>} 上），因此以像素工作的调用方 必须首先转换。
    *
-   * @param pixels the pixel value (96&nbsp;DPI)
-   * @return the equivalent EMU value
+   * @param pixels 像素值（96&nbsp;DPI）
+   * @return 等效的 EMU 值
    */
   public static int emuFromPixels(int pixels) {
     return pixels * Units.EMU_PER_PIXEL;
   }
 
   /**
-   * Reads the picture's extent ({@code cx} for width, {@code cy} for height) in EMU. Returns {@code
-   * 0} when the drawing extent is absent rather than throwing, so {@code equals} on the public
-   * wrapper never throws on a malformed picture.
+   * 读取图片的范围（{@code cx} 为宽度，{@code cy} 为高度），单位为 EMU。当绘图范围不存在时 返回 {@code 0} 而不是抛出异常，这样公有包装器的 {@code
+   * equals} 在格式错误的图片上 永远不会抛出。
    */
   private static long extent(XWPFPicture picture, boolean width) {
     try {

@@ -6,14 +6,12 @@ import com.non.docx.core.internal.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * Construction-track helper for assembling a single {@link Table}.
+ * 构建轨道辅助类，用于组装单个 {@link Table}。
  *
- * <p>This is a thin wrapper over a live {@link Table}. Row creation delegates to the live table's
- * building blocks ({@link Table#addRow()} and the lambda convenience {@link Table#row(Consumer)});
- * no row or cell behavior is duplicated here — every call reaches the live {@code Table} / {@code
- * Row} / {@code Cell}.
+ * <p>这是一个对活动对象 {@link Table} 的薄包装器。行的创建委托给活动表格的构建块 （{@link Table#addRow()} 和 lambda 便捷方法 {@link
+ * Table#row(Consumer)}）； 此处不重复任何行或单元格行为——每次调用都到达活动对象 {@code Table} / {@code Row} / {@code Cell}。
  *
- * <p>Example:
+ * <p>示例：
  *
  * <pre>{@code
  * TableBuilder.on(table)
@@ -21,11 +19,10 @@ import java.util.function.Consumer;
  *     .row(r -> r.cell("A2").cell("B2"));
  * }</pre>
  *
- * To assemble a table from scratch, prefer {@link DocumentBuilder#table(Consumer)}, which hands the
- * live table straight to a lambda; this class is for callers who prefer an explicit builder object
- * over a lambda.
+ * 如需从零组装表格，推荐使用 {@link DocumentBuilder#table(Consumer)}，它将活动表格直接交给 lambda；此类适用于希望使用显式构建器对象而非 lambda
+ * 的调用方。
  *
- * <p>This class references only {@code api/} types — no POI types appear in its signatures.
+ * <p>此类仅引用 {@code api/} 类型——其签名中不出现 POI 类型。
  */
 public final class TableBuilder {
 
@@ -36,11 +33,11 @@ public final class TableBuilder {
   }
 
   /**
-   * Creates a builder over the given live table.
+   * 在给定的活动表格上创建一个构建器。
    *
-   * @param table the live table to assemble into (not {@code null})
-   * @return a new builder
-   * @throws IllegalArgumentException if {@code table} is {@code null}
+   * @param table 要组装成的活动表格（不能为 {@code null}）
+   * @return 新构建器
+   * @throws IllegalArgumentException 如果 {@code table} 为 {@code null}
    */
   public static TableBuilder on(Table table) {
     Objects.requireNonNull(table, "table");
@@ -48,24 +45,22 @@ public final class TableBuilder {
   }
 
   /**
-   * Appends a new, empty row and returns the live row, so the caller can populate its cells
-   * directly (for example {@code .row().cell("A1").cell("B1")}).
+   * 追加一个新的空行并返回活动行，以便调用方可以直接填充其单元格 （例如 {@code .row().cell("A1").cell("B1")}）。
    *
-   * @return the newly appended live row
+   * @return 新追加的活动行
    */
   public Row row() {
     return table.addRow();
   }
 
   /**
-   * Appends a new row, applies the given configurator to it, and returns this builder. The
-   * configurator operates on the live {@link Row}.
+   * 追加一个新行，对其应用给定配置器，并返回此构建器。配置器操作活动对象 {@link Row}。
    *
-   * <p>This delegates to {@link Table#row(Consumer)}; no row or cell logic is duplicated.
+   * <p>这委托给 {@link Table#row(Consumer)}；不重复任何行或单元格逻辑。
    *
-   * @param config the row configurator, operating on the live row (not {@code null})
-   * @return this builder
-   * @throws IllegalArgumentException if {@code config} is {@code null}
+   * @param config 行配置器，操作活动行（不能为 {@code null}）
+   * @return 此构建器
+   * @throws IllegalArgumentException 如果 {@code config} 为 {@code null}
    */
   public TableBuilder row(Consumer<Row> config) {
     Objects.requireNonNull(config, "config");
@@ -74,9 +69,9 @@ public final class TableBuilder {
   }
 
   /**
-   * Returns the live table assembled by this builder.
+   * 返回此构建器组装的活动表格。
    *
-   * @return the backing live table (never {@code null})
+   * @return 底层的活动表格（从不 {@code null}）
    */
   public Table table() {
     return table;

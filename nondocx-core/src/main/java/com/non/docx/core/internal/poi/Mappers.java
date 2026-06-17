@@ -9,22 +9,21 @@ import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
 
 /**
- * Internal API — subject to change without notice.
+ * 内部 API——恕不另行通知即可更改。
  *
- * <p>Enum mapping bridge between nondocx's POI-free value objects and Apache POI enums. All {@code
- * org.apache.poi.*} imports needed for mapping are concentrated here so that the public value
- * objects in {@code com.non.docx.core.api.style} / {@code com.non.docx.core.api.image} stay
- * POI-free at the source level, not just at the signature level.
+ * <p>nondocx 无 POI 值对象与 Apache POI 枚举之间的枚举映射桥接。映射所需的所有 {@code org.apache.poi.*} 导入都集中在此处，以便 {@code
+ * com.non.docx.core.api.style} / {@code com.non.docx.core.api.image} 中的公有值对象在源代码层面（而不仅仅是签名层面） 保持无
+ * POI 依赖。
  */
 public final class Mappers {
 
   private Mappers() {}
 
   /**
-   * Maps a nondocx {@link Alignment} to Apache POI's {@link ParagraphAlignment}.
+   * 将 nondocx {@link Alignment} 映射到 Apache POI 的 {@link ParagraphAlignment}。
    *
-   * @param alignment the nondocx alignment (not {@code null})
-   * @return the corresponding POI alignment
+   * @param alignment nondocx 对齐方式（不能为 {@code null}）
+   * @return 对应的 POI 对齐方式
    */
   public static ParagraphAlignment toPoi(Alignment alignment) {
     if (alignment == null) {
@@ -45,14 +44,13 @@ public final class Mappers {
   }
 
   /**
-   * Maps an Apache POI {@link ParagraphAlignment} back to a nondocx {@link Alignment}.
+   * 将 Apache POI {@link ParagraphAlignment} 映射回 nondocx {@link Alignment}。
    *
-   * <p>Only the four alignments nondocx models are represented exactly; rarer POI alignments (for
-   * example {@code DISTRIBUTE} or kashida variants) collapse to {@link Alignment#LEFT} on read so
-   * that real-world documents never fail to load.
+   * <p>只有 nondocx 建模的四种对齐方式会被精确映射；较罕见的 POI 对齐方式 （例如 {@code DISTRIBUTE} 或 kashida 变体）在读取时归并为 {@link
+   * Alignment#LEFT}， 以确保实际文档永远不会加载失败。
    *
-   * @param alignment the POI alignment, or {@code null} if unset
-   * @return the corresponding nondocx alignment, or {@code null} if the input was {@code null}
+   * @param alignment POI 对齐方式，如果未设置则为 {@code null}
+   * @return 对应的 nondocx 对齐方式，如果输入为 {@code null} 则返回 {@code null}
    */
   public static Alignment fromPoi(ParagraphAlignment alignment) {
     if (alignment == null) {
@@ -74,11 +72,11 @@ public final class Mappers {
   }
 
   /**
-   * Maps a nondocx {@link HeadingLevel} to the OOXML built-in heading style id used by Word / POI
-   * ({@code "Heading1"} … {@code "Heading6"}).
+   * 将 nondocx {@link HeadingLevel} 映射到 Word / POI 使用的 OOXML 内置标题样式 ID （{@code "Heading1"} … {@code
+   * "Heading6"}）。
    *
-   * @param level the heading level (not {@code null})
-   * @return the corresponding OOXML style id (e.g. {@code "Heading2"})
+   * @param level 标题级别（不能为 {@code null}）
+   * @return 对应的 OOXML 样式 ID（例如 {@code "Heading2"}）
    */
   public static String toStyleId(HeadingLevel level) {
     if (level == null) {
@@ -88,14 +86,13 @@ public final class Mappers {
   }
 
   /**
-   * Maps an OOXML paragraph style id back to a nondocx {@link HeadingLevel}.
+   * 将 OOXML 段落样式 ID 映射回 nondocx {@link HeadingLevel}。
    *
-   * <p>Only the six built-in heading style ids ({@code "Heading1"} … {@code "Heading6"}) are
-   * recognized; every other style (including {@code null} and non-heading styles) maps to {@code
-   * null}, meaning "this paragraph is not a heading".
+   * <p>只有六个内置标题样式 ID（{@code "Heading1"} … {@code "Heading6"}）会被识别； 所有其他样式（包括 {@code null}
+   * 和非标题样式）映射为 {@code null}， 表示该段落不是标题。
    *
-   * @param style the OOXML style id, or {@code null} if unset
-   * @return the matching heading level, or {@code null} if the paragraph is not a heading
+   * @param style OOXML 样式 ID，如果未设置则为 {@code null}
+   * @return 匹配的标题级别，如果该段落不是标题则返回 {@code null}
    */
   public static HeadingLevel headingFromStyle(String style) {
     if (style == null) {
@@ -120,10 +117,10 @@ public final class Mappers {
   }
 
   /**
-   * Maps a nondocx {@link Orientation} to OOXML's {@link STPageOrientation}.
+   * 将 nondocx {@link Orientation} 映射到 OOXML 的 {@link STPageOrientation}。
    *
-   * @param orientation the nondocx orientation (not {@code null})
-   * @return the corresponding OOXML page orientation enum
+   * @param orientation nondocx 方向（不能为 {@code null}）
+   * @return 对应的 OOXML 页面方向枚举
    */
   public static STPageOrientation.Enum toPoi(Orientation orientation) {
     if (orientation == null) {
@@ -140,13 +137,13 @@ public final class Mappers {
   }
 
   /**
-   * Maps an OOXML {@link STPageOrientation} back to a nondocx {@link Orientation}.
+   * 将 OOXML {@link STPageOrientation} 映射回 nondocx {@link Orientation}。
    *
-   * <p>A {@code null} input (meaning orientation is unset on the section) maps to {@code null};
-   * callers apply Word's default of {@link Orientation#PORTRAIT} at the {@code Section} level.
+   * <p>{@code null} 输入（意味着节未设置方向）映射为 {@code null}； 调用方在 {@code Section} 级别应用 Word 的默认值 {@link
+   * Orientation#PORTRAIT}。
    *
-   * @param orientation the OOXML orientation, or {@code null} if unset
-   * @return the corresponding nondocx orientation, or {@code null} if the input was {@code null}
+   * @param orientation OOXML 方向，如果未设置则为 {@code null}
+   * @return 对应的 nondocx 方向，如果输入为 {@code null} 则返回 {@code null}
    */
   public static Orientation fromPoi(STPageOrientation.Enum orientation) {
     if (orientation == null) {
@@ -159,10 +156,10 @@ public final class Mappers {
   }
 
   /**
-   * Maps a nondocx {@link ImageType} to Apache POI's {@link PictureType}.
+   * 将 nondocx {@link ImageType} 映射到 Apache POI 的 {@link PictureType}。
    *
-   * @param type the nondocx image type (not {@code null})
-   * @return the corresponding POI picture type
+   * @param type nondocx 图片类型（不能为 {@code null}）
+   * @return 对应的 POI 图片类型
    */
   public static PictureType toPoi(ImageType type) {
     if (type == null) {
@@ -183,16 +180,13 @@ public final class Mappers {
   }
 
   /**
-   * Maps an Apache POI {@link PictureType} back to a nondocx {@link ImageType}.
+   * 将 Apache POI {@link PictureType} 映射回 nondocx {@link ImageType}。
    *
-   * <p>Only the four image formats nondocx models are represented. CMYK JPEG collapses to {@link
-   * ImageType#JPEG}; every other POI picture type (BMP, EMF, WMF, …) maps to {@code null}, meaning
-   * "format not modeled — reachable via {@code raw()}". This keeps real-world documents loading
-   * without loss while making the unmodeled case explicit.
+   * <p>只有 nondocx 建模的四种图片格式会被表示。CMYK JPEG 归并为 {@link ImageType#JPEG}； 所有其他 POI
+   * 图片类型（BMP、EMF、WMF……）映射为 {@code null}， 表示该图片类型在 nondocx 中不可表示。
    *
-   * @param type the POI picture type, or {@code null} if unset
-   * @return the corresponding nondocx image type, or {@code null} if the input was {@code null} or
-   *     an unmodeled format
+   * @param type POI 图片类型，如果不可用则为 {@code null}
+   * @return 对应的 nondocx 图片类型，如果无法映射则返回 {@code null}
    */
   public static ImageType fromPoi(PictureType type) {
     if (type == null) {

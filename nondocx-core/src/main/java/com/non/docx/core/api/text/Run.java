@@ -7,50 +7,43 @@ import org.apache.poi.xwpf.usermodel.UnderlinePatterns;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
 
 /**
- * A run — a contiguous fragment of text within a paragraph, carrying inline character formatting.
+ * 运行 — 段落内的连续文本片段，携带内联字符格式化信息。
  *
- * <p>Holds an Apache POI {@code XWPFRun} delegate and exposes a live, chainable view over it. Every
- * mutator writes straight through to the delegate and returns {@code this} for chaining; every
- * getter reads straight through. There is no cached snapshot.
+ * <p>持有 Apache POI {@code XWPFRun} 委托，并在其上暴露活跃的、可链式调用的视图。每个 修改器直接写入委托并返回 {@code this} 以支持链式调用；每个
+ * 获取器直接读取。没有缓存快照。
  *
- * <p>Inline formatting is modeled with six attributes — bold, italic, underline, font name, font
- * size (in points), and color (hex). {@link #style()} returns an immutable {@link RunStyle}
- * snapshot of all six, which is what content equality ({@code equals} / {@code hashCode}) compares,
- * together with the run's text. The delegate reference is never part of equality, so two runs over
- * distinct POI instances but with the same text and formatting are equal — this is what makes
- * round-trip assertions work.
+ * <p>内联格式化使用六个属性建模 — 粗体、斜体、下划线、字体名称、字体 大小（以磅为单位）和颜色（十六进制）。{@link #style()} 返回所有六个属性的不可变 {@link
+ * RunStyle} 快照，内容相等性（{@code equals} / {@code hashCode}）比较的正是这些属性 以及运行的文本。委托引用从不参与相等性比较，因此两个基于不同 POI
+ * 实例但具有相同文本和格式的运行是相等的 — 这就是 往返断言能正常工作的原因。
  *
- * <p>This is a <em>mutable live object</em>. Its {@code equals} / {@code hashCode} serve comparison
- * and round-trip assertions; they are not suited as a long-lived {@code HashMap} key, since the
- * underlying content can change at any time.
+ * <p>这是一个 <em>可变的活动对象</em>。其 {@code equals} / {@code hashCode} 用于比较 和往返断言；它们不适合作为长期存在的 {@code
+ * HashMap} 键，因为 底层内容随时可能改变。
  */
 public final class Run implements InlineElement {
 
   private final XWPFRun delegate;
 
   /**
-   * Wraps the given POI run.
+   * 封装给定的 POI 运行。
    *
-   * <p>This constructor is the internal seam by which {@link Paragraph} produces live run wrappers,
-   * so it accepts a POI type by design. Users normally obtain runs via {@code
-   * Paragraph.addRun(...)} / {@code Paragraph.run(...)} rather than constructing them.
+   * <p>此构造函数是 {@link Paragraph} 生成活跃运行包装器的内部接缝， 因此它有意接受 POI 类型。用户通常通过 {@code Paragraph.addRun(...)}
+   * / {@code Paragraph.run(...)} 获取运行，而不是直接构造它们。
    *
-   * @param delegate the backing POI run (not {@code null})
-   * @throws IllegalArgumentException if {@code delegate} is {@code null}
+   * @param delegate 底层的 POI 运行（不能为 {@code null}）
+   * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
    */
   public Run(XWPFRun delegate) {
     this.delegate = Objects.requireNonNull(delegate, "delegate");
   }
 
   /**
-   * Sets this run's text and returns {@code this} for chaining.
+   * 设置此运行的文本并返回 {@code this} 以支持链式调用。
    *
-   * <p>This delegates to {@code XWPFRun.setText(String)}; pass an empty string to produce a run
-   * with no visible text.
+   * <p>此方法委托给 {@code XWPFRun.setText(String)}；传入空字符串可生成 没有可见文本的运行。
    *
-   * @param text the new text (not {@code null}; use {@code ""} to clear)
-   * @return this run
-   * @throws IllegalArgumentException if {@code text} is {@code null}
+   * @param text 新文本（不能为 {@code null}；使用 {@code ""} 清除）
+   * @return 此运行
+   * @throws IllegalArgumentException 如果 {@code text} 为 {@code null}
    */
   public Run text(String text) {
     Objects.requireNonNull(text, "text");
@@ -59,86 +52,85 @@ public final class Run implements InlineElement {
   }
 
   /**
-   * Returns this run's full plain text.
+   * 返回此运行的完整纯文本。
    *
-   * @return the run's text (possibly empty, never {@code null})
+   * @return 运行的文本（可能为空，从不返回 {@code null}）
    */
   public String text() {
     return delegate.text();
   }
 
   /**
-   * Sets or clears bold and returns {@code this}.
+   * 设置或清除粗体并返回 {@code this}。
    *
-   * @param bold whether the text is bold
-   * @return this run
+   * @param bold 文本是否为粗体
+   * @return 此运行
    */
   public Run bold(boolean bold) {
     delegate.setBold(bold);
     return this;
   }
 
-  /** Convenience for {@code bold(true)}. */
+  /** {@code bold(true)} 的便捷方法。 */
   public Run bold() {
     return bold(true);
   }
 
-  /** Returns whether the text is bold. */
+  /** 返回文本是否为粗体。 */
   public boolean isBold() {
     return delegate.isBold();
   }
 
   /**
-   * Sets or clears italic and returns {@code this}.
+   * 设置或清除斜体并返回 {@code this}。
    *
-   * @param italic whether the text is italic
-   * @return this run
+   * @param italic 文本是否为斜体
+   * @return 此运行
    */
   public Run italic(boolean italic) {
     delegate.setItalic(italic);
     return this;
   }
 
-  /** Convenience for {@code italic(true)}. */
+  /** {@code italic(true)} 的便捷方法。 */
   public Run italic() {
     return italic(true);
   }
 
-  /** Returns whether the text is italic. */
+  /** 返回文本是否为斜体。 */
   public boolean isItalic() {
     return delegate.isItalic();
   }
 
   /**
-   * Sets or clears underlining and returns {@code this}.
+   * 设置或清除下划线并返回 {@code this}。
    *
-   * <p>Enabling underlining applies a single underline (Word's most common variant). Disabling it
-   * removes any underline.
+   * <p>启用下划线应用单下划线（Word 最常见的变体）。禁用它 会移除任何下划线。
    *
-   * @param underline whether the text is underlined
-   * @return this run
+   * @param underline 文本是否带下划线
+   * @return 此运行
    */
   public Run underline(boolean underline) {
     delegate.setUnderline(underline ? UnderlinePatterns.SINGLE : UnderlinePatterns.NONE);
     return this;
   }
 
-  /** Convenience for {@code underline(true)}. */
+  /** {@code underline(true)} 的便捷方法。 */
   public Run underline() {
     return underline(true);
   }
 
-  /** Returns whether the text carries any underline. */
+  /** 返回文本是否带有下划线。 */
   public boolean isUnderline() {
     UnderlinePatterns pattern = delegate.getUnderline();
     return pattern != null && pattern != UnderlinePatterns.NONE;
   }
 
   /**
-   * Sets the font size in points and returns {@code this}.
+   * 设置字体大小（以磅为单位）并返回 {@code this}。
    *
-   * @param points the font size in points
-   * @return this run
+   * @param points 字体大小（磅）
+   * @return 此运行
    */
   public Run fontSize(int points) {
     delegate.setFontSize((double) points);
@@ -146,9 +138,9 @@ public final class Run implements InlineElement {
   }
 
   /**
-   * Returns the font size in points, or {@code null} if not explicitly set on this run.
+   * 返回字体大小（以磅为单位），如果未在此运行上显式设置则返回 {@code null}。
    *
-   * @return the font size in points, or {@code null} if unset
+   * @return 字体大小（磅），如果未设置则返回 {@code null}
    */
   public Integer fontSize() {
     Double size = delegate.getFontSizeAsDouble();
@@ -156,11 +148,11 @@ public final class Run implements InlineElement {
   }
 
   /**
-   * Sets the font name and returns {@code this}.
+   * 设置字体名称并返回 {@code this}。
    *
-   * @param name the font name (not {@code null})
-   * @return this run
-   * @throws IllegalArgumentException if {@code name} is {@code null}
+   * @param name 字体名称（不能为 {@code null}）
+   * @return 此运行
+   * @throws IllegalArgumentException 如果 {@code name} 为 {@code null}
    */
   public Run font(String name) {
     Objects.requireNonNull(name, "name");
@@ -168,17 +160,17 @@ public final class Run implements InlineElement {
     return this;
   }
 
-  /** Returns the font name, or {@code null} if not explicitly set on this run. */
+  /** 返回字体名称，如果未在此运行上显式设置则返回 {@code null}。 */
   public String font() {
     return delegate.getFontFamily();
   }
 
   /**
-   * Sets the text color and returns {@code this}.
+   * 设置文本颜色并返回 {@code this}。
    *
-   * @param hex the color as a 6-digit hex RGB string (e.g. {@code "FF0000"}), not {@code null}
-   * @return this run
-   * @throws IllegalArgumentException if {@code hex} is {@code null}
+   * @param hex 颜色为 6 位十六进制 RGB 字符串（例如 {@code "FF0000"}），不能为 {@code null}
+   * @return 此运行
+   * @throws IllegalArgumentException 如果 {@code hex} 为 {@code null}
    */
   public Run color(String hex) {
     Objects.requireNonNull(hex, "hex");
@@ -186,29 +178,26 @@ public final class Run implements InlineElement {
     return this;
   }
 
-  /**
-   * Returns the text color as a hex RGB string, or {@code null} if not explicitly set on this run.
-   */
+  /** 返回文本颜色为十六进制 RGB 字符串，如果未在此运行上显式设置则返回 {@code null}。 */
   public String color() {
     return delegate.getColor();
   }
 
   /**
-   * Returns an immutable snapshot of this run's inline character formatting (the six style
-   * attributes). The snapshot is taken live on each call.
+   * 返回此运行的内联字符格式化的不可变快照（六个样式 属性）。每次调用时实时获取快照。
    *
-   * @return a {@link RunStyle} reflecting the current formatting (never {@code null})
+   * @return 反映当前格式化的 {@link RunStyle}（从不返回 {@code null}）
    */
   public RunStyle style() {
     return RunStyle.of(isBold(), isItalic(), isUnderline(), font(), fontSize(), color());
   }
 
   /**
-   * Returns the underlying POI run.
+   * 返回底层的 POI 运行。
    *
-   * <p>Modifications to the returned object affect the document immediately. Use with caution.
+   * <p>对返回对象的修改会立即影响文档。请谨慎使用。
    *
-   * @return the backing {@code XWPFRun} instance (same instance for the wrapper's lifetime)
+   * @return 底层的 {@code XWPFRun} 实例（包装器生命周期内同一实例）
    */
   public XWPFRun raw() {
     return delegate;

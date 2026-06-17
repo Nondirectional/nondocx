@@ -62,14 +62,13 @@ public final class Document implements AutoCloseable {
   private final XWPFDocument delegate;
 
   /**
-   * Wraps the given POI document.
+   * 封装给定的 POI 文档。
    *
-   * <p>This constructor is the internal seam by which the {@code Docx} factory produces document
-   * instances, so it accepts a POI type by design. Users obtain documents via {@code
-   * Docx.open(...)} / {@code Docx.create()} rather than constructing them directly.
+   * <p>此构造函数是 {@code Docx} 工厂生成文档实例的内部接缝， 因此它有意接受 POI 类型。用户通过 {@code Docx.open(...)} / {@code
+   * Docx.create()} 获取文档， 而不是直接构造它们。
    *
-   * @param delegate the backing POI document (not {@code null})
-   * @throws IllegalArgumentException if {@code delegate} is {@code null}
+   * @param delegate 底层的 POI 文档（不能为 {@code null}）
+   * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
    */
   public Document(XWPFDocument delegate) {
     this.delegate = Objects.requireNonNull(delegate, "delegate");
@@ -78,14 +77,12 @@ public final class Document implements AutoCloseable {
   // ---------- ordered body view (structural source of truth) ----------
 
   /**
-   * Returns a live view of the document body in true Word-body order.
+   * 返回文档正文的活跃视图，按真实 Word 正文顺序排列。
    *
-   * <p>The returned list contains only the body constructs nondocx models — paragraphs and tables —
-   * preserving their relative order. Other body constructs (for example structured document tags)
-   * are excluded; they remain reachable via {@code raw().getBodyElements()}. The view is re-read
-   * from the delegate on every access, so mutations are reflected live.
+   * <p>返回的列表仅包含 nondocx 建模的正文结构 — 段落和表格 — 保留它们的相对顺序。其他正文结构（例如结构化文档标签） 被排除在外；它们仍可通过 {@code
+   * raw().getBodyElements()} 访问。每次访问时 都会从委托重新读取视图，因此变更会实时反映。
    *
-   * @return a live, unmodifiable list of body elements in document order
+   * @return 按文档顺序排列的活跃、不可修改的正文元素列表
    */
   public List<BodyElement> bodyElements() {
     return new AbstractList<BodyElement>() {
@@ -102,11 +99,11 @@ public final class Document implements AutoCloseable {
   }
 
   /**
-   * Returns the body element at the given body-order index.
+   * 返回指定正文顺序索引处的正文元素。
    *
-   * @param index body-order index (0-based, into {@link #bodyElements()})
-   * @return the body element at that position
-   * @throws IndexOutOfBoundsException if {@code index} is out of range
+   * @param index 正文顺序索引（从 0 开始，指向 {@link #bodyElements()}）
+   * @return 该位置的正文元素
+   * @throws IndexOutOfBoundsException 如果 {@code index} 超出范围
    */
   public BodyElement bodyElement(int index) {
     return bodyElements().get(index);
@@ -115,9 +112,9 @@ public final class Document implements AutoCloseable {
   // ---------- paragraph views ----------
 
   /**
-   * Returns a live, type-filtered view of the body paragraphs (in document order).
+   * 返回正文段落的活跃、类型筛选视图（按文档顺序）。
    *
-   * @return a live, unmodifiable list of paragraphs
+   * @return 活跃、不可修改的段落列表
    */
   public List<Paragraph> paragraphs() {
     return new AbstractList<Paragraph>() {
@@ -136,20 +133,20 @@ public final class Document implements AutoCloseable {
   }
 
   /**
-   * Returns the paragraph at the given filtered paragraph index.
+   * 返回指定筛选段落索引处的段落。
    *
-   * @param index paragraph index (0-based, into {@link #paragraphs()})
-   * @return the paragraph at that position
-   * @throws IndexOutOfBoundsException if {@code index} is out of range
+   * @param index 段落索引（从 0 开始，指向 {@link #paragraphs()}）
+   * @return 该位置的段落
+   * @throws IndexOutOfBoundsException 如果 {@code index} 超出范围
    */
   public Paragraph paragraph(int index) {
     return paragraphs().get(index);
   }
 
   /**
-   * Appends a new, empty paragraph at the end of the body and returns a live wrapper for it.
+   * 在正文末尾追加一个新的空段落，并返回其活跃包装器。
    *
-   * @return the newly appended paragraph
+   * @return 新追加的段落
    */
   public Paragraph addParagraph() {
     return new Paragraph(delegate.createParagraph());
@@ -200,8 +197,7 @@ public final class Document implements AutoCloseable {
     } else if (target instanceof XWPFTable) {
       cursor = ((XWPFTable) target).getCTTbl().newCursor();
     } else {
-      throw new IllegalArgumentException(
-          "Cannot insert before body element of type " + target.getClass().getName());
+      throw new IllegalArgumentException("无法在类型为 " + target.getClass().getName() + " 的正文元素前插入");
     }
     try {
       return new Paragraph(delegate.insertNewParagraph(cursor));
@@ -310,11 +306,11 @@ public final class Document implements AutoCloseable {
   }
 
   /**
-   * Returns the section at the given document-order index.
+   * 返回指定文档顺序索引处的章节。
    *
-   * @param index section index (0-based, into {@link #sections()})
-   * @return the section at that position
-   * @throws IndexOutOfBoundsException if {@code index} is out of range
+   * @param index 章节索引（从 0 开始，指向 {@link #sections()}）
+   * @return 该位置的章节
+   * @throws IndexOutOfBoundsException 如果 {@code index} 超出范围
    */
   public Section section(int index) {
     return sections().get(index);
@@ -323,30 +319,26 @@ public final class Document implements AutoCloseable {
   // ---------- header / footer (convenience) ----------
 
   /**
-   * Returns the default (odd-page) header of the document's first section (section 0).
+   * 返回文档第一个章节（章节 0）的默认（奇数页）页眉。
    *
-   * <p>This is a convenience for {@code section(0).header()}. In a single-section document this is
-   * the document's header. In a multi-section document, prefer {@link Section#header()} to address
-   * each section's header individually.
+   * <p>这是 {@code section(0).header()} 的便捷方法。在单章节文档中，这是 文档的页眉。在多章节文档中，建议使用 {@link Section#header()}
+   * 来单独处理 每个章节的页眉。
    *
-   * @return the default header of the first section (never {@code null})
-   * @throws com.non.docx.core.api.exception.DocxIOException if the header part cannot be created or
-   *     attached
+   * @return 第一个章节的默认页眉（从不返回 {@code null}）
+   * @throws com.non.docx.core.api.exception.DocxIOException 如果页眉部分无法创建或 附加
    */
   public com.non.docx.core.api.header.Header header() {
     return section(0).header();
   }
 
   /**
-   * Returns the default (odd-page) footer of the document's first section (section 0).
+   * 返回文档第一个章节（章节 0）的默认（奇数页）页脚。
    *
-   * <p>This is a convenience for {@code section(0).footer()}. In a single-section document this is
-   * the document's footer. In a multi-section document, prefer {@link Section#footer()} to address
-   * each section's footer individually.
+   * <p>这是 {@code section(0).footer()} 的便捷方法。在单章节文档中，这是 文档的页脚。在多章节文档中，建议使用 {@link Section#footer()}
+   * 来单独处理 每个章节的页脚。
    *
-   * @return the default footer of the first section (never {@code null})
-   * @throws com.non.docx.core.api.exception.DocxIOException if the footer part cannot be created or
-   *     attached
+   * @return 第一个章节的默认页脚（从不返回 {@code null}）
+   * @throws com.non.docx.core.api.exception.DocxIOException 如果页脚部分无法创建或 附加
    */
   public com.non.docx.core.api.header.Footer footer() {
     return section(0).footer();
@@ -355,11 +347,11 @@ public final class Document implements AutoCloseable {
   // ---------- save ----------
 
   /**
-   * Writes this document to the given file. The file stream is opened and closed by this method.
+   * 将此文档写入指定文件。文件流由此方法打开和关闭。
    *
-   * @param file the destination file (not {@code null})
-   * @throws DocxIOException if the file cannot be written
-   * @throws IllegalArgumentException if {@code file} is {@code null}
+   * @param file 目标文件（不能为 {@code null}）
+   * @throws DocxIOException 如果文件无法写入
+   * @throws IllegalArgumentException 如果 {@code file} 为 {@code null}
    */
   public void save(File file) {
     Objects.requireNonNull(file, "file");
@@ -367,28 +359,27 @@ public final class Document implements AutoCloseable {
   }
 
   /**
-   * Writes this document to the given path. The file stream is opened and closed by this method.
+   * 将此文档写入指定路径。文件流由此方法打开和关闭。
    *
-   * @param path the destination path (not {@code null})
-   * @throws DocxIOException if the file cannot be written
-   * @throws IllegalArgumentException if {@code path} is {@code null}
+   * @param path 目标路径（不能为 {@code null}）
+   * @throws DocxIOException 如果文件无法写入
+   * @throws IllegalArgumentException 如果 {@code path} 为 {@code null}
    */
   public void save(Path path) {
     Objects.requireNonNull(path, "path");
     try (OutputStream out = Files.newOutputStream(path)) {
       writeTo(out, path.toString());
     } catch (IOException e) {
-      throw new DocxIOException("Failed to save document to " + path, e);
+      throw new DocxIOException("无法将文档保存到 " + path, e);
     }
   }
 
   /**
-   * Writes this document to the given stream. The stream is <em>not</em> closed; the caller retains
-   * ownership.
+   * 将此文档写入指定流。该流 <em>不</em> 被关闭；调用者保留所有权。
    *
-   * @param out the destination stream (not {@code null}, not closed by this method)
-   * @throws DocxIOException if the document cannot be serialized
-   * @throws IllegalArgumentException if {@code out} is {@code null}
+   * @param out 目标流（不能为 {@code null}，不会被此方法关闭）
+   * @throws DocxIOException 如果文档无法序列化
+   * @throws IllegalArgumentException 如果 {@code out} 为 {@code null}
    */
   public void save(OutputStream out) {
     Objects.requireNonNull(out, "out");
@@ -399,7 +390,7 @@ public final class Document implements AutoCloseable {
     try {
       delegate.write(out);
     } catch (IOException | POIXMLException e) {
-      String message = "Failed to save document" + (context == null ? "" : " to " + context);
+      String message = "无法保存文档" + (context == null ? "" : " 到 " + context);
       throw new DocxIOException(message, e);
     }
   }
@@ -407,16 +398,16 @@ public final class Document implements AutoCloseable {
   // ---------- lifecycle ----------
 
   /**
-   * Releases the underlying POI resources.
+   * 释放底层 POI 资源。
    *
-   * @throws DocxIOException if closing the underlying document fails
+   * @throws DocxIOException 如果关闭底层文档失败
    */
   @Override
   public void close() {
     try {
       delegate.close();
     } catch (IOException e) {
-      throw new DocxIOException("Failed to close document", e);
+      throw new DocxIOException("无法关闭文档", e);
     }
   }
 
@@ -526,7 +517,6 @@ public final class Document implements AutoCloseable {
     if (element instanceof XWPFTable) {
       return new Table((XWPFTable) element);
     }
-    throw new IllegalArgumentException(
-        "Unsupported body element type: " + element.getClass().getName());
+    throw new IllegalArgumentException("不支持的正文元素类型：" + element.getClass().getName());
   }
 }

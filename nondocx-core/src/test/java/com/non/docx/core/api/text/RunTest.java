@@ -10,10 +10,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Verifies chainable mutators, round-trip persistence of inline styles, content equality, and the
- * {@code style()} snapshot for {@link Run}.
- */
+/** 验证可链式变体器、内联样式的往返持久化、内容相等性以及 {@link Run} 的 {@code style()} 快照。 */
 class RunTest {
 
   @Test

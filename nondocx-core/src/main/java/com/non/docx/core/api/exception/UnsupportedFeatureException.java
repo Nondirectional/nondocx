@@ -1,25 +1,21 @@
 package com.non.docx.core.api.exception;
 
 /**
- * Raised when a docx feature is requested that lies outside nondocx's deep-wrap scope.
+ * 当请求的 docx 功能超出了 nondocx 深度封装范围时抛出。
  *
- * <p>nondocx deliberately wraps the common ~90% of docx usage and leaves advanced features (tracked
- * changes, fields, OLE objects, OMML math, watermarks, text boxes, shapes, etc.) to the {@code
- * raw()} escape hatch. When such a feature is encountered on a wrapped path that cannot honor it,
- * this exception is thrown and its message directs the caller to {@code raw()}.
+ * <p>nondocx 特意封装了常见的约 90% 的 docx 用法，将高级功能（修订 更改、域、OLE 对象、OMML 数学公式、水印、文本框、形状等）留给 {@code raw()}
+ * 逃生口。 当在无法处理的封装路径上遇到此类功能时， 将抛出此异常，其消息会引导调用者使用 {@code raw()}。
  *
- * <p>Example message: {@code "Tracked changes are not wrapped by nondocx; use raw() to access the
- * underlying POI object"}.
+ * <p>示例消息：{@code "修订更改未被 nondocx 封装；请使用 raw() 访问底层 POI 对象"}。
  */
 public class UnsupportedFeatureException extends DocxException {
 
   private static final long serialVersionUID = 1L;
 
   /**
-   * Constructs a new exception with the specified detail message.
+   * 使用指定的详细信息构造一个新异常。
    *
-   * @param message the detail message (English), typically naming the unsupported feature and
-   *     pointing to {@code raw()}
+   * @param message 详细信息（中文），通常指明不支持的功能并指向 {@code raw()}
    */
   public UnsupportedFeatureException(String message) {
     super(message);

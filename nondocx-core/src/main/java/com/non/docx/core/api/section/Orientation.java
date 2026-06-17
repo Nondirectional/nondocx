@@ -1,14 +1,14 @@
 package com.non.docx.core.api.section;
 
 /**
- * Page orientation for a {@link Section}.
+ * {@link Section} 的页面方向。
  *
- * <p>This is a POI-free value object: it carries no {@code org.apache.poi.*} dependency. The
- * mapping to OOXML's {@code STPageOrientation} lives in the internal POI bridge.
+ * <p>这是一个无 POI 依赖的值对象：它不携带任何 {@code org.apache.poi.*} 依赖。与 OOXML 的 {@code STPageOrientation}
+ * 的映射位于内部 POI 桥接层。
  */
 public enum Orientation {
-  /** Portrait orientation (width &lt; height). Word's default. */
+  /** 纵向方向（宽度 &lt; 高度）。Word 的默认值。 */
   PORTRAIT,
-  /** Landscape orientation (width &gt; height). */
+  /** 横向方向（宽度 &gt; 高度）。 */
   LANDSCAPE
 }

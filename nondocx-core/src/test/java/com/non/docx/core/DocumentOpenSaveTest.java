@@ -12,10 +12,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies the {@link Docx} factory and {@link Document} open / save round-trip basics.
+ * 验证 {@link Docx} 工厂和 {@link Document} 打开/保存往返的基本功能。
  *
- * <p>Phase 2 smoke tests: create → save → open does not throw, an added paragraph survives the
- * round trip, and error mapping distinguishes missing files (IO) from invalid bytes (format).
+ * <p>阶段 2 冒烟测试：创建→保存→打开不抛出异常，添加的段落能在往返后存活， 且错误映射能区分缺失文件（IO）与无效字节（格式）。
  */
 class DocumentOpenSaveTest {
 

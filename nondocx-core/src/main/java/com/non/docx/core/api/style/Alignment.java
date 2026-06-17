@@ -1,18 +1,17 @@
 package com.non.docx.core.api.style;
 
 /**
- * Paragraph-level horizontal alignment.
+ * 段落级别的水平对齐方式。
  *
- * <p>This is a POI-free value object; mapping to Apache POI's {@code ParagraphAlignment} happens in
- * the {@code internal} bridge layer.
+ * <p>这是一个无 POI 依赖的值对象；与 Apache POI 的 {@code ParagraphAlignment} 的映射发生在 {@code internal} 桥接层。
  */
 public enum Alignment {
-  /** Left-aligned text (the default for most body text). */
+  /** 左对齐文本（大多数正文的默认对齐方式）。 */
   LEFT,
-  /** Centered text. */
+  /** 居中对齐文本。 */
   CENTER,
-  /** Right-aligned text. */
+  /** 右对齐文本。 */
   RIGHT,
-  /** Fully justified text (flush left and right). */
+  /** 两端对齐文本（左右边缘对齐）。 */
   JUSTIFY
 }

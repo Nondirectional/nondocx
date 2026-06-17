@@ -1,19 +1,18 @@
 package com.non.docx.core.api.exception;
 
 /**
- * Root of the nondocx unchecked exception hierarchy.
+ * nondocx 非受检异常层次结构的根类。
  *
- * <p>All exceptions raised by the nondocx public API (excluding the {@code raw()} escape-hatch
- * path, where Apache POI exceptions propagate unwrapped) extend this type. It is an unchecked
- * {@link RuntimeException}, so callers are never forced to declare or catch it.
+ * <p>nondocx 公开 API 抛出的所有异常（不包括通过 {@code raw()} 逃生口路径传播的 Apache POI 异常 路径，其中 Apache POI
+ * 异常会未经封装地传播）都继承此类。这是一个非受检 {@link RuntimeException}，因此调用者无需强制声明或捕获它。
  *
- * <p>This is the single type a caller needs to handle nondocx failures broadly:
+ * <p>这是调用者广泛处理 nondocx 失败所需的单一类型：
  *
  * <pre>{@code
  * try {
  *     Document doc = Docx.open(file);
  * } catch (DocxException e) {
- *     // covers IO, format, and operation failures
+ *     // 涵盖 IO、格式和操作失败
  * }
  * }</pre>
  */
@@ -22,19 +21,19 @@ public class DocxException extends RuntimeException {
   private static final long serialVersionUID = 1L;
 
   /**
-   * Constructs a new exception with the specified detail message.
+   * 使用指定的详细信息构造一个新异常。
    *
-   * @param message the detail message (English), or {@code null} if none
+   * @param message 详细信息，如果无则为 {@code null}
    */
   public DocxException(String message) {
     super(message);
   }
 
   /**
-   * Constructs a new exception with the specified detail message and cause.
+   * 使用指定的详细信息和原因构造一个新异常。
    *
-   * @param message the detail message (English), or {@code null} if none
-   * @param cause the underlying cause (typically an IO or Apache POI exception), or {@code null}
+   * @param message 详细信息，如果无则为 {@code null}
+   * @param cause 根本原因（通常是 IO 或 Apache POI 异常），如果无为 {@code null}
    */
   public DocxException(String message, Throwable cause) {
     super(message, cause);

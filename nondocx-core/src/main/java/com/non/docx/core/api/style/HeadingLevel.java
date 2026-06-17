@@ -1,22 +1,21 @@
 package com.non.docx.core.api.style;
 
 /**
- * Heading levels H1 through H6, mapping to Word's built-in heading styles.
+ * 标题级别 H1 到 H6，映射到 Word 的内置标题样式。
  *
- * <p>This is a POI-free value object; mapping to Apache POI / OOXML heading style ids happens in
- * the {@code internal} bridge layer.
+ * <p>这是一个无 POI 依赖的值对象；与 Apache POI / OOXML 标题样式 ID 的映射发生在 {@code internal} 桥接层。
  */
 public enum HeadingLevel {
-  /** Level 1 heading (Word style {@code Heading1}). */
+  /** 一级标题（Word 样式 {@code Heading1}）。 */
   H1,
-  /** Level 2 heading (Word style {@code Heading2}). */
+  /** 二级标题（Word 样式 {@code Heading2}）。 */
   H2,
-  /** Level 3 heading (Word style {@code Heading3}). */
+  /** 三级标题（Word 样式 {@code Heading3}）。 */
   H3,
-  /** Level 4 heading (Word style {@code Heading4}). */
+  /** 四级标题（Word 样式 {@code Heading4}）。 */
   H4,
-  /** Level 5 heading (Word style {@code Heading5}). */
+  /** 五级标题（Word 样式 {@code Heading5}）。 */
   H5,
-  /** Level 6 heading (Word style {@code Heading6}). */
+  /** 六级标题（Word 样式 {@code Heading6}）。 */
   H6
 }

@@ -10,10 +10,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Verifies table round-trip, live row/cell mutation, out-of-bounds handling, and content equality
- * for {@link Table}, {@link Row}, and {@link Cell}.
- */
+/** 验证 {@link Table}、{@link Row} 和 {@link Cell} 的表格往返、 活动行/单元格变更、越界处理和内容相等性。 */
 class TableTest {
 
   private static final String[][] GRID = {
@@ -21,7 +18,7 @@ class TableTest {
     {"A2", "B2", "C2"}
   };
 
-  /** Builds a fresh 2x3 table populated with the {@link #GRID} values. */
+  /** 构建一个填充了 {@link #GRID} 值的新 2×3 表格。 */
   private static Table buildGridTable(Document doc) {
     Table table = doc.addTable();
     for (String[] rowValues : GRID) {
@@ -65,11 +62,11 @@ class TableTest {
     Table table = buildGridTable(doc);
 
     assertThat(table.rows()).hasSize(2);
-    table.addRow(); // live append
+    table.addRow(); // 实时追加
     assertThat(table.rows()).hasSize(3);
-    table.removeRow(0); // live remove first row
+    table.removeRow(0); // 实时移除第一行
     assertThat(table.rows()).hasSize(2);
-    // the row that was originally second (now first) carries A2
+    // 原本是第二行（现在是第一行）的行携带 A2
     assertThat(table.row(0).cell(0).text()).isEqualTo("A2");
   }
 
@@ -78,7 +75,7 @@ class TableTest {
     Table table = buildGridTable(Docx.create());
     assertThatThrownBy(() -> table.removeRow(5))
         .isInstanceOf(IndexOutOfBoundsException.class)
-        .hasMessageContaining("row index 5");
+        .hasMessageContaining("行索引 5");
     assertThatThrownBy(() -> table.removeRow(-1)).isInstanceOf(IndexOutOfBoundsException.class);
   }
 
@@ -100,7 +97,7 @@ class TableTest {
     Row row = buildGridTable(Docx.create()).row(0);
     assertThatThrownBy(() -> row.removeCell(99))
         .isInstanceOf(IndexOutOfBoundsException.class)
-        .hasMessageContaining("cell index 99");
+        .hasMessageContaining("单元格索引 99");
     assertThatThrownBy(() -> row.removeCell(-1)).isInstanceOf(IndexOutOfBoundsException.class);
   }
 
@@ -124,8 +121,8 @@ class TableTest {
 
     cell.text("replaced");
 
-    // text(String) targets the first paragraph: clears its runs and writes the new text.
-    // Paragraphs beyond the first are left in place (mirrors POI's setText).
+    // text(String) 针对第一个段落：清除其 run 并写入新文本。
+    // 第一个之后的段落保持不变（镜像了 POI 的 setText）。
     assertThat(cell.paragraphs()).hasSize(2);
     assertThat(cell.paragraph(0).text()).isEqualTo("replaced");
     assertThat(cell.paragraph(1).text()).isEqualTo("second");
@@ -138,7 +135,7 @@ class TableTest {
     Table t1 = buildGridTable(a);
     Table t2 = buildGridTable(b);
 
-    // distinct delegate instances, but content-equal at every level
+    // 不同的委托实例，但在每个级别上内容相等
     assertThat(t1.raw()).isNotSameAs(t2.raw());
     assertThat(t1).isEqualTo(t2);
     assertThat(t1.hashCode()).isEqualTo(t2.hashCode());
@@ -172,7 +169,7 @@ class TableTest {
     Paragraph paragraph = cell.paragraph(0);
     assertThat(paragraph.text()).isEqualTo("hello");
 
-    // live: mutating the paragraph wrapper is reflected when reading the cell back
+    // 实时：修改段落包装器会在重新读取单元格时反映出来
     paragraph.addRun(" world");
     assertThat(cell.text()).isEqualTo("hello world");
   }

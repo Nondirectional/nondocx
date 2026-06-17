@@ -9,10 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies that section page properties (paper size, orientation, margins) round-trip through save
- * → open and that {@link Section} content equality covers both those page properties and the
- * section-scoped default header / footer paragraph content (design §4.4, §7). Equality must resolve
- * header / footer content read-only so it never mutates the document.
+ * 验证节的页面属性（纸张大小、方向、页边距）在保存→打开往返中存活， 且 {@link Section} 内容相等性涵盖这些页面属性以及 节作用域的默认页眉/页脚段落内容（设计文档
+ * §4.4、§7）。相等性必须 只读地解析页眉/页脚内容，以使其永不修改文档。
  */
 class SectionTest {
 
@@ -118,10 +116,10 @@ class SectionTest {
     assertThat(a.section(0)).isEqualTo(b.section(0));
     assertThat(a.section(0).hashCode()).isEqualTo(b.section(0).hashCode());
 
-    // differing orientation → not equal
+    // 不同的方向→不相等
     assertThat(a.section(0)).isNotEqualTo(c.section(0));
 
-    // differing margins → not equal
+    // 不同的页边距→不相等
     assertThat(a.section(0)).isNotEqualTo(d.section(0));
   }
 
@@ -201,8 +199,8 @@ class SectionTest {
 
   @Test
   void sectionEqualityDoesNotMutateDocument() {
-    // read-only equals must not create header/footer parts; a section that had no header
-    // before the comparison still resolves to an empty (no-header) section afterwards
+    // 只读 equals 不得创建页眉/页脚部分；比较前没有页眉的节
+    // 在比较后仍解析为空（无页眉）节
     Document doc = Docx.create();
     Section before = doc.section(0);
 

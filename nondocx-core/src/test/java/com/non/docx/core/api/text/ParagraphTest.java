@@ -11,10 +11,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Verifies run add/remove, alignment round-trip, heading round-trip (H1–H6), run ordering, and
- * paragraph content equality for {@link Paragraph}.
- */
+/** 验证 {@link Paragraph} 的 run 添加/移除、对齐方式往返、标题级别（H1–H6）往返、 run 排序以及段落内容相等性。 */
 class ParagraphTest {
 
   @Test

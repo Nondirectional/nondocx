@@ -27,14 +27,12 @@ import org.junit.jupiter.api.io.TempDir;
  * The MVP round-trip acceptance suite (design §7). A document is built with nondocx, written to a
  * real {@code .docx} file via {@code save}, reopened via {@link Docx#open}, and the reopened
  * document is asserted to be <em>content-equal</em> to the original. Because {@link
- * Document#equals} compares the ordered body element sequence and the ordered section sequence —
- * and each element compares only content derived from its POI delegate (never the delegate
- * reference) — a passing assertion proves that nondocx's deep-wrap covers every modeled feature
- * end-to-end across POI's actual write / read path.
+ * {@link Document#equals} 比较有序的正文元素序列和有序的节序列——
+ * 且每个元素只比较从其 POI 委托派生的内容（从不比较委托引用）——
+ * 通过的断言证明 nondocx 的深度包装覆盖了每个建模功能，跨越 POI 的实际写入/读取路径端到端。
  *
- * <p>{@link #fullDocumentRoundTripsEqual()} is the core acceptance test: one document exercising
- * every tier at once. The remaining tests each isolate a single feature so that a regression points
- * straight at the offending area.
+ * <p>{@link #fullDocumentRoundTripsEqual()} 是核心验收测试：一个文档一次性练习所有层级。
+ * 其余测试各自隔离一个功能，以便回归能直指问题区域。
  *
  * <p>Test picture bytes are generated in-process with {@code javax.imageio} (a solid-color PNG), so
  * no binary fixture is checked in. The bytes are deterministic for given size and color.
@@ -48,35 +46,35 @@ class RoundTripTest {
 
     original.save(file);
     try (Document readBack = Docx.open(file)) {
-      // CORE ACCEPTANCE: deep content equality across save → open.
+      // 核心验收：保存→打开的深层内容相等性。
       assertThat(readBack).isEqualTo(original);
 
-      // A few explicit feature assertions make the test's intent legible and give a clearer
-      // first signal than the whole-document diff if a future regression sneaks in.
+      // 几个显式功能断言使测试意图更清晰，并在未来回归出现时提供比整个文档差异
+      // 更明确的初始信号。
       assertThat(readBack.bodyElements()).hasSameSizeAs(original.bodyElements());
 
-      // tier 1: heading + styled run survive
+      // 层级 1：标题 + 样式化 run 存活
       assertThat(readBack.paragraph(0).heading()).isEqualTo(HeadingLevel.H1);
 
-      // tier 1/2: inline ordering (styled run → hyperlink → tail run) survives
+      // 层级 1/2：内联顺序（样式化 run → 超链接 → 尾部 run）存活
       assertThat(readBack.paragraph(1).inlineElements()).hasSize(3);
       assertThat(readBack.paragraph(1).inlineElement(0)).isInstanceOf(Run.class);
       assertThat(readBack.paragraph(1).inlineElement(1)).isInstanceOf(Hyperlink.class);
       assertThat(readBack.paragraph(1).inlineElement(2)).isInstanceOf(Run.class);
 
-      // tier 2: list membership + nesting survives. Note paragraph(int) indexes the
-      // filtered paragraph view — the body table between the styled paragraph and the list
-      // paragraphs is skipped — so the numbered/bullet/image paragraphs sit at indices 2/3/4.
+      // 层级 2：列表成员资格 + 嵌套存活。注意 paragraph(int) 索引的是
+      // 过滤后的段落视图——样式段落和列表段落之间的正文表格被跳过——
+      // 因此编号/项目符号/图片段落位于索引 2/3/4 处。
       assertThat(readBack.paragraph(2).listKind()).isEqualTo(ListKind.NUMBERED);
       assertThat(readBack.paragraph(2).listLevel()).isEqualTo(0);
       assertThat(readBack.paragraph(3).listKind()).isEqualTo(ListKind.BULLET);
       assertThat(readBack.paragraph(3).listLevel()).isEqualTo(1);
 
-      // tier 2: inline image survives (bytes, dimensions, type)
+      // 层级 2：内联图片存活（字节、尺寸、类型）
       Image image = (Image) readBack.paragraph(4).inlineElement(0);
       assertThat(image.bytes()).isEqualTo(((Image) original.paragraph(4).inlineElement(0)).bytes());
 
-      // tier 3: page properties + section-scoped header / footer survive
+      // 层级 3：页面属性 + 节作用域的页眉/页脚存活
       assertThat(readBack.section(0).orientation()).isEqualTo(Orientation.LANDSCAPE);
       assertThat(readBack.section(0).paperSize()).isEqualTo(PaperSize.A4);
       assertThat(readBack.section(0).header().text()).contains("Running header");
@@ -248,24 +246,20 @@ class RoundTripTest {
   }
 
   /**
-   * Builds a single document exercising every MVP tier at once: a heading, a paragraph whose inline
-   * content mixes a fully-styled run, a hyperlink and a plain run (to exercise inline ordering and
-   * run style), a 2×2 table, a numbered list item plus a nested bullet item, an inline image, and a
-   * section carrying page properties plus a header and a footer.
+   * 构建一个同时练习所有 MVP 层级的单个文档：一个标题、一个内联内容混合了完全样式化 run、 超链接和纯文本 run（以练习内联顺序和 run 样式）的段落、一个 2×2
+   * 表格、一个编号列表项 加一个嵌套的项目符号项、一个内联图片，以及一个携带页面属性加页眉和页脚的节。
    *
-   * <p>The document is built through the same write path on both sides of the round-trip: the
-   * original is constructed in-memory and then {@code save}d; the reopened document has been
-   * through POI's serialization. Content equality holds without any field exclusion, which is the
-   * round-trip fidelity acceptance bar.
+   * <p>文档在往返的两侧通过相同的写入路径构建：原始文档在内存中构造然后 {@code save}d； 重新打开的文档经过了 POI 的序列化。内容相等性不需要任何字段排除即可成立，
+   * 这就是往返保真度的验收标准。
    */
   private static Document buildFullDocument() {
     byte[] png = solidPng(16, 12, 0x336699);
 
     Document document =
         DocumentBuilder.start()
-            // tier 1: heading
+            // 层级 1：标题
             .heading(HeadingLevel.H1, "Round-trip Title")
-            // tier 1/2: inline ordering — styled run, hyperlink, plain tail run
+            // 层级 1/2：内联顺序——样式化 run、超链接、纯文本尾部 run
             .paragraph(
                 p -> {
                   Run styled = p.addRun("Bold italic underlined");
@@ -273,16 +267,16 @@ class RoundTripTest {
                   p.addHyperlink("Example", "https://example.com");
                   p.addRun(" plain tail");
                 })
-            // tier 1: table
+            // 层级 1：表格
             .table(t -> t.row(r -> r.cell("A1").cell("B1")).row(r -> r.cell("A2").cell("B2")))
-            // tier 2: numbered list (level 0) + nested bullet (level 1)
+            // 层级 2：编号列表（级别 0）+ 嵌套项目符号（级别 1）
             .paragraph(p -> p.list(ListKind.NUMBERED, 0).addRun("First numbered item"))
             .paragraph(p -> p.list(ListKind.BULLET, 1).addRun("Nested bullet item"))
-            // tier 2: inline image
+            // 层级 2：内联图片
             .paragraph(p -> p.addImage(png, ImageType.PNG, 16, 12))
             .build();
 
-    // tier 3: page properties + section-scoped header / footer on the single section
+    // 层级 3：单节上的页面属性 + 节作用域的页眉/页脚
     Section section = document.section(0);
     section
         .paperSize(PaperSize.A4)
@@ -295,10 +289,8 @@ class RoundTripTest {
   }
 
   /**
-   * Produces a deterministic solid-color PNG of the given size. Two calls with identical parameters
-   * yield identical bytes. {@code javax.imageio} writing to an in-memory stream cannot plausibly
-   * throw {@link IOException}; any failure is rethrown as an {@link AssertionError} so callers need
-   * not declare checked exceptions.
+   * 生成给定尺寸的确定性纯色 PNG。两个具有相同参数的调用产生相同的字节。 {@code javax.imageio} 写入内存流不可能抛出 {@link IOException}；
+   * 任何失败都会重新抛出为 {@link AssertionError}，因此调用者无需声明受检异常。
    */
   private static byte[] solidPng(int width, int height, int rgb) {
     BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);

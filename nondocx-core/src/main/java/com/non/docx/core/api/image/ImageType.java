@@ -1,24 +1,21 @@
 package com.non.docx.core.api.image;
 
 /**
- * The image format of an inline picture.
+ * 内联图片的图像格式。
  *
- * <p>This is a POI-free value object: it carries no {@code org.apache.poi.*} dependency. The
- * mapping to Apache POI's {@code PictureType} lives in the internal POI bridge ({@code
- * com.non.docx.core.internal.poi.Mappers}), so the public enum stays POI-free at the source level,
- * not just at the signature level.
+ * <p>这是一个无 POI 依赖的值对象：它不携带任何 {@code org.apache.poi.*} 依赖。与 Apache POI 的 {@code PictureType} 的映射位于内部
+ * POI 桥接层（{@code com.non.docx.core.internal.poi.Mappers}），因此公共枚举在源代码级别保持无 POI 依赖， 而不仅仅是在签名级别。
  *
- * <p>The MVP models the four most common inline image formats. Rarer formats (BMP, EMF, WMF, …) are
- * not modeled; an embedded picture of such a format is still readable via {@link Image#raw()} and
- * reports {@code null} from {@link Image#type()}.
+ * <p>MVP 建模了四种最常见的内联图片格式。较罕见的格式（BMP、EMF、WMF 等）未被建模； 此类格式的嵌入图片仍然可以通过 {@link Image#raw()} 读取， 并从
+ * {@link Image#type()} 返回 {@code null}。
  */
 public enum ImageType {
-  /** PNG (Portable Network Graphics). */
+  /** PNG（便携式网络图形）。 */
   PNG,
-  /** JPEG (Joint Photographic Experts Group), including CMYK variants. */
+  /** JPEG（联合图像专家组），包括 CMYK 变体。 */
   JPEG,
-  /** GIF (Graphics Interchange Format). */
+  /** GIF（图形交换格式）。 */
   GIF,
-  /** TIFF (Tagged Image File Format). */
+  /** TIFF（标签图像文件格式）。 */
   TIFF
 }

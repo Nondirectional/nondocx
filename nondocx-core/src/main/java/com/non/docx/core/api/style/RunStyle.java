@@ -3,18 +3,15 @@ package com.non.docx.core.api.style;
 import java.util.Objects;
 
 /**
- * An immutable snapshot of a run's inline character formatting.
+ * 一个运行（run）的内联字符格式的不可变快照。
  *
- * <p>Captures the six inline-style attributes nondocx models on a run: bold, italic, underline,
- * font name, font size (in points), and text color (hex). Instances are value objects with
- * <em>content equality</em> — two {@code RunStyle}s are equal when and only when all six attributes
- * match, regardless of object identity.
+ * <p>捕获 nondocx 在运行上建模的六种内联样式属性：粗体、斜体、下划线、 字体名称、字体大小（磅值）和文本颜色（十六进制）。实例是值对象，具有 <em>内容相等性</em> — 两个
+ * {@code RunStyle} 在所有六个属性匹配时才相等， 与对象标识无关。
  *
- * <p>The boolean attributes default to {@code false}; {@code font}, {@code size}, and {@code color}
- * are nullable to represent "not explicitly set". Use {@link #empty()} to obtain the baseline style
- * with all attributes cleared.
+ * <p>布尔属性默认为 {@code false}；{@code font}、{@code size} 和 {@code color} 可为 null 以表示"未显式设置"。使用 {@link
+ * #empty()} 获取所有属性已清除的基线样式。
  *
- * <p>This is a POI-free value object; it does not reference {@code org.apache.poi.*}.
+ * <p>这是一个无 POI 的值对象；它不引用 {@code org.apache.poi.*}。
  */
 public final class RunStyle {
 
@@ -38,25 +35,24 @@ public final class RunStyle {
   }
 
   /**
-   * Returns the baseline style with all attributes cleared (bold/italic/underline {@code false},
-   * font/size/color {@code null}).
+   * 返回所有属性已清除的基线样式（粗体/斜体/下划线为 {@code false}， 字体/大小/颜色为 {@code null}）。
    *
-   * @return the empty style (a shared, immutable singleton)
+   * @return 空样式（一个共享的、不可变的单例）
    */
   public static RunStyle empty() {
     return EMPTY;
   }
 
   /**
-   * Creates a new style with the specified attributes.
+   * 使用指定的属性创建一个新样式。
    *
-   * @param bold whether the text is bold
-   * @param italic whether the text is italic
-   * @param underline whether the text is underlined
-   * @param font the font name, or {@code null} if unset
-   * @param size the font size in points, or {@code null} if unset
-   * @param color the text color as a hex string (e.g. {@code "FF0000"}), or {@code null}
-   * @return a new style
+   * @param bold 文本是否粗体
+   * @param italic 文本是否斜体
+   * @param underline 文本是否带下划线
+   * @param font 字体名称，如果未设置则为 {@code null}
+   * @param size 字体大小（磅值），如果未设置则为 {@code null}
+   * @param color 文本颜色（十六进制字符串，例如 {@code "FF0000"}），如果未设置则为 {@code null}
+   * @return 一个新的样式
    */
   public static RunStyle of(
       boolean bold, boolean italic, boolean underline, String font, Integer size, String color) {
@@ -64,92 +60,91 @@ public final class RunStyle {
   }
 
   /**
-   * Returns a copy of this style with the bold attribute replaced.
+   * 返回此样式的一个副本，其中的粗体属性已被替换。
    *
-   * @param bold the new bold value
-   * @return a new style (this instance is unchanged)
+   * @param bold 新的粗体值
+   * @return 一个新的样式（此实例保持不变）
    */
   public RunStyle bold(boolean bold) {
     return new RunStyle(bold, this.italic, this.underline, this.font, this.size, this.color);
   }
 
   /**
-   * Returns a copy of this style with the italic attribute replaced.
+   * 返回此样式的一个副本，其中的斜体属性已被替换。
    *
-   * @param italic the new italic value
-   * @return a new style (this instance is unchanged)
+   * @param italic 新的斜体值
+   * @return 一个新的样式（此实例保持不变）
    */
   public RunStyle italic(boolean italic) {
     return new RunStyle(this.bold, italic, this.underline, this.font, this.size, this.color);
   }
 
   /**
-   * Returns a copy of this style with the underline attribute replaced.
+   * 返回此样式的一个副本，其中的下划线属性已被替换。
    *
-   * @param underline the new underline value
-   * @return a new style (this instance is unchanged)
+   * @param underline 新的下划线值
+   * @return 一个新的样式（此实例保持不变）
    */
   public RunStyle underline(boolean underline) {
     return new RunStyle(this.bold, this.italic, underline, this.font, this.size, this.color);
   }
 
   /**
-   * Returns a copy of this style with the font name replaced.
+   * 返回此样式的一个副本，其中的字体名称已被替换。
    *
-   * @param font the new font name, or {@code null} to clear
-   * @return a new style (this instance is unchanged)
+   * @param font 新的字体名称，或 {@code null} 以清除
+   * @return 一个新的样式（此实例保持不变）
    */
   public RunStyle font(String font) {
     return new RunStyle(this.bold, this.italic, this.underline, font, this.size, this.color);
   }
 
   /**
-   * Returns a copy of this style with the font size replaced.
+   * 返回此样式的一个副本，其中的字体大小已被替换。
    *
-   * @param size the new font size in points, or {@code null} to clear
-   * @return a new style (this instance is unchanged)
+   * @param size 新的字体大小（磅值），或 {@code null} 以清除
+   * @return 一个新的样式（此实例保持不变）
    */
   public RunStyle size(Integer size) {
     return new RunStyle(this.bold, this.italic, this.underline, this.font, size, this.color);
   }
 
   /**
-   * Returns a copy of this style with the text color replaced.
+   * 返回此样式的一个副本，其中的文本颜色已被替换。
    *
-   * @param color the new text color as a hex string (e.g. {@code "FF0000"}), or {@code null} to
-   *     clear
-   * @return a new style (this instance is unchanged)
+   * @param color 新的文本颜色（十六进制字符串，例如 {@code "FF0000"}），或 {@code null} 以清除
+   * @return 一个新的样式（此实例保持不变）
    */
   public RunStyle color(String color) {
     return new RunStyle(this.bold, this.italic, this.underline, this.font, this.size, color);
   }
 
-  /** Returns whether the text is bold. */
+  /** 返回文本是否粗体。 */
   public boolean isBold() {
     return bold;
   }
 
-  /** Returns whether the text is italic. */
+  /** 返回文本是否斜体。 */
   public boolean isItalic() {
     return italic;
   }
 
-  /** Returns whether the text is underlined. */
+  /** 返回文本是否带下划线。 */
   public boolean isUnderline() {
     return underline;
   }
 
-  /** Returns the font name, or {@code null} if unset. */
+  /** 返回字体名称，如果未设置则为 {@code null}。 */
   public String font() {
     return font;
   }
 
-  /** Returns the font size in points, or {@code null} if unset. */
+  /** 返回字体大小（磅值），如果未设置则为 {@code null}。 */
   public Integer size() {
     return size;
   }
 
-  /** Returns the text color as a hex string (e.g. {@code "FF0000"}), or {@code null} if unset. */
+  /** 返回文本颜色（十六进制字符串，例如 {@code "FF0000"}），如果未设置则为 {@code null}。 */
   public String color() {
     return color;
   }

@@ -8,45 +8,39 @@ import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 
 /**
- * A row within a {@link Table} — an ordered sequence of cells from left to right.
+ * {@link Table} 中的一行 — 从左到右的有序单元格序列。
  *
- * <p>Holds an Apache POI {@code XWPFTableRow} delegate and exposes a live view over it. Reads go
- * straight through to the delegate; there is no cached snapshot. Every mutation is write-through.
+ * <p>持有 Apache POI {@code XWPFTableRow} 委托，并在其上暴露活跃视图。读取 直接穿透到委托；没有缓存快照。每次修改都是直接写入。
  *
- * <p>The <em>structural source of truth</em> for a row's content is {@link #cells()}: the ordered
- * sequence of cells from left to right. Content equality ({@code equals} / {@code hashCode})
- * compares that ordered cell sequence, never the delegate reference, so two rows over distinct POI
- * instances but with the same cells are equal — this is what makes round-trip assertions work.
+ * <p>行内容的 <em>结构真实来源</em> 是 {@link #cells()}：从左到右的有序 单元格序列。内容相等性（{@code equals} / {@code hashCode}）
+ * 比较该有序单元格序列，从不比较委托引用，因此两个基于不同 POI 实例但具有相同单元格的行是相等的 — 这就是往返断言能正常工作的原因。
  *
- * <p>This is a <em>mutable live object</em>. Its {@code equals} / {@code hashCode} serve comparison
- * and round-trip assertions; they are not suited as a long-lived {@code HashMap} key, since the
- * underlying content can change at any time.
+ * <p>这是一个 <em>可变的活动对象</em>。其 {@code equals} / {@code hashCode} 用于比较 和往返断言；它们不适合作为长期存在的 {@code
+ * HashMap} 键，因为 底层内容随时可能改变。
  */
 public final class Row {
 
   private final XWPFTableRow delegate;
 
   /**
-   * Wraps the given POI row.
+   * 封装给定的 POI 行。
    *
-   * <p>This constructor is the internal seam by which {@link Table} produces live row wrappers, so
-   * it accepts a POI type by design. Users normally obtain rows via {@code Table.rows()} / {@code
-   * Table.addRow()} rather than constructing them directly.
+   * <p>此构造函数是 {@link Table} 生成活跃行包装器的内部接缝， 因此它有意接受 POI 类型。用户通常通过 {@code Table.rows()} / {@code
+   * Table.addRow()} 获取行，而不是直接构造它们。
    *
-   * @param delegate the backing POI row (not {@code null})
-   * @throws IllegalArgumentException if {@code delegate} is {@code null}
+   * @param delegate 底层的 POI 行（不能为 {@code null}）
+   * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
    */
   public Row(XWPFTableRow delegate) {
     this.delegate = Objects.requireNonNull(delegate, "delegate");
   }
 
   /**
-   * Returns a live view of this row's cells in left-to-right order.
+   * 返回此行单元格的活跃视图，按从左到右的顺序排列。
    *
-   * <p>The view is re-read from the delegate on every access, so mutations (added or removed cells)
-   * are reflected live.
+   * <p>每次访问时都会从委托重新读取视图，因此变更（添加或删除单元格） 会实时反映。
    *
-   * @return a live, unmodifiable list of cells
+   * @return 活跃、不可修改的单元格列表
    */
   public List<Cell> cells() {
     return new AbstractList<Cell>() {
@@ -65,25 +59,25 @@ public final class Row {
   }
 
   /**
-   * Returns the cell at the given index.
+   * 返回指定索引处的单元格。
    *
-   * @param index cell index (0-based, into {@link #cells()})
-   * @return the cell at that position
-   * @throws IndexOutOfBoundsException if {@code index} is out of range
+   * @param index 单元格索引（从 0 开始，指向 {@link #cells()}）
+   * @return 该位置的单元格
+   * @throws IndexOutOfBoundsException 如果 {@code index} 超出范围
    */
   public Cell cell(int index) {
     return cells().get(index);
   }
 
   /**
-   * Appends a new, empty cell to this row and returns a live wrapper for it.
+   * 向此行追加一个新的空单元格，并返回其活跃包装器。
    *
-   * @return the newly appended cell
+   * @return 新追加的单元格
    */
   public Cell addCell() {
     XWPFTableCell created = delegate.createCell();
-    // POI pre-populates a new cell with a default empty paragraph; clear it so addCell()
-    // yields an empty cell — content is then added via text(String) or addParagraph().
+    // POI 会用默认空段落预填充新单元格；清除它以使 addCell()
+    // 产生一个空单元格 — 然后通过 text(String) 或 addParagraph() 添加内容。
     while (created.getParagraphs().size() > 0) {
       created.removeParagraph(0);
     }
@@ -91,30 +85,28 @@ public final class Row {
   }
 
   /**
-   * Removes the cell at the given index.
+   * 移除指定索引处的单元格。
    *
-   * @param index cell index (0-based, into {@link #cells()})
-   * @throws IndexOutOfBoundsException if {@code index} is out of range
+   * @param index 单元格索引（从 0 开始，指向 {@link #cells()}）
+   * @throws IndexOutOfBoundsException 如果 {@code index} 超出范围
    */
   public void removeCell(int index) {
     int size = delegate.getTableCells().size();
     if (index < 0 || index >= size) {
-      throw new IndexOutOfBoundsException(
-          "cell index " + index + " out of bounds (row has " + size + " cells)");
+      throw new IndexOutOfBoundsException("单元格索引 " + index + " 超出范围（行有 " + size + " 个单元格）");
     }
     delegate.removeCell(index);
   }
 
   /**
-   * Appends a new cell, writes the given text into it, and returns this row for chaining.
+   * 追加一个新单元格，将给定文本写入其中，并返回此行以支持链式调用。
    *
-   * <p>This is a construction convenience over {@link #addCell()} followed by {@link
-   * Cell#text(String)}: it appends one cell and sets its text, so the common case of a single-value
-   * cell reads as {@code row.cell("A1")}. No new domain logic is introduced.
+   * <p>这是 {@link #addCell()} 后跟 {@link Cell#text(String)} 的构造便捷方法：它追加一个单元格并设置其文本，因此单值 单元格的常见情况写作
+   * {@code row.cell("A1")}。没有引入新的领域逻辑。
    *
-   * @param text the text to write into the new cell (not {@code null})
-   * @return this row
-   * @throws IllegalArgumentException if {@code text} is {@code null}
+   * @param text 要写入新单元格的文本（不能为 {@code null}）
+   * @return 此行
+   * @throws IllegalArgumentException 如果 {@code text} 为 {@code null}
    */
   public Row cell(String text) {
     Objects.requireNonNull(text, "text");
@@ -123,15 +115,14 @@ public final class Row {
   }
 
   /**
-   * Appends a new cell, applies the given configurator to it, and returns this row for chaining.
+   * 追加一个新单元格，应用给定的配置器，并返回此行以支持链式调用。
    *
-   * <p>This is a construction convenience over {@link #addCell()}: it appends one cell and hands
-   * the live {@link Cell} to the configurator, so the caller can populate multi-paragraph or styled
-   * cells directly. No new domain logic is introduced.
+   * <p>这是 {@link #addCell()} 的构造便捷方法：它追加一个单元格并将 活跃的 {@link Cell} 交给配置器，因此调用者可以直接填充多段落或带样式
+   * 的单元格。没有引入新的领域逻辑。
    *
-   * @param config the cell configurator, operating on the live cell (not {@code null})
-   * @return this row
-   * @throws IllegalArgumentException if {@code config} is {@code null}
+   * @param config 单元格配置器，操作活跃的单元格（不能为 {@code null}）
+   * @return 此行
+   * @throws IllegalArgumentException 如果 {@code config} 为 {@code null}
    */
   public Row cell(Consumer<Cell> config) {
     Objects.requireNonNull(config, "config");
@@ -141,17 +132,17 @@ public final class Row {
   }
 
   /**
-   * Returns the underlying POI row.
+   * 返回底层的 POI 行。
    *
-   * <p>Modifications to the returned object affect the document immediately. Use with caution.
+   * <p>对返回对象的修改会立即影响文档。请谨慎使用。
    *
-   * @return the backing {@code XWPFTableRow} instance (same instance for the wrapper's lifetime)
+   * @return 底层的 {@code XWPFTableRow} 实例（包装器生命周期内同一实例）
    */
   public XWPFTableRow raw() {
     return delegate;
   }
 
-  // ---------- content equality ----------
+  // ---------- 内容相等 ----------
 
   @Override
   public boolean equals(Object o) {

@@ -9,16 +9,14 @@ import com.non.docx.core.internal.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * Construction-track helper for assembling a single {@link Paragraph}.
+ * 构建轨道辅助类，用于组装单个 {@link Paragraph}。
  *
- * <p>This is a thin wrapper over a live {@link Paragraph}. Paragraph-level style methods (heading,
- * alignment, indentation, line spacing, list membership) delegate straight to the live paragraph
- * and return this builder for chaining; run creation delegates to {@link Paragraph#addRun()} /
- * {@link Paragraph#addRun(String)} and returns the live {@link Run}, so callers can chain run-level
- * formatting ({@code bold()}, {@code fontSize(int)}, ...). No run or paragraph behavior is
- * duplicated here — every call reaches the live {@code Paragraph} / {@code Run}.
+ * <p>这是一个对活动对象 {@link Paragraph} 的薄包装器。段落级样式方法（标题、对齐方式、缩进、 行距、列表成员资格）直接委托给活动段落并返回此构建器以支持链式调用；run
+ * 创建委托给 {@link Paragraph#addRun()} / {@link Paragraph#addRun(String)} 并返回活动 {@link Run}，
+ * 因此调用方可以链式调用 run 级格式化（{@code bold()}、{@code fontSize(int)}……）。 此处不重复任何 run 或段落行为——每次调用都到达活动对象
+ * {@code Paragraph} / {@code Run}。
  *
- * <p>Example:
+ * <p>示例：
  *
  * <pre>{@code
  * ParagraphBuilder.on(paragraph)
@@ -27,12 +25,10 @@ import java.util.function.Consumer;
  *     .italic();
  * }</pre>
  *
- * Here {@code .text("Chapter 1")} returns the live {@link Run}, so {@code .italic()} applies to
- * that run. To assemble a paragraph from scratch, prefer {@link
- * DocumentBuilder#paragraph(Consumer)}, which hands the live paragraph straight to a lambda; this
- * class is for callers who prefer an explicit builder object over a lambda.
+ * <p>这里 {@code .text("Chapter 1")} 返回活动 {@link Run}，因此 {@code .italic()} 应用于 该 run。如需从零组装段落，推荐使用
+ * {@link DocumentBuilder#paragraph(Consumer)}，它将活动段落直接交给 lambda；此类适用于希望使用 显式构建器对象而非 lambda 的调用方。
  *
- * <p>This class references only {@code api/} types — no POI types appear in its signatures.
+ * <p>此类仅引用 {@code api/} 类型——其签名中不出现 POI 类型。
  */
 public final class ParagraphBuilder {
 
@@ -43,11 +39,11 @@ public final class ParagraphBuilder {
   }
 
   /**
-   * Creates a builder over the given live paragraph.
+   * 在给定的活动段落上创建一个构建器。
    *
-   * @param paragraph the live paragraph to assemble into (not {@code null})
-   * @return a new builder
-   * @throws IllegalArgumentException if {@code paragraph} is {@code null}
+   * @param paragraph 要组装成的活动段落（不能为 {@code null}）
+   * @return 新构建器
+   * @throws IllegalArgumentException 如果 {@code paragraph} 为 {@code null}
    */
   public static ParagraphBuilder on(Paragraph paragraph) {
     Objects.requireNonNull(paragraph, "paragraph");
@@ -55,29 +51,29 @@ public final class ParagraphBuilder {
   }
 
   /**
-   * Applies a heading level to the paragraph and returns this builder.
+   * 为段落应用标题级别并返回此构建器。
    *
-   * @param level the heading level (not {@code null})
-   * @return this builder
-   * @throws IllegalArgumentException if {@code level} is {@code null}
+   * @param level 标题级别（不能为 {@code null}）
+   * @return 此构建器
+   * @throws IllegalArgumentException 如果 {@code level} 为 {@code null}
    */
   public ParagraphBuilder heading(HeadingLevel level) {
     paragraph.heading(level);
     return this;
   }
 
-  /** Clears any heading style from the paragraph and returns this builder. */
+  /** 清除段落上的所有标题样式并返回此构建器。 */
   public ParagraphBuilder clearHeading() {
     paragraph.clearHeading();
     return this;
   }
 
   /**
-   * Sets the horizontal alignment and returns this builder.
+   * 设置水平对齐方式并返回此构建器。
    *
-   * @param alignment the alignment (not {@code null})
-   * @return this builder
-   * @throws IllegalArgumentException if {@code alignment} is {@code null}
+   * @param alignment 对齐方式（不能为 {@code null}）
+   * @return 此构建器
+   * @throws IllegalArgumentException 如果 {@code alignment} 为 {@code null}
    */
   public ParagraphBuilder alignment(Alignment alignment) {
     paragraph.alignment(alignment);
@@ -85,12 +81,11 @@ public final class ParagraphBuilder {
   }
 
   /**
-   * Sets the left and first-line indentation (in twips) and returns this builder.
+   * 设置左缩进和首行缩进（以缇为单位）并返回此构建器。
    *
-   * @param leftTwips the left indentation in twips
-   * @param firstLineTwips the first-line indentation in twips (may be negative for a hanging
-   *     indent)
-   * @return this builder
+   * @param leftTwips 左缩进（缇）
+   * @param firstLineTwips 首行缩进（缇，可以为负数以表示悬挂缩进）
+   * @return 此构建器
    */
   public ParagraphBuilder indent(int leftTwips, int firstLineTwips) {
     paragraph.indent(leftTwips, firstLineTwips);
@@ -98,10 +93,10 @@ public final class ParagraphBuilder {
   }
 
   /**
-   * Sets the line spacing as a multiple of single-line height and returns this builder.
+   * 将行距设置为单行高度的倍数并返回此构建器。
    *
-   * @param multiple the line spacing multiple (e.g. {@code 1.5})
-   * @return this builder
+   * @param multiple 行距倍数（如 {@code 1.5}）
+   * @return 此构建器
    */
   public ParagraphBuilder lineSpacing(double multiple) {
     paragraph.lineSpacing(multiple);
@@ -109,52 +104,50 @@ public final class ParagraphBuilder {
   }
 
   /**
-   * Marks the paragraph as a list member of the given kind at the given nesting level, and returns
-   * this builder.
+   * 将段落标记为给定类型和嵌套级别的列表成员，并返回此构建器。
    *
-   * @param kind the list kind (not {@code null})
-   * @param level the 0-based nesting level ({@code 0..8})
-   * @return this builder
-   * @throws IllegalArgumentException if {@code kind} is {@code null}
+   * @param kind 列表类型（不能为 {@code null}）
+   * @param level 从 0 开始的嵌套级别（{@code 0..8}）
+   * @return 此构建器
+   * @throws IllegalArgumentException 如果 {@code kind} 为 {@code null}
    */
   public ParagraphBuilder list(ListKind kind, int level) {
     paragraph.list(kind, level);
     return this;
   }
 
-  /** Removes list membership from the paragraph and returns this builder. */
+  /** 移除段落的列表成员资格并返回此构建器。 */
   public ParagraphBuilder clearList() {
     paragraph.clearList();
     return this;
   }
 
   /**
-   * Appends a new run carrying the given text and returns the live run, so the caller can chain
-   * run-level formatting directly (for example {@code .text("hi").bold().fontSize(14)}).
+   * 追加一个携带给定文本的新 run 并返回活动 run，以便调用方可以直接链式调用 run 级格式化 （例如 {@code .text("hi").bold().fontSize(14)}）。
    *
-   * @param text the run's text (not {@code null})
-   * @return the newly appended live run
-   * @throws IllegalArgumentException if {@code text} is {@code null}
+   * @param text run 的文本（不能为 {@code null}）
+   * @return 新追加的活动 run
+   * @throws IllegalArgumentException 如果 {@code text} 为 {@code null}
    */
   public Run text(String text) {
     return paragraph.addRun(text);
   }
 
   /**
-   * Appends a new, empty run and returns the live run.
+   * 追加一个新的空 run 并返回活动 run。
    *
-   * @return the newly appended live run
+   * @return 新追加的活动 run
    */
   public Run run() {
     return paragraph.addRun();
   }
 
   /**
-   * Appends a new, empty run, applies the given configurator to it, and returns this builder.
+   * 追加一个新的空 run，对其应用给定配置器，并返回此构建器。
    *
-   * @param config the run configurator, operating on the live run (not {@code null})
-   * @return this builder
-   * @throws IllegalArgumentException if {@code config} is {@code null}
+   * @param config run 配置器，操作活动 run（不能为 {@code null}）
+   * @return 此构建器
+   * @throws IllegalArgumentException 如果 {@code config} 为 {@code null}
    */
   public ParagraphBuilder run(Consumer<Run> config) {
     Objects.requireNonNull(config, "config");
@@ -164,9 +157,9 @@ public final class ParagraphBuilder {
   }
 
   /**
-   * Returns the live paragraph assembled by this builder.
+   * 返回此构建器组装的活动段落。
    *
-   * @return the backing live paragraph (never {@code null})
+   * @return 底层的活动段落（从不 {@code null}）
    */
   public Paragraph paragraph() {
     return paragraph;

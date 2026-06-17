@@ -20,45 +20,29 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
 
 /**
- * A document section — the carrier of page properties (paper size, orientation, margins) for a span
- * of the document body.
+ * 文档章节 — 为文档正文的一段范围承载页面属性（纸张大小、方向、页边距）。
  *
- * <p>Holds an OOXML {@code CTSectPr} delegate and exposes a live view over it. Every read goes
- * straight through to the delegate (there is no cached snapshot); every mutation writes through and
- * returns {@code this} for chaining. The page-size, orientation and margin mutators keep the
- * underlying {@code <w:pgSz>} / {@code <w:pgMar>} elements self-consistent — for example switching
- * to {@link Orientation#LANDSCAPE} swaps the stored width/height so the larger dimension is the
- * width, matching Word's own storage convention.
+ * <p>持有 OOXML {@code CTSectPr} 委托，并在其上暴露活跃视图。每次读取 直接穿透到委托（没有缓存快照）；每次修改写入并 返回 {@code this}
+ * 以支持链式调用。纸张大小、方向和页边距修改器保持 底层的 {@code <w:pgSz>} / {@code <w:pgMar>} 元素自洽 — 例如切换到 {@link
+ * Orientation#LANDSCAPE} 会交换存储的宽度/高度，使较大的维度成为 宽度，与 Word 自身的存储约定一致。
  *
- * <p><b>Paper size and orientation interact as follows.</b> {@link #paperSize(PaperSize)} stores
- * the size's portrait dimensions. {@link #orientation(Orientation)} swaps those dimensions when the
- * target orientation differs from the current aspect, so calling the two in either order leaves the
- * section in a consistent state. {@link #paperSize()} resolves the logical paper size back from the
- * stored dimensions using {@link PaperSize#fromDimensions(int, int)}, which is
- * orientation-agnostic.
+ * <p><b>纸张大小和方向的交互方式如下。</b> {@link #paperSize(PaperSize)} 存储 大小的纵向尺寸。{@link
+ * #orientation(Orientation)} 在目标方向与当前外观 不同时交换这些尺寸，因此以任一顺序调用两者都会使章节处于一致状态。 {@link #paperSize()} 使用
+ * {@link PaperSize#fromDimensions(int, int)} 从存储的维度 解析回逻辑纸张大小，该方法是方向无关的。
  *
- * <p><b>Defaults.</b> A {@code <w:pgSz>} with no stored dimensions is treated as A4 portrait for
- * the purposes of orientation swapping; an unset {@code <w:pgMar>} attribute reads back as {@code
- * 0}; an unset {@code orient} attribute reads back as {@link Orientation#PORTRAIT} (Word's
- * default).
+ * <p><b>默认值。</b> 没有存储尺寸的 {@code <w:pgSz>} 在方向交换时被视为 A4 纵向； 未设置的 {@code <w:pgMar>} 属性读回 {@code
+ * 0}；未设置的 {@code orient} 属性读回 {@link Orientation#PORTRAIT}（Word 的默认值）。
  *
- * <p><b>Header / footer.</b> {@link #header()} and {@link #footer()} expose the section-scoped
- * default (odd-page) header and footer. Each is resolved through a section-scoped {@code
- * XWPFHeaderFooterPolicy} bound to this section's {@code CTSectPr}: if a default header / footer is
- * already attached it is returned, otherwise an empty one is created and attached on first access.
- * First-page and even-page variants are out of scope for the MVP and remain reachable via {@code
- * raw()}. The owning {@code XWPFDocument} is held only to build that policy; it is an internal
- * helper, never exposed publicly and never part of content equality.
+ * <p><b>页眉/页脚。</b> {@link #header()} 和 {@link #footer()} 暴露章节级别的 默认（奇数页）页眉和页脚。每个都通过绑定到此章节 {@code
+ * CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析：如果已经附加了默认页眉/页脚则返回它，
+ * 否则在首次访问时创建一个空的并附加。首页和偶数页变体不在 MVP 范围内，仍可通过 {@code raw()} 访问。所属的 {@code XWPFDocument} 仅用于构建该
+ * 策略；它是一个内部辅助对象，从不公开暴露，也从不参与内容相等性。
  *
- * <p>Content equality ({@code equals} / {@code hashCode}) compares the page properties — paper
- * size, orientation and the four margins — <em>and</em> the section-scoped default header / footer
- * paragraph content, never the delegate reference nor the owning document. The header / footer
- * content is resolved read-only via {@code getDefaultHeader()} / {@code getDefaultFooter()}, which
- * return {@code null} (and contribute an empty list) without creating anything when absent — so an
- * {@code equals} call never mutates the document. This is what makes round-trip assertions work
- * across two distinct {@code CTSectPr} instances. These methods serve comparison and testing; they
- * are not suited as a long-lived {@code HashMap} key, since the underlying content can change at
- * any time.
+ * <p>内容相等性（{@code equals} / {@code hashCode}）比较页面属性 — 纸张 大小、方向和四个边距 — <em>以及</em> 章节级别的默认页眉/页脚
+ * 段落内容，从不比较委托引用或所属文档。页眉/页脚 内容通过 {@code getDefaultHeader()} / {@code getDefaultFooter()}
+ * 以只读方式解析，这些方法 在不存在时返回 {@code null}（并贡献一个空列表）而不会创建任何内容 — 因此 {@code equals}
+ * 调用永远不会修改文档。这就是为什么往返断言能在两个不同的 {@code CTSectPr} 实例之间工作。这些方法服务于比较和测试；它们 不适合作为长期存在的 {@code HashMap}
+ * 键，因为底层内容随时可能改变。
  */
 public final class Section {
 
@@ -66,35 +50,31 @@ public final class Section {
   private final CTSectPr delegate;
 
   /**
-   * Wraps the given OOXML section properties.
+   * 封装给定的 OOXML 章节属性。
    *
-   * <p>This constructor is the internal seam by which {@code Document} produces live section
-   * wrappers, so it accepts POI / XmlBeans types by design (the same way other wrappers accept
-   * their backing {@code XWPF*} type). Users obtain sections via {@code Document.sections()} /
-   * {@code Document.section(int)} rather than constructing them.
+   * <p>此构造函数是 {@code Document} 生成活跃章节包装器的内部接缝， 因此它有意接受 POI / XmlBeans 类型（与其他包装器接受其 底层 {@code XWPF*}
+   * 类型的方式相同）。用户通过 {@code Document.sections()} / {@code Document.section(int)} 获取章节，而不是直接构造它们。
    *
-   * <p>The {@code document} argument is the owning POI document; it is held only so this section
-   * can build a section-scoped {@code XWPFHeaderFooterPolicy} for {@link #header()} / {@link
-   * #footer()}. It is never exposed publicly and never participates in content equality.
+   * <p>{@code document} 参数是所属的 POI 文档；它仅被持有以使此章节 可以为 {@link #header()} / {@link #footer()} 构建章节级别的
+   * {@code XWPFHeaderFooterPolicy}。 它从不公开暴露，也从不参与内容相等性。
    *
-   * @param document the owning POI document (not {@code null})
-   * @param delegate the backing {@code CTSectPr} (not {@code null})
-   * @throws IllegalArgumentException if either argument is {@code null}
+   * @param document 所属的 POI 文档（不能为 {@code null}）
+   * @param delegate 底层的 {@code CTSectPr}（不能为 {@code null}）
+   * @throws IllegalArgumentException 如果任一参数为 {@code null}
    */
   public Section(XWPFDocument document, CTSectPr delegate) {
     this.document = Objects.requireNonNull(document, "document");
     this.delegate = Objects.requireNonNull(delegate, "delegate");
   }
 
-  // ---------- paper size ----------
+  // ---------- 纸张大小 ----------
 
   /**
-   * Sets the paper size and returns {@code this}. Stores the size's portrait dimensions on the
-   * underlying {@code <w:pgSz>}; the {@code orient} flag is left untouched.
+   * 设置纸张大小并返回 {@code this}。将大小的纵向尺寸存储到 底层的 {@code <w:pgSz>}；{@code orient} 标志保持不变。
    *
-   * @param size the paper size (not {@code null})
-   * @return this section
-   * @throws IllegalArgumentException if {@code size} is {@code null}
+   * @param size 纸张大小（不能为 {@code null}）
+   * @return 此章节
+   * @throws IllegalArgumentException 如果 {@code size} 为 {@code null}
    */
   public Section paperSize(PaperSize size) {
     Objects.requireNonNull(size, "size");
@@ -105,14 +85,12 @@ public final class Section {
   }
 
   /**
-   * Resolves the logical paper size from the stored {@code <w:pgSz>} dimensions, or {@code null} if
-   * the dimensions do not match a known {@link PaperSize}.
+   * 从存储的 {@code <w:pgSz>} 维度解析逻辑纸张大小，如果尺寸不匹配已知的 {@link PaperSize}，则返回 {@code null}。
    *
-   * <p>Matching is orientation-agnostic (see {@link PaperSize#fromDimensions(int, int)}), so the
-   * same paper size is resolved whether the section is portrait or landscape. A section with no
-   * {@code <w:pgSz>} at all resolves to {@code null}.
+   * <p>匹配是方向无关的（参见 {@link PaperSize#fromDimensions(int, int)}），因此无论章节是纵向还是横向， 都会解析出相同的纸张大小。根本没有
+   * {@code <w:pgSz>} 的章节 解析为 {@code null}。
    *
-   * @return the paper size, or {@code null} if unset or unrecognized
+   * @return 纸张大小，如果未设置或无法识别则返回 {@code null}
    */
   public PaperSize paperSize() {
     if (!delegate.isSetPgSz()) {
@@ -122,20 +100,17 @@ public final class Section {
     return PaperSize.fromDimensions((int) twipsOf(pgSz.getW()), (int) twipsOf(pgSz.getH()));
   }
 
-  // ---------- orientation ----------
+  // ---------- 方向 ----------
 
   /**
-   * Sets the page orientation and returns {@code this}. Ensures {@code <w:pgSz>} exists, swaps the
-   * stored width/height when the target orientation requires it (landscape keeps the larger
-   * dimension as width; portrait keeps the smaller dimension as width), and writes the {@code
-   * orient} flag.
+   * 设置页面方向并返回 {@code this}。确保 {@code <w:pgSz>} 存在，在目标方向 需要时交换存储的宽度/高度（横向将较大的维度作为
+   * 宽度；纵向将较小的维度作为宽度），并写入 {@code orient} 标志。
    *
-   * <p>If {@code <w:pgSz>} has no stored dimensions, A4 portrait dimensions are assumed as the base
-   * before swapping, so orientation is always well-defined.
+   * <p>如果 {@code <w:pgSz>} 没有存储的尺寸，则在交换前假定 A4 纵向尺寸作为 基准，因此方向始终是明确定义的。
    *
-   * @param orientation the orientation (not {@code null})
-   * @return this section
-   * @throws IllegalArgumentException if {@code orientation} is {@code null}
+   * @param orientation 方向（不能为 {@code null}）
+   * @return 此章节
+   * @throws IllegalArgumentException 如果 {@code orientation} 为 {@code null}
    */
   public Section orientation(Orientation orientation) {
     Objects.requireNonNull(orientation, "orientation");
@@ -158,10 +133,10 @@ public final class Section {
   }
 
   /**
-   * Returns the page orientation. A section with no {@code <w:pgSz>}, or one whose {@code orient}
-   * flag is unset, is reported as {@link Orientation#PORTRAIT} (Word's default).
+   * 返回页面方向。没有 {@code <w:pgSz>} 的章节，或其 {@code orient} 标志 未设置，报告为 {@link Orientation#PORTRAIT}（Word
+   * 的默认值）。
    *
-   * @return the orientation (never {@code null})
+   * @return 方向（从不返回 {@code null}）
    */
   public Orientation orientation() {
     if (!delegate.isSetPgSz()) {
@@ -172,16 +147,16 @@ public final class Section {
     return mapped == null ? Orientation.PORTRAIT : mapped;
   }
 
-  // ---------- margins ----------
+  // ---------- 边距 ----------
 
   /**
-   * Sets the four page margins (in twips) and returns {@code this}.
+   * 设置四个页面边距（以缇为单位）并返回 {@code this}。
    *
-   * @param topTwips the top margin in twips
-   * @param rightTwips the right margin in twips
-   * @param bottomTwips the bottom margin in twips
-   * @param leftTwips the left margin in twips
-   * @return this section
+   * @param topTwips 上边距（缇）
+   * @param rightTwips 右边距（缇）
+   * @param bottomTwips 下边距（缇）
+   * @param leftTwips 左边距（缇）
+   * @return 此章节
    */
   public Section margins(int topTwips, int rightTwips, int bottomTwips, int leftTwips) {
     CTPageMar pgMar = delegate.isSetPgMar() ? delegate.getPgMar() : delegate.addNewPgMar();
@@ -193,59 +168,55 @@ public final class Section {
   }
 
   /**
-   * Returns the top margin in twips, or {@code 0} if not explicitly set.
+   * 返回上边距（以缇为单位），如果未显式设置则返回 {@code 0}。
    *
-   * @return the top margin in twips, or {@code 0} if unset
+   * @return 上边距（缇），如果未设置则返回 {@code 0}
    */
   public int marginTop() {
     return marginOf(CTPageMar::getTop);
   }
 
   /**
-   * Returns the right margin in twips, or {@code 0} if not explicitly set.
+   * 返回右边距（以缇为单位），如果未显式设置则返回 {@code 0}。
    *
-   * @return the right margin in twips, or {@code 0} if unset
+   * @return 右边距（缇），如果未设置则返回 {@code 0}
    */
   public int marginRight() {
     return marginOf(CTPageMar::getRight);
   }
 
   /**
-   * Returns the bottom margin in twips, or {@code 0} if not explicitly set.
+   * 返回下边距（以缇为单位），如果未显式设置则返回 {@code 0}。
    *
-   * @return the bottom margin in twips, or {@code 0} if unset
+   * @return 下边距（缇），如果未设置则返回 {@code 0}
    */
   public int marginBottom() {
     return marginOf(CTPageMar::getBottom);
   }
 
   /**
-   * Returns the left margin in twips, or {@code 0} if not explicitly set.
+   * 返回左边距（以缇为单位），如果未显式设置则返回 {@code 0}。
    *
-   * @return the left margin in twips, or {@code 0} if unset
+   * @return 左边距（缇），如果未设置则返回 {@code 0}
    */
   public int marginLeft() {
     return marginOf(CTPageMar::getLeft);
   }
 
-  // ---------- header / footer ----------
+  // ---------- 页眉/页脚 ----------
 
   /**
-   * Returns the section-scoped default (odd-page) header, creating and attaching an empty one on
-   * first access if none is present.
+   * 返回章节级别的默认（奇数页）页眉，如果不存在则在首次访问时 创建并附加一个空的页眉。
    *
-   * <p>The header is resolved through a section-scoped {@code XWPFHeaderFooterPolicy} bound to this
-   * section's {@code CTSectPr}, so the returned header belongs to <em>this</em> section: in a
-   * multi-section document each {@code Section} carries its own default header. On first access an
-   * empty default header part is created and a {@code default} header reference is written onto
-   * this section's {@code CTSectPr}; subsequent calls return that same header (create-once).
+   * <p>页眉通过绑定到此章节 {@code CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析，因此返回的页眉属于 <em>此</em>
+   * 章节：在多章节文档中， 每个 {@code Section} 携带自己的默认页眉。首次访问时创建 一个空的默认页眉部分，并将 {@code default} 页眉引用写入 此章节的
+   * {@code CTSectPr}；后续调用返回相同的页眉（创建一次）。
    *
-   * <p>POI exceptions raised while creating or attaching the header part are wrapped into a {@link
-   * DocxIOException}. First-page and even-page header variants are out of scope for the MVP and
-   * remain reachable via {@code raw()}.
+   * <p>创建或附加页眉部分时引发的 POI 异常被封装为 {@link DocxIOException}。首页和偶数页页眉变体不在 MVP 范围内， 仍可通过 {@code raw()}
+   * 访问。
    *
-   * @return the default header for this section (never {@code null})
-   * @throws DocxIOException if the header part cannot be created or attached
+   * @return 此章节的默认页眉（从不返回 {@code null}）
+   * @throws DocxIOException 如果页眉部分无法创建或附加
    */
   public Header header() {
     try {
@@ -256,26 +227,22 @@ public final class Section {
       }
       return new Header(header);
     } catch (POIXMLException e) {
-      throw new DocxIOException("Failed to create section header", e);
+      throw new DocxIOException("无法创建章节页眉", e);
     }
   }
 
   /**
-   * Returns the section-scoped default (odd-page) footer, creating and attaching an empty one on
-   * first access if none is present.
+   * 返回章节级别的默认（奇数页）页脚，如果不存在则在首次访问时 创建并附加一个空的页脚。
    *
-   * <p>The footer is resolved through a section-scoped {@code XWPFHeaderFooterPolicy} bound to this
-   * section's {@code CTSectPr}, so the returned footer belongs to <em>this</em> section: in a
-   * multi-section document each {@code Section} carries its own default footer. On first access an
-   * empty default footer part is created and a {@code default} footer reference is written onto
-   * this section's {@code CTSectPr}; subsequent calls return that same footer (create-once).
+   * <p>页脚通过绑定到此章节 {@code CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析，因此返回的页脚属于 <em>此</em>
+   * 章节：在多章节文档中， 每个 {@code Section} 携带自己的默认页脚。首次访问时创建 一个空的默认页脚部分，并将 {@code default} 页脚引用写入 此章节的
+   * {@code CTSectPr}；后续调用返回相同的页脚（创建一次）。
    *
-   * <p>POI exceptions raised while creating or attaching the footer part are wrapped into a {@link
-   * DocxIOException}. First-page and even-page footer variants are out of scope for the MVP and
-   * remain reachable via {@code raw()}.
+   * <p>创建或附加页脚部分时引发的 POI 异常被封装为 {@link DocxIOException}。首页和偶数页页脚变体不在 MVP 范围内， 仍可通过 {@code raw()}
+   * 访问。
    *
-   * @return the default footer for this section (never {@code null})
-   * @throws DocxIOException if the footer part cannot be created or attached
+   * @return 此章节的默认页脚（从不返回 {@code null}）
+   * @throws DocxIOException 如果页脚部分无法创建或附加
    */
   public Footer footer() {
     try {
@@ -286,24 +253,24 @@ public final class Section {
       }
       return new Footer(footer);
     } catch (POIXMLException e) {
-      throw new DocxIOException("Failed to create section footer", e);
+      throw new DocxIOException("无法创建章节页脚", e);
     }
   }
 
-  // ---------- escape hatch ----------
+  // ---------- 逃生出口 ----------
 
   /**
-   * Returns the underlying OOXML section properties.
+   * 返回底层的 OOXML 章节属性。
    *
-   * <p>Modifications to the returned object affect the document immediately. Use with caution.
+   * <p>对返回对象的修改会立即影响文档。请谨慎使用。
    *
-   * @return the backing {@code CTSectPr} instance (same instance for the wrapper's lifetime)
+   * @return 底层的 {@code CTSectPr} 实例（包装器生命周期内同一实例）
    */
   public CTSectPr raw() {
     return delegate;
   }
 
-  // ---------- content equality ----------
+  // ---------- 内容相等 ----------
 
   @Override
   public boolean equals(Object o) {
@@ -354,17 +321,14 @@ public final class Section {
         + "]}";
   }
 
-  // ---------- internals ----------
+  // ---------- 内部方法 ----------
 
-  /** Returns the {@code <w:pgSz>} element, creating it if absent. */
+  /** 返回 {@code <w:pgSz>} 元素，如果不存在则创建它。 */
   private CTPageSz ensurePgSz() {
     return delegate.isSetPgSz() ? delegate.getPgSz() : delegate.addNewPgSz();
   }
 
-  /**
-   * Reads a single margin, returning {@code 0} when {@code <w:pgMar>} or the specific attribute is
-   * unset.
-   */
+  /** 读取单个边距，当 {@code <w:pgMar>} 或特定属性未设置时返回 {@code 0}。 */
   private int marginOf(java.util.function.Function<CTPageMar, Object> getter) {
     if (!delegate.isSetPgMar()) {
       return 0;
@@ -376,26 +340,21 @@ public final class Section {
     return 0;
   }
 
-  /**
-   * Coerces a raw XmlBeans dimension ({@code BigInteger}-as-{@code Object}) to a long, returning
-   * {@code 0} when unset.
-   */
+  /** 将原始 XmlBeans 维度（{@code BigInteger}-as-{@code Object}）强制转换为 long， 未设置时返回 {@code 0}。 */
   private static long twipsOf(Object value) {
     return value instanceof Number ? ((Number) value).longValue() : 0L;
   }
 
-  /** Coerces a raw XmlBeans dimension to a long, returning {@code defaultTwips} when unset. */
+  /** 将原始 XmlBeans 维度强制转换为 long，未设置时返回 {@code defaultTwips}。 */
   private static long dimOrDefault(Object value, int defaultTwips) {
     return value instanceof Number ? ((Number) value).longValue() : defaultTwips;
   }
 
-  // ---------- header / footer (read-only, for equality) ----------
+  // ---------- 页眉/页脚（只读，用于相等性） ----------
 
   /**
-   * Resolves this section's default header paragraphs read-only — without creating a header part
-   * when none is attached. Used by {@code equals} / {@code hashCode} so that a comparison never
-   * mutates the document. Returns an empty list when no default header is present or when
-   * resolution fails, so {@code equals} never throws.
+   * 以只读方式解析此章节的默认页眉段落 — 当没有附加页眉部分时 不创建它。由 {@code equals} / {@code hashCode} 使用，以便比较
+   * 永远不会修改文档。当没有默认页眉或解析失败时返回空列表， 因此 {@code equals} 永远不会抛出异常。
    */
   private List<Paragraph> defaultHeaderParagraphs() {
     try {
@@ -408,10 +367,8 @@ public final class Section {
   }
 
   /**
-   * Resolves this section's default footer paragraphs read-only — without creating a footer part
-   * when none is attached. Used by {@code equals} / {@code hashCode} so that a comparison never
-   * mutates the document. Returns an empty list when no default footer is present or when
-   * resolution fails, so {@code equals} never throws.
+   * 以只读方式解析此章节的默认页脚段落 — 当没有附加页脚部分时 不创建它。由 {@code equals} / {@code hashCode} 使用，以便比较
+   * 永远不会修改文档。当没有默认页脚或解析失败时返回空列表， 因此 {@code equals} 永远不会抛出异常。
    */
   private List<Paragraph> defaultFooterParagraphs() {
     try {

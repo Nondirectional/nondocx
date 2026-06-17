@@ -10,10 +10,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Verifies that hyperlinks created via nondocx preserve their text and URL across a save → open
- * round-trip, and that content equality compares text + URL.
- */
+/** 验证通过 nondocx 创建的超链接在保存→打开往返中保留其文本和 URL， 且内容相等性比较文本 + URL。 */
 class HyperlinkTest {
 
   @Test

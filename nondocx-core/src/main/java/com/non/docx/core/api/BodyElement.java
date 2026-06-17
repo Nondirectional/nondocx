@@ -1,15 +1,12 @@
 package com.non.docx.core.api;
 
 /**
- * A top-level block that appears in a document body, in document order.
+ * 出现在文档正文中的顶级块，按文档顺序排列。
  *
- * <p>The document body is an ordered sequence of body elements — primarily paragraphs and tables.
- * {@code Document.bodyElements()} returns them in their true Word-body order, and this interface is
- * the shared type of that sequence. It is the structural source of truth used for round-trip
- * equality comparisons.
+ * <p>文档正文是一个有序的正文元素序列——主要是段落和表格。 {@code Document.bodyElements()} 返回它们在真实 Word
+ * 正文顺序中的排列，此接口是该序列的共享类型。 它是用于往返相等性比较的结构化真相来源。
  *
- * <p>Implementations include {@code com.non.docx.core.api.text.Paragraph} and {@code
- * com.non.docx.core.api.table.Table}, added in later phases. This is currently a marker interface;
- * common members may be promoted onto it as the domain model grows.
+ * <p>实现包括 {@code com.non.docx.core.api.text.Paragraph} 和 {@code
+ * com.non.docx.core.api.table.Table}，将在后续阶段添加。这目前是一个标记接口； 随着领域模型的增长，公共成员可能会被提升到其中。
  */
 public interface BodyElement {}

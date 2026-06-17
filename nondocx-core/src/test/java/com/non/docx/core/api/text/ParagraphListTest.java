@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies that {@code Paragraph.list(ListKind, int)} / {@code clearList()} round-trip through save
- * → open, that nesting levels survive, and that list membership participates in content equality.
+ * 验证 {@code Paragraph.list(ListKind, int)} / {@code clearList()} 在保存→打开往返中存活，
+ * 嵌套级别存活，且列表成员资格参与内容相等性。
  */
 class ParagraphListTest {
 
@@ -103,8 +103,7 @@ class ParagraphListTest {
 
   @Test
   void repeatedListCallsReuseSingleNumberingDefinition() {
-    // Repeated list(...) on the same document should not throw and should keep all
-    // paragraphs as list members.
+    // 在同一文档上重复调用 list(...) 不应抛出异常，且应保持所有段落为列表成员。
     Document doc = Docx.create();
     doc.addParagraph().list(ListKind.BULLET, 0).addRun("a");
     doc.addParagraph().list(ListKind.BULLET, 0).addRun("b");
@@ -122,14 +121,14 @@ class ParagraphListTest {
     Paragraph plain = Docx.create().addParagraph();
     Paragraph bulletAgain = Docx.create().addParagraph().list(ListKind.BULLET, 0);
 
-    // Different kinds differ; list vs non-list differ; same kind+level are equal.
+    // 不同类型不同；列表与非列表不同；相同类型+级别相等。
     assertThat(bullet).isNotEqualTo(numbered);
     assertThat(bullet).isNotEqualTo(plain);
     assertThat(numbered).isNotEqualTo(plain);
     assertThat(bullet).isEqualTo(bulletAgain);
     assertThat(bullet.hashCode()).isEqualTo(bulletAgain.hashCode());
 
-    // Different nesting level differs.
+    // 不同的嵌套级别不同。
     Paragraph deeper = Docx.create().addParagraph().list(ListKind.BULLET, 2);
     assertThat(bullet).isNotEqualTo(deeper);
   }

@@ -1,16 +1,12 @@
 package com.non.docx.core.api;
 
 /**
- * An inline fragment that appears within a paragraph, in reading order.
+ * 出现在段落内部的内联片段，按阅读顺序排列。
  *
- * <p>A paragraph's content is an ordered sequence of inline elements — primarily runs, hyperlinks,
- * and inline images. {@code Paragraph.inlineElements()} returns them in their true reading order,
- * and this interface is the shared type of that sequence. It is the structural source of truth used
- * for round-trip equality comparisons.
+ * <p>段落的内容是一个有序的内联元素序列——主要是运行（run）、超链接和内联图片。 {@code Paragraph.inlineElements()}
+ * 返回它们在真实阅读顺序中的排列，此接口是该序列的共享类型。 它是用于往返相等性比较的结构化真相来源。
  *
- * <p>Implementations include {@code com.non.docx.core.api.text.Run}, {@code
- * com.non.docx.core.api.text.Hyperlink}, and {@code com.non.docx.core.api.image.Image}, added in
- * later phases. This is currently a marker interface; common members may be promoted onto it as the
- * domain model grows.
+ * <p>实现包括 {@code com.non.docx.core.api.text.Run}、{@code com.non.docx.core.api.text.Hyperlink} 和
+ * {@code com.non.docx.core.api.image.Image}，将在后续阶段添加。 这目前是一个标记接口；随着领域模型的增长，公共成员可能会被提升到其中。
  */
 public interface InlineElement {}

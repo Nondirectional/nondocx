@@ -18,52 +18,41 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.STJc;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STNumberFormat;
 
 /**
- * Internal API — subject to change without notice.
+ * 内部 API——恕不另行通知即可更改。
  *
- * <p>Bridge between nondocx's POI-free {@link ListKind} and Apache POI's OOXML numbering machinery.
- * This is the only place that builds {@code CTAbstractNum}/{@code CTNum} definitions and reads list
- * membership back off an {@code XWPFParagraph}, so the public value object {@code ListKind} and the
- * {@code Paragraph} wrapper stay free of {@code org.apache.poi.*} at the source level.
+ * <p>nondocx 无 POI 的 {@link ListKind} 与 Apache POI 的 OOXML 编号机制之间的桥接。 这是唯一构建 {@code
+ * CTAbstractNum}/{@code CTNum} 定义并从 {@code XWPFParagraph} 读取列表成员资格的地方，因此公有值对象 {@code ListKind} 和
+ * {@code Paragraph} 包装器 在源代码层面保持无 {@code org.apache.poi.*}。
  *
- * <p>List membership is modeled as the pair (list kind, nesting level 0..8). Each kind maps to a
- * single {@code abstractNum} (with nine {@code CTLvl} entries) and a single {@code num} per
- * document; all paragraphs of the same kind share that num and differ only by their {@code ilvl}.
- * The {@code numId} for each (document, kind) is cached so repeated {@code list(...)} calls never
- * create duplicate definitions on the same document.
+ * <p>列表成员资格建模为（列表类型、嵌套级别 0..8）对。每种类型映射到单个 {@code abstractNum}（包含九个 {@code CTLvl} 条目）和每个文档的单个 {@code
+ * num}； 相同类型的所有段落共享该 num，仅通过其 {@code ilvl} 区分。每个（文档、类型）的 {@code numId} 被缓存，因此重复的 {@code list(...)}
+ * 调用在同一文档上永远不会创建重复定义。
  *
- * <p><b>Cache scope and lifecycle:</b> the cache keys on the {@code XWPFDocument} instance itself
- * (identity semantics). It intentionally holds a strong reference to the document for the JVM
- * lifetime; this is acceptable for an MVP library, but means documents should not be expected to be
- * garbage-collected while the cache retains them. After a {@code save} → {@code open} round trip
- * the freshly opened document is a different {@code XWPFDocument} instance, so its list definitions
- * are re-created on demand the first time {@code list(...)} is applied again; this is harmless
- * because paragraphs keep resolving correctly via the numId stored in the file.
+ * <p><b>缓存作用域和生命周期：</b>缓存以 {@code XWPFDocument} 实例本身为键（同一性语义）。 它有意在 JVM 生命周期内持有对文档的强引用；这对 MVP
+ * 库是可接受的，但不应期望文档 在缓存保留它们时被垃圾回收。经过 {@code save} → {@code open} 往返后，新打开的文档 是一个不同的 {@code
+ * XWPFDocument} 实例，因此其列表定义在下次应用 {@code list(...)} 时按需重新创建；这是无害的，因为段落通过文件中存储的 numId 继续正确解析。
  */
 public final class Numbering {
 
-  /** Maximum nesting level supported by a single abstractNum (ilvl 0..8 → nine levels). */
+  /** 单个 abstractNum 支持的最大嵌套级别（ilvl 0..8 → 九个级别）。 */
   private static final int MAX_LEVEL = 8;
 
-  /**
-   * Bullet glyphs used per nesting level for {@link ListKind#BULLET} abstractNums. Repeats after
-   * four levels to cover all nine ilvl entries.
-   */
+  /** 用于 {@link ListKind#BULLET} abstractNums 每个嵌套级别的项目符号字形。 四个级别后重复以覆盖所有九个 ilvl 条目。 */
   private static final String[] BULLET_GLYPHS = {
-    "\u2022", // • level 0
-    "\u25CB", // ○ level 1
-    "\u25AA", // ▪ level 2
-    "\u00B7", // · level 3
-    "\u2022", // • level 4
-    "\u25CB", // ○ level 5
-    "\u25AA", // ▪ level 6
-    "\u00B7", // · level 7
-    "\u2022" // • level 8
+    "•", // • 级别 0
+    "○", // ○ 级别 1
+    "▪", // ▪ 级别 2
+    "·", // · 级别 3
+    "•", // • 级别 4
+    "○", // ○ 级别 5
+    "▪", // ▪ 级别 6
+    "·", // · 级别 7
+    "•" // • 级别 8
   };
 
   /**
-   * Per-document cache of the {@code numId} provisioned for each {@link ListKind}. Keyed by {@code
-   * XWPFDocument} identity so the same document does not get duplicate numbering definitions across
-   * repeated {@code list(...)} calls.
+   * 每个文档缓存的为每个 {@link ListKind} 分配的 {@code numId}。 以 {@code XWPFDocument} 同一性为键，因此同一文档不会在重复的 {@code
+   * list(...)} 调用上获得重复的编号定义。
    */
   private static final Map<XWPFDocument, Map<ListKind, BigInteger>> NUM_ID_CACHE =
       new IdentityHashMap<>();
@@ -71,16 +60,14 @@ public final class Numbering {
   private Numbering() {}
 
   /**
-   * Marks the given paragraph as a member of a list of the specified kind at the specified nesting
-   * level. Ensures the owning document has a numbering part and provisions a shared abstractNum/num
-   * for the kind (cached), then assigns the paragraph's {@code numId} and {@code ilvl}.
+   * 将给定段落标记为指定类型和嵌套级别的列表成员。确保所属文档有一个编号部件， 并为该类型提供一个共享的 abstractNum/num（已缓存），然后分配段落的 {@code numId} 和
+   * {@code ilvl}。
    *
-   * @param paragraph the POI paragraph to update (not {@code null})
-   * @param kind the list kind (not {@code null})
-   * @param level the 0-based nesting level, in the range {@code 0..8}
-   * @throws IllegalArgumentException if {@code kind} is {@code null} or {@code level} is out of
-   *     range
-   * @throws DocxOperationException if the paragraph is not attached to a document
+   * @param paragraph 要修改的 POI 段落（不能为 {@code null}）
+   * @param kind 列表类型（不能为 {@code null}）
+   * @param level 从 0 开始的嵌套级别，范围 {@code 0..8}
+   * @throws IllegalArgumentException 如果 {@code kind} 为 {@code null} 或 {@code level} 超出范围
+   * @throws DocxOperationException 如果段落未附加到文档
    */
   public static void apply(XWPFParagraph paragraph, ListKind kind, int level) {
     Objects.requireNonNull(kind, "kind");
@@ -103,13 +90,11 @@ public final class Numbering {
   }
 
   /**
-   * Removes list membership from the given paragraph by unsetting its {@code <w:numPr/>} element
-   * entirely. This is stronger than {@link XWPFParagraph#setNumID(BigInteger) setNumID(null)},
-   * which leaves an empty {@code numId} that XmlBeans rejects as an invalid integer on the next
-   * save/open round trip. After this call {@link XWPFParagraph#getNumID()} reports {@code null}, so
-   * the paragraph reads as a non-list paragraph.
+   * 通过完全取消设置 {@code <w:numPr/>} 元素来移除给定段落的列表成员资格。 这比 {@link XWPFParagraph#setNumID(BigInteger)
+   * setNumID(null)} 更强， 后者会留下一个空的 {@code numId}，XmlBeans 在下一次保存/打开往返时将其拒绝为无效整数。 调用后 {@link
+   * XWPFParagraph#getNumID()} 报告 {@code null}， 因此段落读取为非列表段落。
    *
-   * @param paragraph the POI paragraph to clear (not {@code null})
+   * @param paragraph 要清除的 POI 段落（不能为 {@code null}）
    */
   public static void clear(XWPFParagraph paragraph) {
     CTPPr pPr = paragraph.getCTP().getPPr();
@@ -119,15 +104,14 @@ public final class Numbering {
   }
 
   /**
-   * Reads the list kind of the given paragraph, or {@code null} if it is not a list member.
+   * 读取给定段落的列表类型，如果该段落不是列表成员则返回 {@code null}。
    *
-   * <p>The kind is inferred from the paragraph's current-level number format as reported by POI: a
-   * {@code "bullet"} format means {@link ListKind#BULLET}; any other format (decimal, letter,
-   * roman, …) collapses to {@link ListKind#NUMBERED}. A paragraph with no {@code numId} is reported
-   * as {@code null}.
+   * <p>类型从 POI 报告的段落当前级别的编号格式推断：{@code "bullet"} 格式表示 {@link
+   * ListKind#BULLET}；任何其他格式（十进制、字母、罗马数字……）归并为 {@link ListKind#NUMBERED}。没有 {@code numId} 的段落被报告为
+   * {@code null}。
    *
-   * @param paragraph the POI paragraph to inspect (not {@code null})
-   * @return the list kind, or {@code null} if the paragraph is not a list member
+   * @param paragraph 要检查的 POI 段落（不能为 {@code null}）
+   * @return 列表类型，如果段落不是列表成员则返回 {@code null}
    */
   public static ListKind kindOf(XWPFParagraph paragraph) {
     if (paragraph.getNumID() == null) {
@@ -141,11 +125,10 @@ public final class Numbering {
   }
 
   /**
-   * Reads the 0-based nesting level of the given paragraph, or {@code null} if it is not a list
-   * member. A list paragraph with no explicit {@code ilvl} is reported as level {@code 0}.
+   * 读取给定段落的从 0 开始的嵌套级别，如果该段落不是列表成员则返回 {@code null}。 没有显式 {@code ilvl} 的列表段落被报告为级别 {@code 0}。
    *
-   * @param paragraph the POI paragraph to inspect (not {@code null})
-   * @return the nesting level, or {@code null} if the paragraph is not a list member
+   * @param paragraph 要检查的 POI 段落（不能为 {@code null}）
+   * @return 嵌套级别，如果段落不是列表成员则返回 {@code null}
    */
   public static Integer levelOf(XWPFParagraph paragraph) {
     if (paragraph.getNumID() == null) {
@@ -155,12 +138,9 @@ public final class Numbering {
     return ilvl == null ? 0 : ilvl.intValue();
   }
 
-  // ---------- internals ----------
+  // ---------- 内部方法 ----------
 
-  /**
-   * Returns the {@code numId} for the given (document, kind), provisioning a new abstractNum+num on
-   * first access and serving it from the cache afterwards.
-   */
+  /** 返回给定（文档、类型）的 {@code numId}，在首次访问时创建新的 abstractNum+num， 之后从缓存中提供。 */
   private static BigInteger numIdFor(
       XWPFDocument document, XWPFNumbering numbering, ListKind kind) {
     Map<ListKind, BigInteger> perDocument = NUM_ID_CACHE.get(document);
@@ -181,9 +161,8 @@ public final class Numbering {
   }
 
   /**
-   * Builds and registers an abstractNum carrying nine levels for the given kind, returning its
-   * {@code abstractNumId}. The id is pre-computed to be unique among existing abstractNums so it
-   * survives POI's copy-through add path without collision.
+   * 构建并注册一个包含给定类型九个级别的 abstractNum，返回其 {@code abstractNumId}。 ID 被预先计算为在现有 abstractNum 中唯一，因此它能在
+   * POI 的复制添加路径中无冲突地存活。
    */
   private static BigInteger createAbstractNum(XWPFNumbering numbering, ListKind kind) {
     CTAbstractNum ct = CTAbstractNum.Factory.newInstance();
@@ -192,7 +171,7 @@ public final class Numbering {
     return numbering.addAbstractNum(new XWPFAbstractNum(ct));
   }
 
-  /** Appends nine {@code CTLvl} entries (ilvl 0..8) to the abstractNum for the given kind. */
+  /** 为给定类型的 abstractNum 追加九个 {@code CTLvl} 条目（ilvl 0..8）。 */
   private static void populateLevels(CTAbstractNum ct, ListKind kind) {
     for (int level = 0; level <= MAX_LEVEL; level++) {
       CTLvl lvl = ct.addNewLvl();
@@ -210,9 +189,8 @@ public final class Numbering {
   }
 
   /**
-   * Computes the next free abstractNum id for the numbering part as {@code max(existing ids) + 1}
-   * (mirroring POI's own {@code findNextAbstractNumberingId}), starting at {@code 1} when the
-   * numbering has no abstractNums yet.
+   * 计算编号部件中下一个空闲的 abstractNum ID，为 {@code max(现有 ID) + 1} （镜像 POI 自身的 {@code
+   * findNextAbstractNumberingId}）， 当编号没有 abstractNum 时从 {@code 1} 开始。
    */
   private static BigInteger nextAbstractNumId(XWPFNumbering numbering) {
     long max = 0;

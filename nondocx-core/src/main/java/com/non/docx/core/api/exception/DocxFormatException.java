@@ -1,12 +1,11 @@
 package com.non.docx.core.api.exception;
 
 /**
- * Raised when a file or stream is not a valid, well-formed docx (OOXML) document.
+ * 当文件或流不是有效的、格式正确的 docx (OOXML) 文档时抛出。
  *
- * <p>The offending source path, when available, is carried as context and exposed via {@link
- * #getPath()} so callers can pinpoint which file is corrupt or malformed.
+ * <p>有问题的源路径（如果可用）会作为上下文携带，并通过 {@link #getPath()} 暴露，以便调用者可以定位哪个文件损坏或格式错误。
  *
- * <p>Example message: {@code "Not a valid docx file: /path/to/broken.docx"}.
+ * <p>示例消息：{@code "不是有效的 docx 文件：/path/to/broken.docx"}。
  */
 public class DocxFormatException extends DocxException {
 
@@ -15,10 +14,10 @@ public class DocxFormatException extends DocxException {
   private final String path;
 
   /**
-   * Constructs a new exception with the specified detail message and source path.
+   * 使用指定的详细信息和源路径构造一个新异常。
    *
-   * @param message the detail message (English) describing the format problem
-   * @param path the source path that failed to parse, or {@code null} if unknown (e.g. a stream)
+   * @param message 描述格式问题的详细信息
+   * @param path 解析失败的源路径，如果未知（例如流）则为 {@code null}
    */
   public DocxFormatException(String message, String path) {
     super(appendPath(message, path));
@@ -26,11 +25,11 @@ public class DocxFormatException extends DocxException {
   }
 
   /**
-   * Constructs a new exception with the specified detail message, source path, and cause.
+   * 使用指定的详细信息、源路径和原因构造一个新异常。
    *
-   * @param message the detail message (English) describing the format problem
-   * @param path the source path that failed to parse, or {@code null} if unknown
-   * @param cause the underlying parse / Apache POI exception, or {@code null}
+   * @param message 描述格式问题的详细信息
+   * @param path 解析失败的源路径，如果未知则为 {@code null}
+   * @param cause 底层的解析 / Apache POI 异常，或 {@code null}
    */
   public DocxFormatException(String message, String path, Throwable cause) {
     super(appendPath(message, path), cause);
@@ -38,10 +37,9 @@ public class DocxFormatException extends DocxException {
   }
 
   /**
-   * Returns the source path of the malformed document, or {@code null} when the source was a stream
-   * or the path is otherwise unknown.
+   * 返回格式错误文档的源路径，如果源是流或路径未知则为 {@code null}
    *
-   * @return the source path, or {@code null}
+   * @return 源路径，或 {@code null}
    */
   public String getPath() {
     return path;

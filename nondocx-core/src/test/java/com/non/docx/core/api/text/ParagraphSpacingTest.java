@@ -9,7 +9,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Verifies that {@code Paragraph.lineSpacing(double)} round-trips through save → open. */
+/** 验证 {@code Paragraph.lineSpacing(double)} 在保存→打开往返中存活。 */
 class ParagraphSpacingTest {
 
   @Test
@@ -30,7 +30,7 @@ class ParagraphSpacingTest {
   @Test
   void lineSpacingDefaultsToUnsetSentinel() {
     Paragraph p = Docx.create().addParagraph();
-    // POI reports -1.0 when line spacing is not explicitly set; documented in the getter Javadoc.
+    // POI 在行距未显式设置时报告 -1.0；这在 getter 的 Javadoc 中有说明。
     assertThat(p.lineSpacing()).isEqualTo(-1.0);
   }
 

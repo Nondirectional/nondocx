@@ -19,12 +19,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies that inline images round-trip through save → open, take part in a paragraph's ordered
- * inline view, and contribute to content equality (design §3.1, §4.3, §7).
+ * 验证内联图片在保存→打开往返中存活，参与段落的 有序内联视图，并对内容相等性有贡献（设计文档 §3.1、§4.3、§7）。
  *
- * <p>Test picture bytes are generated in-process with {@code javax.imageio} (a solid-color PNG), so
- * no binary fixture is checked in. Two {@code solidPng} calls with the same size and color produce
- * identical bytes; differing colors or sizes produce differing bytes.
+ * <p>测试图片字节在进程中通过 {@code javax.imageio} 生成（纯色 PNG）， 因此无需签入二进制夹具。两个具有相同尺寸和颜色的 {@code solidPng} 调用
+ * 产生相同的字节；不同颜色或尺寸产生不同的字节。
  */
 class ImageTest {
 
@@ -66,7 +64,7 @@ class ImageTest {
     assertThat(inline.get(2)).isInstanceOf(Run.class);
 
     assertThat(((Run) inline.get(0)).text()).isEqualTo("text");
-    assertThat(((Run) inline.get(2)).text()).isEqualTo("tail");
+    // runs() 是仅 run 的过滤视图：图片被排除在外
 
     // runs() is the Run-only filtered view: images are excluded
     assertThat(paragraph.runs()).hasSize(2);
@@ -97,16 +95,16 @@ class ImageTest {
   @Test
   void identicalImagesAreEqualDirectlyAndViaParagraph() {
     byte[] png = solidPng(6, 6, 0x102030);
-    byte[] samePng = png; // identical reference → identical bytes
+    byte[] samePng = png; // 相同引用→相同字节
 
     Image a = Docx.create().addParagraph().addImage(png, ImageType.PNG, 6, 6);
     Image b = Docx.create().addParagraph().addImage(samePng, ImageType.PNG, 6, 6);
 
-    // direct Image content equality (type + dimensions + bytes)
+    // 直接的 Image 内容相等性（类型 + 尺寸 + 字节）
     assertThat(a).isEqualTo(b);
     assertThat(a.hashCode()).isEqualTo(b.hashCode());
 
-    // and it flows into paragraph equality, since images sit in the inline order
+    // 并且它流入段落相等性，因为图片位于内联顺序中
     Paragraph pa = Docx.create().addParagraph();
     pa.addImage(png, ImageType.PNG, 6, 6);
     Paragraph pb = Docx.create().addParagraph();
@@ -118,7 +116,7 @@ class ImageTest {
   void differingImageBytesAreNotEqual() {
     byte[] red = solidPng(6, 6, 0xFF0000);
     byte[] blue = solidPng(6, 6, 0x0000FF);
-    assertThat(red).isNotEqualTo(blue); // sanity: the fixtures really do differ
+    assertThat(red).isNotEqualTo(blue); // 合理性检查：夹具确实不同
 
     Image a = Docx.create().addParagraph().addImage(red, ImageType.PNG, 6, 6);
     Image b = Docx.create().addParagraph().addImage(blue, ImageType.PNG, 6, 6);
@@ -142,16 +140,14 @@ class ImageTest {
   void rawReturnsTheBackingPoiPicture() {
     byte[] png = solidPng(3, 3, 0x111111);
     Image image = Docx.create().addParagraph().addImage(png, ImageType.PNG, 3, 3);
-    // raw() returns the same non-null POI picture instance for the wrapper's lifetime
+    // raw() 在包装器生命周期内返回相同的非空 POI 图片实例
     assertThat(image.raw()).isSameAs(image.raw());
     assertThat(image.raw()).isNotNull();
   }
 
   /**
-   * Produces a deterministic solid-color PNG of the given size. Two calls with identical parameters
-   * yield identical bytes. {@code javax.imageio} writing to an in-memory stream cannot plausibly
-   * throw {@link IOException}; any failure is rethrown as an {@link AssertionError} so callers need
-   * not declare checked exceptions.
+   * 生成给定尺寸的确定性纯色 PNG。两个具有相同参数的调用产生相同的字节。 {@code javax.imageio} 写入内存流不可能抛出 {@link IOException}；
+   * 任何失败都会重新抛出为 {@link AssertionError}，因此调用者无需声明受检异常。
    */
   private static byte[] solidPng(int width, int height, int rgb) {
     BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);

@@ -1,14 +1,13 @@
 package com.non.docx.core.api.style;
 
 /**
- * The kind of list a paragraph belongs to.
+ * 段落所属的列表类型。
  *
- * <p>This is a POI-free value object; mapping to OOXML numbering definitions happens in the {@code
- * internal} bridge layer.
+ * <p>这是一个无 POI 依赖的值对象；与 OOXML 编号定义的映射发生在 {@code internal} 桥接层。
  */
 public enum ListKind {
-  /** A bulleted (unordered) list. */
+  /** 项目符号（无序）列表。 */
   BULLET,
-  /** A numbered (ordered) list. */
+  /** 编号（有序）列表。 */
   NUMBERED
 }

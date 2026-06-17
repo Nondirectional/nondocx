@@ -14,32 +14,29 @@ import java.nio.file.Path;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 
 /**
- * Stateless static factory facade for creating and opening docx documents.
+ * 无状态静态工厂外观，用于创建和打开 docx 文档。
  *
- * <p>This is the single entry point for obtaining a {@link Document}. It holds no state of its own;
- * every call produces an independent, live document.
+ * <p>这是获取 {@link Document} 的唯一入口点。它本身不持有任何状态； 每次调用都会生成一个独立的、活跃的文档。
  *
- * <p><b>Stream ownership.</b> {@code open(InputStream)} fully buffers the caller's stream before
- * constructing a document and does <em>not</em> close it — the caller retains ownership. The
- * resulting {@code Document} (and its {@code save(OutputStream)} method) likewise never close a
- * caller-provided stream. {@code Document.close()} is what releases the underlying POI resources.
+ * <p><b>流的所有权。</b> {@code open(InputStream)} 会在构建文档前完全缓冲调用者的流，并且 <em>不</em> 关闭它 — 调用者保留所有权。生成的
+ * {@code Document}（及其 {@code save(OutputStream)} 方法）同样 从不关闭调用者提供的流。{@code Document.close()} 才是释放底层
+ * POI 资源的方法。
  *
- * <p><b>Error mapping.</b> File-level IO failures (missing or unreadable file, read errors on a
- * caller's stream) surface as {@link DocxIOException}. A source that exists and was read but is not
- * a valid docx surfaces as {@link DocxFormatException}, carrying the source path when available.
+ * <p><b>错误映射。</b> 文件级别的 IO 失败（文件缺失或无法读取、调用者流的读取错误） 以 {@link DocxIOException} 形式呈现。存在且已读取但不是有效 docx
+ * 的源 以 {@link DocxFormatException} 形式呈现，并在可用时携带源路径。
  */
 public final class Docx {
 
   private Docx() {}
 
   /**
-   * Opens a docx document from a file.
+   * 从文件打开 docx 文档。
    *
-   * @param file the file to open (not {@code null})
-   * @return a live document over the file's contents
-   * @throws DocxIOException if the file cannot be read
-   * @throws DocxFormatException if the file is not a valid docx
-   * @throws IllegalArgumentException if {@code file} is {@code null}
+   * @param file 要打开的文件（不能为 {@code null}）
+   * @return 基于文件内容的活跃文档
+   * @throws DocxIOException 如果文件无法读取
+   * @throws DocxFormatException 如果文件不是有效的 docx
+   * @throws IllegalArgumentException 如果 {@code file} 为 {@code null}
    */
   public static Document open(File file) {
     Objects.requireNonNull(file, "file");
@@ -47,13 +44,13 @@ public final class Docx {
   }
 
   /**
-   * Opens a docx document from a path.
+   * 从路径打开 docx 文档。
    *
-   * @param path the path to open (not {@code null})
-   * @return a live document over the file's contents
-   * @throws DocxIOException if the file cannot be read (missing, unreadable, etc.)
-   * @throws DocxFormatException if the file is not a valid docx
-   * @throws IllegalArgumentException if {@code path} is {@code null}
+   * @param path 要打开的路径（不能为 {@code null}）
+   * @return 基于文件内容的活跃文档
+   * @throws DocxIOException 如果文件无法读取（缺失、不可读等）
+   * @throws DocxFormatException 如果文件不是有效的 docx
+   * @throws IllegalArgumentException 如果 {@code path} 为 {@code null}
    */
   public static Document open(Path path) {
     Objects.requireNonNull(path, "path");
@@ -68,14 +65,13 @@ public final class Docx {
   }
 
   /**
-   * Opens a docx document from a stream. The stream is fully buffered and is <em>not</em> closed;
-   * the caller retains ownership.
+   * 从流打开 docx 文档。该流会被完全缓冲，并且 <em>不</em> 关闭； 调用者保留所有权。
    *
-   * @param in the stream to read from (not {@code null}, not closed by this method)
-   * @return a live document over the stream's contents
-   * @throws DocxIOException if the stream cannot be read
-   * @throws DocxFormatException if the contents are not a valid docx
-   * @throws IllegalArgumentException if {@code in} is {@code null}
+   * @param in 要读取的流（不能为 {@code null}，不会被此方法关闭）
+   * @return 基于流内容的活跃文档
+   * @throws DocxIOException 如果流无法读取
+   * @throws DocxFormatException 如果内容不是有效的 docx
+   * @throws IllegalArgumentException 如果 {@code in} 为 {@code null}
    */
   public static Document open(InputStream in) {
     Objects.requireNonNull(in, "in");
@@ -83,15 +79,15 @@ public final class Docx {
     try {
       bytes = Streams.readAllBytes(in);
     } catch (IOException e) {
-      throw new DocxIOException("Failed to read from input stream", e);
+      throw new DocxIOException("无法从输入流读取", e);
     }
     return openDocument(bytes, null);
   }
 
   /**
-   * Creates a new, empty docx document.
+   * 创建一个新的空 docx 文档。
    *
-   * @return a live document over a fresh, empty {@code XWPFDocument}
+   * @return 基于全新空 {@code XWPFDocument} 的活跃文档
    */
   public static Document create() {
     return new Document(new XWPFDocument());

@@ -12,21 +12,18 @@ import com.non.docx.core.api.text.Run;
 import org.junit.jupiter.api.Test;
 
 /**
- * Verifies the construction track ({@link DocumentBuilder}, {@link ParagraphBuilder}, {@link
- * TableBuilder}) and the live-object lambda conveniences ({@link Table#row}, {@link
- * Row#cell(String)}, {@link Row#cell(java.util.function.Consumer)}).
+ * 验证构建轨道（{@link DocumentBuilder}、{@link ParagraphBuilder}、{@link TableBuilder}） 以及活动对象 lambda
+ * 便捷方法（{@link Table#row}、{@link Row#cell(String)}、 {@link Row#cell(java.util.function.Consumer)}）。
  *
- * <p>The core assertion strategy: {@code Document} does not yet implement {@code equals} (that
- * arrives in Phase 7 with {@code RoundTripTest}), so builder-vs-hand-built equivalence is asserted
- * structurally — the body element count matches, and each paragraph ({@link Paragraph#equals}) and
- * table ({@link Table#equals}) is content-equal to its hand-built counterpart. This proves the
- * builder adds, drops, or alters nothing relative to direct use of the live-object API.
+ * <p>核心断言策略：{@code Document} 尚未实现 {@code equals}（这在阶段 7 与 {@code RoundTripTest}
+ * 一起到达），因此构建器与手工构建的等价性以结构方式断言—— 正文元素计数匹配，且每个段落（{@link Paragraph#equals}）和表格（{@link Table#equals}）
+ * 与其手工构建的对应项内容相等。这证明了构建器相对于直接使用活动对象 API 不添加、删除 或改变任何内容。
  */
 class DocumentBuilderTest {
 
   @Test
   void builderDocumentEqualsHandBuilt() {
-    // Assemble via the builder track.
+    // 通过构建轨道组装。
     Document built =
         DocumentBuilder.start()
             .heading(HeadingLevel.H1, "Title")
@@ -34,7 +31,7 @@ class DocumentBuilderTest {
             .table(t -> t.row(r -> r.cell("A1").cell("B1")).row(r -> r.cell("A2").cell("B2")))
             .build();
 
-    // Assemble the identical content by hand via the live-object API.
+    // 通过活动对象 API 手工组装相同的内容。
     Document hand = Docx.create();
     hand.addParagraph().heading(HeadingLevel.H1).addRun("Title");
     hand.addParagraph().addRun("body").bold().fontSize(14);
@@ -46,7 +43,7 @@ class DocumentBuilderTest {
     handRow2.addCell().text("A2");
     handRow2.addCell().text("B2");
 
-    // Structural equivalence: same body shape, and each element content-equal piece by piece.
+    // 结构等价性：相同的正文形状，且每个元素逐块内容相等。
     assertThat(built.bodyElements())
         .as("builder and hand-built documents have the same body element count")
         .hasSize(hand.bodyElements().size());
@@ -67,7 +64,7 @@ class DocumentBuilderTest {
     Table table = doc.tables().get(0);
     assertThat(table.rows()).hasSize(2);
 
-    // 2x2 grid round-trips the expected cell text, proving Table.row + Row.cell(String) chain.
+    // 2x2 网格往返预期的单元格文本，证明 Table.row + Row.cell(String) 链。
     String[][] expected = {{"A1", "B1"}, {"A2", "B2"}};
     for (int r = 0; r < expected.length; r++) {
       Row row = table.row(r);
@@ -117,14 +114,14 @@ class DocumentBuilderTest {
   void paragraphBuilderChainsRunStyles() {
     Paragraph paragraph = Docx.create().addParagraph();
 
-    // ParagraphBuilder is a thin wrapper: text() returns the live Run for run-style chaining.
+    // ParagraphBuilder 是薄包装器：text() 返回活动 Run 以支持 run 样式链式调用。
     Run run = ParagraphBuilder.on(paragraph).heading(HeadingLevel.H2).text("Chapter 1").italic();
 
     assertThat(paragraph.heading()).isEqualTo(HeadingLevel.H2);
     assertThat(run.text()).isEqualTo("Chapter 1");
     assertThat(run.isItalic()).isTrue();
-    // Run wrappers are created on demand (one per call), so they are never reference-equal even
-    // when they wrap the same underlying POI run. Verify by delegate identity instead.
+    // Run 包装器按需创建（每次调用一个），因此即使它们包装相同的底层 POI run，也从不
+    // 引用相等。通过委托标识替代验证。
     assertThat(run.raw()).isSameAs(paragraph.run(0).raw());
   }
 
@@ -132,7 +129,7 @@ class DocumentBuilderTest {
   void tableBuilderWrapperChainsRows() {
     Table table = Docx.create().addTable();
 
-    // TableBuilder delegates to the live Table; row(Consumer) chains naturally.
+    // TableBuilder 委托给活动 Table；row(Consumer) 天然支持链式调用。
     TableBuilder.on(table)
         .row(r -> r.cell("A1").cell("B1"))
         .row(r -> r.cell(c -> c.text("A2")).cell("B2"));

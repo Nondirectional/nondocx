@@ -8,96 +8,86 @@ import java.util.Arrays;
 import org.apache.poi.xwpf.usermodel.XWPFPicture;
 
 /**
- * An inline image — a picture embedded inside a paragraph's run.
+ * 内联图像 — 嵌入在段落运行内的图片。
  *
- * <p>Holds an Apache POI {@code XWPFPicture} delegate and exposes a live view over it. Reads go
- * straight through to the delegate (and the underlying picture part); there is no cached snapshot.
+ * <p>持有 Apache POI {@code XWPFPicture} 委托，并在其上暴露活跃视图。读取 直接穿透到委托（以及底层的图片部分）；没有缓存快照。
  *
- * <p><b>Dimensions.</b> {@link #width()} and {@link #height()} return the picture's stored size in
- * <em>pixels</em> at 96&nbsp;DPI — the same unit Apache POI's {@code addPicture} takes on input.
- * They are read back from the picture's drawing extent (stored in EMU) and converted to pixels
- * using POI's {@code EMU_PER_PIXEL} constant (9525), which is the exact inverse of what {@code
- * addPicture} stores, so the pixel values survive a save → open round-trip without rounding loss.
+ * <p><b>尺寸。</b> {@link #width()} 和 {@link #height()} 返回图片的存储大小，以 96&nbsp;DPI 的 <em>像素</em> 为单位 — 与
+ * Apache POI 的 {@code addPicture} 输入的 单位相同。它们从图片的绘图范围（以 EMU 存储）读回，并使用 POI 的 {@code EMU_PER_PIXEL}
+ * 常量（9525）转换为像素，该常量正好是 {@code addPicture} 存储值的倒数，因此像素值在保存 → 打开往返中 不会丢失精度。
  *
- * <p><b>Inline placement.</b> In OOXML an inline picture lives <em>inside</em> a run (as a
- * drawing), not as a sibling of runs. nondocx models it as its own {@link InlineElement} in the
- * paragraph's ordered inline view: when a run carries an embedded picture, that run is surfaced as
- * an {@code Image} (not a {@code com.non.docx.core.api.text.Run}) in {@code
- * Paragraph.inlineElements()}. A run that carries <em>both</em> text and a picture is an edge case
- * the MVP does not fully model — the text portion is not surfaced separately in that case and
- * remains reachable only via {@code raw()}. Most documents, and {@code Paragraph.addImage(...)}
- * itself, produce pure-image runs, so this is rarely hit in practice.
+ * <p><b>内联放置。</b> 在 OOXML 中，内联图片位于运行 <em>内部</em>（作为 绘图），而不是作为运行的兄弟元素。nondocx 将其建模为段落有序内联视图中的独立
+ * {@link InlineElement}： 当运行携带嵌入图片时，该运行在 {@code Paragraph.inlineElements()} 中以 {@code Image}（而非
+ * {@code com.non.docx.core.api.text.Run}）的 形式呈现。同时携带 <em>文本和</em> 图片的运行是 MVP 未完全建模的 边界情况 —
+ * 在这种情况下文本部分不会单独呈现， 只能通过 {@code raw()} 访问。大多数文档以及 {@code Paragraph.addImage(...)}
+ * 本身产生纯图像运行，因此实践中很少遇到这种情况。
  *
- * <p>Content equality ({@code equals} / {@code hashCode}) compares the image type, the pixel
- * dimensions and the raw picture bytes (compared byte-for-byte for fidelity), never the delegate
- * reference. This is what makes round-trip image assertions fidelity-checking. The byte array can
- * be large; this is acceptable for test fixtures but means {@code Image} is not well suited as a
- * long-lived {@code HashMap} key, since the underlying content can change at any time.
+ * <p>内容相等性（{@code equals} / {@code hashCode}）比较图像类型、像素 尺寸和原始图片字节（逐字节比较以确保保真度），从不比较委托
+ * 引用。这就是往返图像断言能检查保真度的原因。字节数组可能 很大；这对于测试夹具是可接受的，但意味着 {@code Image} 不适合作为 长期存在的 {@code HashMap}
+ * 键，因为底层内容随时可能改变。
  */
 public final class Image implements InlineElement {
 
   private final XWPFPicture delegate;
 
   /**
-   * Wraps the given POI inline picture.
+   * 封装给定的 POI 内联图片。
    *
-   * <p>This constructor is the internal seam by which {@link com.non.docx.core.api.text.Paragraph}
-   * produces live image wrappers, so it accepts a POI type by design. Users normally obtain images
-   * via {@code Paragraph.addImage(...)} rather than constructing them directly.
+   * <p>此构造函数是 {@link com.non.docx.core.api.text.Paragraph} 生成活跃图像包装器的内部接缝， 因此它有意接受 POI 类型。用户通常通过
+   * {@code Paragraph.addImage(...)} 获取图像， 而不是直接构造它们。
    *
-   * @param delegate the backing POI picture (not {@code null})
-   * @throws IllegalArgumentException if {@code delegate} is {@code null}
+   * @param delegate 底层的 POI 图片（不能为 {@code null}）
+   * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
    */
   public Image(XWPFPicture delegate) {
     this.delegate = Objects.requireNonNull(delegate, "delegate");
   }
 
   /**
-   * Returns the image format.
+   * 返回图像格式。
    *
-   * <p>The format is resolved from the embedded picture part. Picture formats nondocx does not
-   * model (for example BMP, EMF or WMF) are reported as {@code null}; the raw picture part remains
-   * reachable via {@link #raw()} in that case.
+   * <p>格式从嵌入的图片部分解析。nondocx 未建模的图片格式 （例如 BMP、EMF 或 WMF）报告为 {@code null}；在这种情况下，原始图片部分仍 可通过 {@link
+   * #raw()} 访问。
    *
-   * @return the image type, or {@code null} if the format is not one nondocx models
+   * @return 图像类型，如果格式不是 nondocx 建模的类型则返回 {@code null}
    */
   public ImageType type() {
     return Mappers.fromPoi(Pictures.pictureTypeOf(delegate));
   }
 
   /**
-   * Returns the picture's width in pixels at 96&nbsp;DPI.
+   * 返回图片的宽度，以 96&nbsp;DPI 的像素为单位。
    *
-   * @return the width in pixels, or {@code 0} if no extent is stored
+   * @return 宽度（像素），如果没有存储范围则返回 {@code 0}
    */
   public int width() {
     return Pictures.widthPixels(delegate);
   }
 
   /**
-   * Returns the picture's height in pixels at 96&nbsp;DPI.
+   * 返回图片的高度，以 96&nbsp;DPI 的像素为单位。
    *
-   * @return the height in pixels, or {@code 0} if no extent is stored
+   * @return 高度（像素），如果没有存储范围则返回 {@code 0}
    */
   public int height() {
     return Pictures.heightPixels(delegate);
   }
 
   /**
-   * Returns the raw picture bytes.
+   * 返回原始图片字节。
    *
-   * @return the picture bytes (possibly empty, never {@code null})
+   * @return 图片字节（可能为空，从不返回 {@code null}）
    */
   public byte[] bytes() {
     return Pictures.bytesOf(delegate);
   }
 
   /**
-   * Returns the underlying POI picture.
+   * 返回底层的 POI 图片。
    *
-   * <p>Modifications to the returned object affect the document immediately. Use with caution.
+   * <p>对返回对象的修改会立即影响文档。请谨慎使用。
    *
-   * @return the backing {@code XWPFPicture} instance (same instance for the wrapper's lifetime)
+   * @return 底层的 {@code XWPFPicture} 实例（包装器生命周期内同一实例）
    */
   public XWPFPicture raw() {
     return delegate;
