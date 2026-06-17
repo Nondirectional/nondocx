@@ -32,14 +32,14 @@ public final class ComplexDocument {
           .margins(1440, 1440, 1440, 1440); // 上下左右各 1 英寸
 
       // ========== 页眉 ==========
-      // header() 返回 Header；addParagraph() 返回 Paragraph
+      // ensureHeader() 显式创建并返回 Header；addParagraph() 返回 Paragraph
       // alignment() 是段落级方法
-      var headerPara = doc.header().addParagraph();
+      var headerPara = doc.ensureHeader().addParagraph();
       headerPara.addRun("项目进度报告").bold().fontSize(9);
       headerPara.alignment(Alignment.RIGHT);
 
       // ========== 页脚 ==========
-      var footerPara = doc.footer().addParagraph();
+      var footerPara = doc.ensureFooter().addParagraph();
       footerPara.addRun("机密文件 · 请勿外传").fontSize(8).color("999999");
       footerPara.alignment(Alignment.CENTER);
 

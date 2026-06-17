@@ -319,32 +319,48 @@ public final class Document implements AutoCloseable {
   // ---------- header / footer (convenience) ----------
 
   /**
-   * 返回文档第一个章节（章节 0）的默认（奇数页）页眉。
+   * 以只读方式返回文档第一个章节（章节 0）的默认（奇数页）页眉；不存在时返回 {@code null}，绝不创建。
    *
-   * <p>这是 {@code section(0).header()} 的便捷方法。在单章节文档中，这是文档的页眉；在多章节文档中，建议使用 {@link Section#header()}
-   * 单独处理每个章节的页眉。若章节 0 尚未存在默认页眉，委托的 {@code Section#header()} 会在首次创建时按需补齐 兼容性最小页面设置（缺失时补 A4 + 四边 1
-   * 英寸边距）。
+   * <p>这是 {@code section(0).header()} 的便捷方法，遵循读写分离：只读遍历用本方法，写入用 {@link
+   * #ensureHeader()}。详见 {@link Section#header()}。
    *
-   * @return 第一个章节的默认页眉（从不返回 {@code null}）
-   * @throws com.non.docx.core.api.exception.DocxIOException 如果页眉部分无法创建或 附加
+   * @return 第一个章节的默认页眉，不存在则返回 {@code null}
    */
   public com.non.docx.core.api.header.Header header() {
     return section(0).header();
   }
 
   /**
-   * 返回文档第一个章节（章节 0）的默认（奇数页）页脚。
+   * 显式确保第一个章节存在默认页眉（不存在则创建），返回它。便捷委托 {@code section(0).ensureHeader()}。
    *
-   * <p>这是 {@code section(0).footer()} 的便捷方法。在单章节文档中，这是文档的页脚；在多章节文档中，建议使用 {@link Section#footer()}
-   * 单独处理每个章节的页脚。若章节 0 尚未存在默认页脚，委托的 {@code Section#footer()} 会在首次创建时按需补齐 兼容性最小页面设置（缺失时补 A4 + 四边 1
-   * 英寸边距）。
+   * @return 第一个章节的默认页眉（从不返回 {@code null}）
+   * @throws com.non.docx.core.api.exception.DocxIOException 如果页眉部分无法创建或附加
+   */
+  public com.non.docx.core.api.header.Header ensureHeader() {
+    return section(0).ensureHeader();
+  }
+
+  /**
+   * 以只读方式返回文档第一个章节（章节 0）的默认（奇数页）页脚；不存在时返回 {@code null}，绝不创建。
    *
-   * @return 第一个章节的默认页脚（从不返回 {@code null}）
-   * @throws com.non.docx.core.api.exception.DocxIOException 如果页脚部分无法创建或 附加
+   * <p>语义与 {@link #header()} 对称：只读遍历用本方法，写入用 {@link #ensureFooter()}。
+   *
+   * @return 第一个章节的默认页脚，不存在则返回 {@code null}
    */
   public com.non.docx.core.api.header.Footer footer() {
     return section(0).footer();
   }
+
+  /**
+   * 显式确保第一个章节存在默认页脚（不存在则创建），返回它。便捷委托 {@code section(0).ensureFooter()}。
+   *
+   * @return 第一个章节的默认页脚（从不返回 {@code null}）
+   * @throws com.non.docx.core.api.exception.DocxIOException 如果页脚部分无法创建或附加
+   */
+  public com.non.docx.core.api.header.Footer ensureFooter() {
+    return section(0).ensureFooter();
+  }
+
 
   // ---------- save ----------
 

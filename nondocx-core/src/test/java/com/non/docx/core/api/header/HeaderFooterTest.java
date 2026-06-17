@@ -23,7 +23,7 @@ class HeaderFooterTest {
     Path file = tmp.resolve("header.docx");
 
     Document original = Docx.create();
-    original.header().addParagraph().addRun("Header text");
+    original.ensureHeader().addParagraph().addRun("Header text");
     original.save(file);
 
     try (Document opened = Docx.open(file)) {
@@ -39,7 +39,7 @@ class HeaderFooterTest {
     Path file = tmp.resolve("footer.docx");
 
     Document original = Docx.create();
-    original.footer().addParagraph().addRun("Footer text");
+    original.ensureFooter().addParagraph().addRun("Footer text");
     original.save(file);
 
     try (Document opened = Docx.open(file)) {
@@ -53,7 +53,7 @@ class HeaderFooterTest {
   @Test
   void documentHeaderIsFirstSectionHeader() {
     Document doc = Docx.create();
-    doc.header().addParagraph().addRun("Shared header");
+    doc.ensureHeader().addParagraph().addRun("Shared header");
 
     // Document.header() 是 section(0).header() 的便捷方法；两者解析相同的内容。
     assertThat(doc.header()).isEqualTo(doc.section(0).header());
@@ -63,7 +63,7 @@ class HeaderFooterTest {
   @Test
   void documentFooterIsFirstSectionFooter() {
     Document doc = Docx.create();
-    doc.footer().addParagraph().addRun("Shared footer");
+    doc.ensureFooter().addParagraph().addRun("Shared footer");
 
     assertThat(doc.footer()).isEqualTo(doc.section(0).footer());
     assertThat(doc.footer().text()).isEqualTo(doc.section(0).footer().text());
@@ -71,9 +71,9 @@ class HeaderFooterTest {
 
   @Test
   void headerIsCreateOnce() {
-    // 首次访问创建并附加一个空的默认页眉；后续调用返回该页眉。
+    // 首次 ensureHeader 创建并附加一个空的默认页眉；后续调用返回同一个页眉。
     Document doc = Docx.create();
-    Header first = doc.header();
+    Header first = doc.ensureHeader();
     first.addParagraph().addRun("Persistent");
 
     Header second = doc.header();
@@ -85,7 +85,7 @@ class HeaderFooterTest {
   @Test
   void footerIsCreateOnce() {
     Document doc = Docx.create();
-    Footer first = doc.footer();
+    Footer first = doc.ensureFooter();
     first.addParagraph().addRun("Persistent");
 
     Footer second = doc.footer();
@@ -97,13 +97,13 @@ class HeaderFooterTest {
   @Test
   void headerContentEquality() {
     Document a = Docx.create();
-    a.header().addParagraph().addRun("Title");
+    a.ensureHeader().addParagraph().addRun("Title");
 
     Document b = Docx.create();
-    b.header().addParagraph().addRun("Title");
+    b.ensureHeader().addParagraph().addRun("Title");
 
     Document c = Docx.create();
-    c.header().addParagraph().addRun("Different");
+    c.ensureHeader().addParagraph().addRun("Different");
 
     // 相同的段落内容→相等（即使由不同的 XWPFHeader 实例支持）
     assertThat(a.header()).isEqualTo(b.header());
@@ -116,13 +116,13 @@ class HeaderFooterTest {
   @Test
   void footerContentEquality() {
     Document a = Docx.create();
-    a.footer().addParagraph().addRun("Page 1");
+    a.ensureFooter().addParagraph().addRun("Page 1");
 
     Document b = Docx.create();
-    b.footer().addParagraph().addRun("Page 1");
+    b.ensureFooter().addParagraph().addRun("Page 1");
 
     Document c = Docx.create();
-    c.footer().addParagraph().addRun("Page 2");
+    c.ensureFooter().addParagraph().addRun("Page 2");
 
     assertThat(a.footer()).isEqualTo(b.footer());
     assertThat(a.footer().hashCode()).isEqualTo(b.footer().hashCode());
@@ -133,17 +133,24 @@ class HeaderFooterTest {
   void emptyHeaderIsEqualToOtherEmptyHeader() {
     Document a = Docx.create();
     Document b = Docx.create();
-    // 两个页眉都已创建，但未添加段落
-    a.header();
-    b.header();
+    // 两个页眉都已显式创建，但未添加段落——读+写分离后用 ensureHeader() 创建空页眉。
+    a.ensureHeader();
+    b.ensureHeader();
     assertThat(a.header()).isEqualTo(b.header());
+  }
+
+  @Test
+  void headerIsNullWhenAbsent() {
+    // 读写分离契约：未创建页眉时 header() 返回 null（Document 便捷方法同 Section）。
+    assertThat(Docx.create().header()).isNull();
+    assertThat(Docx.create().footer()).isNull();
   }
 
   @Test
   void headerIsNotEqualToFooter() {
     Document doc = Docx.create();
-    doc.header().addParagraph().addRun("Same text");
-    doc.footer().addParagraph().addRun("Same text");
+    doc.ensureHeader().addParagraph().addRun("Same text");
+    doc.ensureFooter().addParagraph().addRun("Same text");
     // 页眉和页脚是不同的类型，即使段落内容相同
     assertThat(doc.header()).isNotEqualTo(doc.footer());
     assertThat(doc.footer()).isNotEqualTo(doc.header());
@@ -154,8 +161,8 @@ class HeaderFooterTest {
     Path file = tmp.resolve("header-multi.docx");
 
     Document original = Docx.create();
-    original.header().addParagraph().addRun("First");
-    original.header().addParagraph().addRun("Second");
+    original.ensureHeader().addParagraph().addRun("First");
+    original.ensureHeader().addParagraph().addRun("Second");
     original.save(file);
 
     try (Document opened = Docx.open(file)) {
@@ -171,8 +178,8 @@ class HeaderFooterTest {
     Path file = tmp.resolve("both.docx");
 
     Document original = Docx.create();
-    original.header().addParagraph().addRun("Top");
-    original.footer().addParagraph().addRun("Bottom");
+    original.ensureHeader().addParagraph().addRun("Top");
+    original.ensureFooter().addParagraph().addRun("Bottom");
     original.save(file);
 
     try (Document opened = Docx.open(file)) {

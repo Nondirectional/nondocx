@@ -185,12 +185,20 @@ exact to the pixel.
 an invalid integer on the next save/open (`XmlValueOutOfRange`). `internal/poi/Numbering.clear()`
 uses `paragraph.getCTP().getPPr().unsetNumPr()` to remove the whole `<w:numPr/>` element instead.
 
-### N5 — Header/footer are create-on-access; resolve read-only for equality
-`Section.header()`/`footer()` create+attach a default header/footer part if none exists
-(create-once, via `XWPFHeaderFooterPolicy(document, sectPr)`). Because that mutates the document,
-`Section.equals`/`hashCode` resolve header/footer content **read-only** via
-`getDefaultHeader()`/`getDefaultFooter()` (null→empty list, no creation, `catch POIXMLException`).
-Never call the create-on-access `header()`/`footer()` from inside `equals`.
+### N5 — Header/footer are read/write split: `header()`/`footer()` read-only, `ensureHeader()`/`ensureFooter()` create
+POI itself splits "read" (`getDefaultHeader()`/`getDefaultFooter()`, return null when absent) from
+"write" (`createHeader()`/`createFooter()`, build+attach a new part). nondocx mirrors that split:
+
+- `Section.header()`/`footer()` are **read-only** — they return `null` when no part exists and never
+  mutate the document. `Section.equals`/`hashCode` use them directly (null→empty list).
+- `Section.ensureHeader()`/`ensureFooter()` are the **create** path — they create+attach a default
+  part if absent (create-once) and are what write-side callers use to get an appendable header/footer.
+
+This replaced an earlier "create-on-access" design where `header()`/`footer()` themselves created the
+part on first call. That merged read and write into one getter: convenient for writing, but it meant
+read-only traversals (search, iteration, `equals`) silently created empty header/footer parts and
+polluted the document — `Section.equals` had to avoid `header()` via a private read-only resolver.
+The split makes the read path safe by construction, so that workaround is gone.
 
 ### N6 — Inline images live INSIDE a run; a picture-bearing run is surfaced as `Image`
 OOXML embeds an image as a drawing inside a run, not as a sibling of runs. nondocx models it as an
@@ -209,7 +217,7 @@ Keep it this way: never compare raw XmlBeans fragments in `equals`.
 ### N8 — Section-scoped header/footer creation materializes missing page setup for compatibility
 `<w:headerReference>` / `<w:footerReference>` and page properties (`<w:pgSz>`, `<w:pgMar>`) all live under the same `<w:sectPr>`. POI can legally create header/footer parts and references without emitting explicit page settings, and Word/POI round-trip that structure fine. But WPS is less forgiving when a section has header/footer references yet no explicit page geometry.
 
-**Rule**: on the **first** `Section.header()` / `Section.footer()` creation path, if the section still lacks page settings, nondocx materializes a compatibility default: `PaperSize.A4` + 1-inch margins (`1440` twips on all four sides). This fill is **missing-only** — never overwrite user-specified `pgSz` / `pgMar`, and do not mutate a section merely because an existing header/footer is being read. Examples may still set page size/margins explicitly for teaching clarity.
+**Rule**: on the **first** `Section.ensureHeader()` / `Section.ensureFooter()` creation path (i.e. when a part actually has to be created), if the section still lacks page settings, nondocx materializes a compatibility default: `PaperSize.A4` + 1-inch margins (`1440` twips on all four sides). This fill is **missing-only** — never overwrite user-specified `pgSz` / `pgMar`. Because the read-only `header()`/`footer()` never create parts (see N5), simply reading an existing or absent header/footer can never trigger this fill. Examples may still set page size/margins explicitly for teaching clarity.
 
 ### N9 — `XWPFRun.setText(String)` APPENDS a `<w:t>` when the run already has text
 

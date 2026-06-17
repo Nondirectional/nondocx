@@ -209,28 +209,54 @@ public final class Section {
   // ---------- 页眉/页脚 ----------
 
   /**
-   * 返回章节级别的默认（奇数页）页眉，如果不存在则在首次访问时 创建并附加一个空的页眉。
+   * 以只读方式返回章节级别的默认（奇数页）页眉；不存在时返回 {@code null}，绝不创建。
    *
-   * <p>页眉通过绑定到此章节 {@code CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析，因此返回的页眉属于 <em>此</em>
-   * 章节：在多章节文档中， 每个 {@code Section} 携带自己的默认页眉。首次访问时创建 一个空的默认页眉部分，并将 {@code default} 页眉引用写入 此章节的
-   * {@code CTSectPr}；后续调用返回相同的页眉（创建一次）。
+   * <p><b>读写分离。</b> POI 本身就把”读”（{@code getDefaultHeader()}，不存在返回 null）与”写”
+   * （{@code createHeader()}，新建并附加 part）分成了两个方法。nondocx 早期把两者合并进 {@code header()}
+   * 一个方法、采用”访问即创建”语义，换取写入场景”取到就能用”的便利；但这会让只读场景
+   * （搜索、遍历、{@code equals}）意外创建空页眉 part、污染文档。现在遵循 POI 的读写分离：
    *
-   * <p>创建或附加页眉部分时引发的 POI 异常被封装为 {@link DocxIOException}。如果该节尚未显式写入 {@code <w:pgSz>} / {@code
-   * <w:pgMar>}，nondocx 会在<strong>首次创建</strong>默认页眉前补齐一个兼容性最小页面设置 （A4 + 四边 1 英寸边距），以降低 WPS 等消费者对“裸
-   * {@code <w:sectPr>}”的显示敏感性。首页和偶数页页眉变体不在 MVP 范围内，仍可通过 {@code raw()} 访问。
+   * <ul>
+   *   <li>{@code header()} —— 纯只读，不存在返回 {@code null}，永不动文档。
+   *   <li>{@link #ensureHeader()} —— 显式创建（不存在才建），用于写入场景。
+   * </ul>
    *
-   * @return 此章节的默认页眉（从不返回 {@code null}）
-   * @throws DocxIOException 如果页眉部分无法创建或附加
+   * <p>页眉通过绑定到此章节 {@code CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析，因此返回的页眉属于
+   * <em>此</em> 章节：在多章节文档中，每个 {@link Section} 携带自己的默认页眉。
+   *
+   * @return 此章节的默认页眉，不存在则返回 {@code null}
    */
   public Header header() {
     try {
       XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
       XWPFHeader header = policy.getDefaultHeader();
-      if (header == null) {
-        ensureCompatiblePageSetupForHeaderFooterCreation();
-        policy = new XWPFHeaderFooterPolicy(document, delegate);
-        header = policy.createHeader(XWPFHeaderFooterPolicy.DEFAULT);
-      }
+      return header == null ? null : new Header(header);
+    } catch (POIXMLException e) {
+      // 解析失败（罕见，如 part 损坏）按”不存在”处理，保证只读语义永不抛异常、永不动文档。
+      return null;
+    }
+  }
+
+  /**
+   * 显式确保此章节存在一个默认页眉：不存在则创建并附加一个空的，已存在则原样返回。
+   *
+   * <p>用于<b>写入</b>场景——需要拿到一个可 {@code addParagraph} 的页眉时调用本方法。
+   * 只读遍历/搜索请用 {@link #header()}（不会凭空创建）。创建时若该节尚未显式写入
+   * {@code <w:pgSz>} / {@code <w:pgMar>}，nondocx 会补齐一个兼容性最小页面设置
+   * （A4 + 四边 1 英寸边距），以降低 WPS 等消费者对”裸 {@code <w:sectPr>}”的显示敏感性。
+   *
+   * @return 此章节的默认页眉（从不返回 {@code null}）
+   * @throws DocxIOException 如果页眉部分无法创建或附加
+   */
+  public Header ensureHeader() {
+    Header existing = header();
+    if (existing != null) {
+      return existing;
+    }
+    try {
+      ensureCompatiblePageSetupForHeaderFooterCreation();
+      XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
+      XWPFHeader header = policy.createHeader(XWPFHeaderFooterPolicy.DEFAULT);
       return new Header(header);
     } catch (POIXMLException e) {
       throw new DocxIOException("无法创建章节页眉", e);
@@ -238,28 +264,40 @@ public final class Section {
   }
 
   /**
-   * 返回章节级别的默认（奇数页）页脚，如果不存在则在首次访问时 创建并附加一个空的页脚。
+   * 以只读方式返回章节级别的默认（奇数页）页脚；不存在时返回 {@code null}，绝不创建。
    *
-   * <p>页脚通过绑定到此章节 {@code CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析，因此返回的页脚属于 <em>此</em>
-   * 章节：在多章节文档中， 每个 {@code Section} 携带自己的默认页脚。首次访问时创建 一个空的默认页脚部分，并将 {@code default} 页脚引用写入 此章节的
-   * {@code CTSectPr}；后续调用返回相同的页脚（创建一次）。
+   * <p>语义与 {@link #header()} 对称：纯只读、永不动文档。写入场景用 {@link #ensureFooter()}。
    *
-   * <p>创建或附加页脚部分时引发的 POI 异常被封装为 {@link DocxIOException}。如果该节尚未显式写入 {@code <w:pgSz>} / {@code
-   * <w:pgMar>}，nondocx 会在<strong>首次创建</strong>默认页脚前补齐一个兼容性最小页面设置 （A4 + 四边 1 英寸边距），以降低 WPS 等消费者对“裸
-   * {@code <w:sectPr>}”的显示敏感性。首页和偶数页页脚变体不在 MVP 范围内，仍可通过 {@code raw()} 访问。
-   *
-   * @return 此章节的默认页脚（从不返回 {@code null}）
-   * @throws DocxIOException 如果页脚部分无法创建或附加
+   * @return 此章节的默认页脚，不存在则返回 {@code null}
    */
   public Footer footer() {
     try {
       XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
       XWPFFooter footer = policy.getDefaultFooter();
-      if (footer == null) {
-        ensureCompatiblePageSetupForHeaderFooterCreation();
-        policy = new XWPFHeaderFooterPolicy(document, delegate);
-        footer = policy.createFooter(XWPFHeaderFooterPolicy.DEFAULT);
-      }
+      return footer == null ? null : new Footer(footer);
+    } catch (POIXMLException e) {
+      return null;
+    }
+  }
+
+  /**
+   * 显式确保此章节存在一个默认页脚：不存在则创建并附加一个空的，已存在则原样返回。
+   *
+   * <p>用于<b>写入</b>场景。只读遍历/搜索请用 {@link #footer()}。创建时的兼容性页面设置补齐
+   * 与 {@link #ensureHeader()} 一致。
+   *
+   * @return 此章节的默认页脚（从不返回 {@code null}）
+   * @throws DocxIOException 如果页脚部分无法创建或附加
+   */
+  public Footer ensureFooter() {
+    Footer existing = footer();
+    if (existing != null) {
+      return existing;
+    }
+    try {
+      ensureCompatiblePageSetupForHeaderFooterCreation();
+      XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
+      XWPFFooter footer = policy.createFooter(XWPFHeaderFooterPolicy.DEFAULT);
       return new Footer(footer);
     } catch (POIXMLException e) {
       throw new DocxIOException("无法创建章节页脚", e);
@@ -382,30 +420,19 @@ public final class Section {
   // ---------- 页眉/页脚（只读，用于相等性） ----------
 
   /**
-   * 以只读方式解析此章节的默认页眉段落 — 当没有附加页眉部分时 不创建它。由 {@code equals} / {@code hashCode} 使用，以便比较
-   * 永远不会修改文档。当没有默认页眉或解析失败时返回空列表， 因此 {@code equals} 永远不会抛出异常。
+   * 以只读方式解析此章节的默认页眉段落，供 {@code equals} / {@code hashCode} 使用。
+   *
+   * <p>读写分离后 {@link #header()} 本身就是只读的（null=不存在），这里只是把 null 归一化为空列表，
+   * 让相等性比较的写法不必处理 null 样板。
    */
   private List<Paragraph> defaultHeaderParagraphs() {
-    try {
-      XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
-      XWPFHeader header = policy.getDefaultHeader();
-      return header == null ? Collections.emptyList() : new Header(header).paragraphs();
-    } catch (POIXMLException e) {
-      return Collections.emptyList();
-    }
+    Header header = header();
+    return header == null ? Collections.emptyList() : header.paragraphs();
   }
 
-  /**
-   * 以只读方式解析此章节的默认页脚段落 — 当没有附加页脚部分时 不创建它。由 {@code equals} / {@code hashCode} 使用，以便比较
-   * 永远不会修改文档。当没有默认页脚或解析失败时返回空列表， 因此 {@code equals} 永远不会抛出异常。
-   */
+  /** 同 {@link #defaultHeaderParagraphs()}，针对页脚。 */
   private List<Paragraph> defaultFooterParagraphs() {
-    try {
-      XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
-      XWPFFooter footer = policy.getDefaultFooter();
-      return footer == null ? Collections.emptyList() : new Footer(footer).paragraphs();
-    } catch (POIXMLException e) {
-      return Collections.emptyList();
-    }
+    Footer footer = footer();
+    return footer == null ? Collections.emptyList() : footer.paragraphs();
   }
 }

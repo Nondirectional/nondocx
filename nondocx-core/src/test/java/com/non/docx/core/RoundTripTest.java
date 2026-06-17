@@ -233,8 +233,8 @@ class RoundTripTest {
     Path file = tmp.resolve("header-footer.docx");
 
     Document original = Docx.create();
-    original.section(0).header().addParagraph().addRun("Running header");
-    original.section(0).footer().addParagraph().addRun("Running footer");
+    original.section(0).ensureHeader().addParagraph().addRun("Running header");
+    original.section(0).ensureFooter().addParagraph().addRun("Running footer");
 
     original.save(file);
     try (Document readBack = Docx.open(file)) {
@@ -282,8 +282,8 @@ class RoundTripTest {
         .paperSize(PaperSize.A4)
         .orientation(Orientation.LANDSCAPE)
         .margins(1440, 1080, 1440, 1080);
-    section.header().addParagraph().addRun("Running header");
-    section.footer().addParagraph().addRun("Running footer");
+    section.ensureHeader().addParagraph().addRun("Running header");
+    section.ensureFooter().addParagraph().addRun("Running footer");
 
     return document;
   }

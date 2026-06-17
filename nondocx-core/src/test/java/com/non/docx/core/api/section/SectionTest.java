@@ -90,7 +90,8 @@ class SectionTest {
     assertThat(section.marginBottom()).isZero();
     assertThat(section.marginLeft()).isZero();
 
-    section.header();
+    // 读写分离后，只有 ensureHeader() 会创建并补齐兼容页面设置；header() 纯只读。
+    section.ensureHeader();
 
     assertThat(section.paperSize()).isEqualTo(PaperSize.A4);
     assertThat(section.marginTop()).isEqualTo(1440);
@@ -100,11 +101,23 @@ class SectionTest {
   }
 
   @Test
+  void headerReturnsNullWhenAbsent() {
+    // 读写分离契约：页眉不存在时 header() 返回 null，绝不创建、绝不动文档。
+    Document doc = Docx.create();
+    Section section = doc.section(0);
+
+    assertThat(section.header()).isNull();
+    // 只读访问不得顺手 materialize 页面设置。
+    assertThat(section.paperSize()).isNull();
+    assertThat(section.marginTop()).isZero();
+  }
+
+  @Test
   void headerCreationRoundTripsMaterializedPageSetup(@TempDir Path tmp) throws Exception {
     Path file = tmp.resolve("header-page-setup.docx");
 
     Document original = Docx.create();
-    original.section(0).header().addParagraph().addRun("Header");
+    original.section(0).ensureHeader().addParagraph().addRun("Header");
     original.save(file);
 
     try (Document opened = Docx.open(file)) {
@@ -123,7 +136,8 @@ class SectionTest {
     Document doc = Docx.create();
     Section section = doc.section(0);
 
-    section.footer();
+    // 同 header：ensureFooter() 才会创建并补齐兼容页面设置。
+    section.ensureFooter();
 
     assertThat(section.paperSize()).isEqualTo(PaperSize.A4);
     assertThat(section.marginTop()).isEqualTo(1440);
@@ -138,13 +152,20 @@ class SectionTest {
     Section section = doc.section(0);
     section.paperSize(PaperSize.LETTER).margins(720, 900, 1080, 1260);
 
-    section.header();
+    section.ensureHeader();
 
     assertThat(section.paperSize()).isEqualTo(PaperSize.LETTER);
     assertThat(section.marginTop()).isEqualTo(720);
     assertThat(section.marginRight()).isEqualTo(900);
     assertThat(section.marginBottom()).isEqualTo(1080);
     assertThat(section.marginLeft()).isEqualTo(1260);
+  }
+
+  @Test
+  void footerReturnsNullWhenAbsent() {
+    // 读写分离契约：页脚不存在时 footer() 返回 null。
+    Document doc = Docx.create();
+    assertThat(doc.section(0).footer()).isNull();
   }
 
   @Test
@@ -209,7 +230,7 @@ class SectionTest {
         .paperSize(PaperSize.A4)
         .orientation(Orientation.PORTRAIT)
         .margins(1000, 1000, 1000, 1000);
-    withHeader.section(0).header().addParagraph().addRun("Running title");
+    withHeader.section(0).ensureHeader().addParagraph().addRun("Running title");
 
     Document withoutHeader = Docx.create();
     withoutHeader
@@ -230,14 +251,14 @@ class SectionTest {
         .paperSize(PaperSize.A4)
         .orientation(Orientation.PORTRAIT)
         .margins(1000, 1000, 1000, 1000);
-    a.section(0).header().addParagraph().addRun("Same header");
+    a.section(0).ensureHeader().addParagraph().addRun("Same header");
 
     Document b = Docx.create();
     b.section(0)
         .paperSize(PaperSize.A4)
         .orientation(Orientation.PORTRAIT)
         .margins(1000, 1000, 1000, 1000);
-    b.section(0).header().addParagraph().addRun("Same header");
+    b.section(0).ensureHeader().addParagraph().addRun("Same header");
 
     // same page properties AND same header paragraph content → equal across distinct instances
     assertThat(a.section(0)).isEqualTo(b.section(0));
@@ -247,10 +268,10 @@ class SectionTest {
   @Test
   void sectionsWithDifferentHeaderContentAreNotEqual() {
     Document a = Docx.create();
-    a.section(0).header().addParagraph().addRun("Alpha");
+    a.section(0).ensureHeader().addParagraph().addRun("Alpha");
 
     Document b = Docx.create();
-    b.section(0).header().addParagraph().addRun("Beta");
+    b.section(0).ensureHeader().addParagraph().addRun("Beta");
 
     assertThat(a.section(0)).isNotEqualTo(b.section(0));
   }
@@ -258,7 +279,7 @@ class SectionTest {
   @Test
   void sectionWithFooterDiffersFromSectionWithoutFooter() {
     Document withFooter = Docx.create();
-    withFooter.section(0).footer().addParagraph().addRun("Page 1");
+    withFooter.section(0).ensureFooter().addParagraph().addRun("Page 1");
 
     Document withoutFooter = Docx.create();
 
@@ -292,8 +313,8 @@ class SectionTest {
         .paperSize(PaperSize.A4)
         .orientation(Orientation.LANDSCAPE)
         .margins(1440, 1440, 1440, 1440);
-    original.section(0).header().addParagraph().addRun("Round-trip header");
-    original.section(0).footer().addParagraph().addRun("Round-trip footer");
+    original.section(0).ensureHeader().addParagraph().addRun("Round-trip header");
+    original.section(0).ensureFooter().addParagraph().addRun("Round-trip footer");
     original.save(file);
 
     try (Document opened = Docx.open(file)) {
