@@ -44,6 +44,9 @@ buildNumber.properties
 gradle-app.setting
 !gradle-wrapper.jar
 
+# ─── Examples output ───────────────────────────────────────────
+**/examples-output/
+
 # ─── Logs / runtime / secrets ────────────────────────────────────
 *.log
 *.tmp

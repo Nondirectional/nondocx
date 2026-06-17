@@ -39,6 +39,7 @@
 
     <modules>
         <module>nondocx-core</module>
+        <module>nondocx-examples</module>
     </modules>
 
     <properties>

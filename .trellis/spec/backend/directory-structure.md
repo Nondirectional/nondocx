@@ -23,6 +23,18 @@ nondocx/
 ├── nondocx-core/
 │   ├── pom.xml                      # inherits parent; declares poi/poi-ooxml + junit/assertj
 │   └── src/{main,test}/java/com/non/docx/core/
+├── nondocx-examples/
+│   ├── pom.xml                      # inherits parent; depends on nondocx-core
+│   └── src/main/java/com/non/docx/examples/
+│       ├── HelloWorld.java          # 最简创建→写入→保存
+│       ├── FormattingDemo.java       # 标题、对齐、粗体/斜体/字体/颜色
+│       ├── TableExample.java         # 表格创建与填充
+│       ├── ListExample.java          # 项目符号/编号/嵌套列表
+│       ├── HeaderFooterExample.java  # 页眉页脚
+│       ├── HyperlinkExample.java     # 超链接
+│       ├── PageSetupExample.java     # 纸张/方向/边距
+│       ├── ImageExample.java         # 内联图片嵌入
+│       └── ComplexDocument.java      # 综合示例：完整项目报告
 ├── LICENSE                          # Apache 2.0
 ├── README.md                        # 中文
 └── .github/workflows/ci.yml         # JDK matrix [11,17,21]
