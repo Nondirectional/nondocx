@@ -206,6 +206,11 @@ write-side normalization POI may inject (empty `rPr`/`pPr`, re-allocated numberi
 attributes) is **invisible to equality**, and `RoundTripTest` passes without any field exclusion.
 Keep it this way: never compare raw XmlBeans fragments in `equals`.
 
+### N8 — Section-scoped header/footer creation materializes missing page setup for compatibility
+`<w:headerReference>` / `<w:footerReference>` and page properties (`<w:pgSz>`, `<w:pgMar>`) all live under the same `<w:sectPr>`. POI can legally create header/footer parts and references without emitting explicit page settings, and Word/POI round-trip that structure fine. But WPS is less forgiving when a section has header/footer references yet no explicit page geometry.
+
+**Rule**: on the **first** `Section.header()` / `Section.footer()` creation path, if the section still lacks page settings, nondocx materializes a compatibility default: `PaperSize.A4` + 1-inch margins (`1440` twips on all four sides). This fill is **missing-only** — never overwrite user-specified `pgSz` / `pgMar`, and do not mutate a section merely because an existing header/footer is being read. Examples may still set page size/margins explicitly for teaching clarity.
+
 ---
 
 ## Out-of-Scope feature policy

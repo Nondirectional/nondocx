@@ -321,8 +321,9 @@ public final class Document implements AutoCloseable {
   /**
    * 返回文档第一个章节（章节 0）的默认（奇数页）页眉。
    *
-   * <p>这是 {@code section(0).header()} 的便捷方法。在单章节文档中，这是 文档的页眉。在多章节文档中，建议使用 {@link Section#header()}
-   * 来单独处理 每个章节的页眉。
+   * <p>这是 {@code section(0).header()} 的便捷方法。在单章节文档中，这是文档的页眉；在多章节文档中，建议使用
+   * {@link Section#header()} 单独处理每个章节的页眉。若章节 0 尚未存在默认页眉，委托的 {@code Section#header()} 会在首次创建时按需补齐
+   * 兼容性最小页面设置（缺失时补 A4 + 四边 1 英寸边距）。
    *
    * @return 第一个章节的默认页眉（从不返回 {@code null}）
    * @throws com.non.docx.core.api.exception.DocxIOException 如果页眉部分无法创建或 附加
@@ -334,8 +335,9 @@ public final class Document implements AutoCloseable {
   /**
    * 返回文档第一个章节（章节 0）的默认（奇数页）页脚。
    *
-   * <p>这是 {@code section(0).footer()} 的便捷方法。在单章节文档中，这是 文档的页脚。在多章节文档中，建议使用 {@link Section#footer()}
-   * 来单独处理 每个章节的页脚。
+   * <p>这是 {@code section(0).footer()} 的便捷方法。在单章节文档中，这是文档的页脚；在多章节文档中，建议使用
+   * {@link Section#footer()} 单独处理每个章节的页脚。若章节 0 尚未存在默认页脚，委托的 {@code Section#footer()} 会在首次创建时按需补齐
+   * 兼容性最小页面设置（缺失时补 A4 + 四边 1 英寸边距）。
    *
    * @return 第一个章节的默认页脚（从不返回 {@code null}）
    * @throws com.non.docx.core.api.exception.DocxIOException 如果页脚部分无法创建或 附加

@@ -30,24 +30,25 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
  * #orientation(Orientation)} 在目标方向与当前外观 不同时交换这些尺寸，因此以任一顺序调用两者都会使章节处于一致状态。 {@link #paperSize()} 使用
  * {@link PaperSize#fromDimensions(int, int)} 从存储的维度 解析回逻辑纸张大小，该方法是方向无关的。
  *
- * <p><b>默认值。</b> 没有存储尺寸的 {@code <w:pgSz>} 在方向交换时被视为 A4 纵向； 未设置的 {@code <w:pgMar>} 属性读回 {@code
- * 0}；未设置的 {@code orient} 属性读回 {@link Orientation#PORTRAIT}（Word 的默认值）。
- *
- * <p><b>页眉/页脚。</b> {@link #header()} 和 {@link #footer()} 暴露章节级别的 默认（奇数页）页眉和页脚。每个都通过绑定到此章节 {@code
- * CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析：如果已经附加了默认页眉/页脚则返回它，
- * 否则在首次访问时创建一个空的并附加。首页和偶数页变体不在 MVP 范围内，仍可通过 {@code raw()} 访问。所属的 {@code XWPFDocument} 仅用于构建该
- * 策略；它是一个内部辅助对象，从不公开暴露，也从不参与内容相等性。
- *
- * <p>内容相等性（{@code equals} / {@code hashCode}）比较页面属性 — 纸张 大小、方向和四个边距 — <em>以及</em> 章节级别的默认页眉/页脚
- * 段落内容，从不比较委托引用或所属文档。页眉/页脚 内容通过 {@code getDefaultHeader()} / {@code getDefaultFooter()}
- * 以只读方式解析，这些方法 在不存在时返回 {@code null}（并贡献一个空列表）而不会创建任何内容 — 因此 {@code equals}
- * 调用永远不会修改文档。这就是为什么往返断言能在两个不同的 {@code CTSectPr} 实例之间工作。这些方法服务于比较和测试；它们 不适合作为长期存在的 {@code HashMap}
- * 键，因为底层内容随时可能改变。
+ * <p><b>默认值。</b> 没有存储尺寸的 {@code <w:pgSz>} 在方向交换时被视为 A4 纵向；未设置的 {@code <w:pgMar>} 属性读回 {@code 0}；未设置的 {@code orient}
+ * 属性读回 {@link Orientation#PORTRAIT}（Word 的默认值）。当首次创建默认页眉/页脚、且当前章节仍缺少页面设置时，nondocx 会补齐一个兼容性最小值：A4
+ * + 四边 1 英寸边距。
+ * <p><b>页眉/页脚。</b> {@link #header()} 和 {@link #footer()} 暴露章节级别的默认（奇数页）页眉和页脚。每个都通过绑定到此章节 {@code CTSectPr}
+ * 的章节级别 {@code XWPFHeaderFooterPolicy} 解析：如果已经附加了默认页眉/页脚则返回它，否则在首次访问时创建一个空的并附加。创建时若当前章节还没有显式页面设置，
+ * nondocx 会先补齐兼容性最小页面设置（A4 + 四边 1 英寸边距），以降低 WPS 等消费者对“裸 {@code <w:sectPr>}”的显示敏感性。首页和偶数页变体不在 MVP 范围内，仍可通过
+ * {@code raw()} 访问。所属的 {@code XWPFDocument} 仅用于构建该策略；它是一个内部辅助对象，从不公开暴露，也从不参与内容相等性。
  */
 public final class Section {
 
   private final XWPFDocument document;
   private final CTSectPr delegate;
+
+  /**
+   * 为首次创建页眉/页脚时补齐的默认页边距：1 英寸 = 1440 缇。
+   *
+   * <p>仅当该节尚未显式写入 {@code <w:pgMar>} 时使用，用于生成对 WPS 等消费者更稳定的最小页面设置。</p>
+   */
+  private static final int DEFAULT_COMPAT_MARGIN_TWIPS = 1440;
 
   /**
    * 封装给定的 OOXML 章节属性。
@@ -212,8 +213,10 @@ public final class Section {
    * 章节：在多章节文档中， 每个 {@code Section} 携带自己的默认页眉。首次访问时创建 一个空的默认页眉部分，并将 {@code default} 页眉引用写入 此章节的
    * {@code CTSectPr}；后续调用返回相同的页眉（创建一次）。
    *
-   * <p>创建或附加页眉部分时引发的 POI 异常被封装为 {@link DocxIOException}。首页和偶数页页眉变体不在 MVP 范围内， 仍可通过 {@code raw()}
-   * 访问。
+   * <p>创建或附加页眉部分时引发的 POI 异常被封装为 {@link DocxIOException}。如果该节尚未显式写入
+   * {@code <w:pgSz>} / {@code <w:pgMar>}，nondocx 会在<strong>首次创建</strong>默认页眉前补齐一个兼容性最小页面设置
+   * （A4 + 四边 1 英寸边距），以降低 WPS 等消费者对“裸 {@code <w:sectPr>}”的显示敏感性。首页和偶数页页眉变体不在 MVP 范围内，仍可通过
+   * {@code raw()} 访问。
    *
    * @return 此章节的默认页眉（从不返回 {@code null}）
    * @throws DocxIOException 如果页眉部分无法创建或附加
@@ -223,6 +226,8 @@ public final class Section {
       XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
       XWPFHeader header = policy.getDefaultHeader();
       if (header == null) {
+        ensureCompatiblePageSetupForHeaderFooterCreation();
+        policy = new XWPFHeaderFooterPolicy(document, delegate);
         header = policy.createHeader(XWPFHeaderFooterPolicy.DEFAULT);
       }
       return new Header(header);
@@ -238,8 +243,10 @@ public final class Section {
    * 章节：在多章节文档中， 每个 {@code Section} 携带自己的默认页脚。首次访问时创建 一个空的默认页脚部分，并将 {@code default} 页脚引用写入 此章节的
    * {@code CTSectPr}；后续调用返回相同的页脚（创建一次）。
    *
-   * <p>创建或附加页脚部分时引发的 POI 异常被封装为 {@link DocxIOException}。首页和偶数页页脚变体不在 MVP 范围内， 仍可通过 {@code raw()}
-   * 访问。
+   * <p>创建或附加页脚部分时引发的 POI 异常被封装为 {@link DocxIOException}。如果该节尚未显式写入
+   * {@code <w:pgSz>} / {@code <w:pgMar>}，nondocx 会在<strong>首次创建</strong>默认页脚前补齐一个兼容性最小页面设置
+   * （A4 + 四边 1 英寸边距），以降低 WPS 等消费者对“裸 {@code <w:sectPr>}”的显示敏感性。首页和偶数页页脚变体不在 MVP 范围内，仍可通过
+   * {@code raw()} 访问。
    *
    * @return 此章节的默认页脚（从不返回 {@code null}）
    * @throws DocxIOException 如果页脚部分无法创建或附加
@@ -249,6 +256,8 @@ public final class Section {
       XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
       XWPFFooter footer = policy.getDefaultFooter();
       if (footer == null) {
+        ensureCompatiblePageSetupForHeaderFooterCreation();
+        policy = new XWPFHeaderFooterPolicy(document, delegate);
         footer = policy.createFooter(XWPFHeaderFooterPolicy.DEFAULT);
       }
       return new Footer(footer);
@@ -348,6 +357,27 @@ public final class Section {
   /** 将原始 XmlBeans 维度强制转换为 long，未设置时返回 {@code defaultTwips}。 */
   private static long dimOrDefault(Object value, int defaultTwips) {
     return value instanceof Number ? ((Number) value).longValue() : defaultTwips;
+  }
+
+  /**
+   * 在首次创建默认页眉/页脚前补齐最小页面设置。
+   *
+   * <p>OOXML 中，{@code <w:headerReference>} / {@code <w:footerReference>} 与 {@code <w:pgSz>} /
+   * {@code <w:pgMar>} 同属一个 {@code <w:sectPr>}。POI 允许只写 header/footer 引用而不显式写页面设置，
+   * 但 WPS 对这种“裸节属性”更敏感。这里仅在调用方首次创建 section-scoped 页眉/页脚、且页面设置缺失时，
+   * materialize 一个兼容性默认值；如果用户已显式设置，则绝不覆盖。
+   */
+  private void ensureCompatiblePageSetupForHeaderFooterCreation() {
+    if (!delegate.isSetPgSz()) {
+      paperSize(PaperSize.A4);
+    }
+    if (!delegate.isSetPgMar()) {
+      margins(
+          DEFAULT_COMPAT_MARGIN_TWIPS,
+          DEFAULT_COMPAT_MARGIN_TWIPS,
+          DEFAULT_COMPAT_MARGIN_TWIPS,
+          DEFAULT_COMPAT_MARGIN_TWIPS);
+    }
   }
 
   // ---------- 页眉/页脚（只读，用于相等性） ----------

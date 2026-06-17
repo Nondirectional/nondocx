@@ -80,6 +80,74 @@ class SectionTest {
   }
 
   @Test
+  void creatingHeaderMaterializesCompatiblePageSetupWhenMissing() {
+    Document doc = Docx.create();
+    Section section = doc.section(0);
+
+    assertThat(section.paperSize()).isNull();
+    assertThat(section.marginTop()).isZero();
+    assertThat(section.marginRight()).isZero();
+    assertThat(section.marginBottom()).isZero();
+    assertThat(section.marginLeft()).isZero();
+
+    section.header();
+
+    assertThat(section.paperSize()).isEqualTo(PaperSize.A4);
+    assertThat(section.marginTop()).isEqualTo(1440);
+    assertThat(section.marginRight()).isEqualTo(1440);
+    assertThat(section.marginBottom()).isEqualTo(1440);
+    assertThat(section.marginLeft()).isEqualTo(1440);
+  }
+
+  @Test
+  void headerCreationRoundTripsMaterializedPageSetup(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("header-page-setup.docx");
+
+    Document original = Docx.create();
+    original.section(0).header().addParagraph().addRun("Header");
+    original.save(file);
+
+    try (Document opened = Docx.open(file)) {
+      Section section = opened.section(0);
+      assertThat(section.header().text()).contains("Header");
+      assertThat(section.paperSize()).isEqualTo(PaperSize.A4);
+      assertThat(section.marginTop()).isEqualTo(1440);
+      assertThat(section.marginRight()).isEqualTo(1440);
+      assertThat(section.marginBottom()).isEqualTo(1440);
+      assertThat(section.marginLeft()).isEqualTo(1440);
+    }
+  }
+
+  @Test
+  void creatingFooterMaterializesCompatiblePageSetupWhenMissing() {
+    Document doc = Docx.create();
+    Section section = doc.section(0);
+
+    section.footer();
+
+    assertThat(section.paperSize()).isEqualTo(PaperSize.A4);
+    assertThat(section.marginTop()).isEqualTo(1440);
+    assertThat(section.marginRight()).isEqualTo(1440);
+    assertThat(section.marginBottom()).isEqualTo(1440);
+    assertThat(section.marginLeft()).isEqualTo(1440);
+  }
+
+  @Test
+  void creatingHeaderDoesNotOverrideExistingPageSetup() {
+    Document doc = Docx.create();
+    Section section = doc.section(0);
+    section.paperSize(PaperSize.LETTER).margins(720, 900, 1080, 1260);
+
+    section.header();
+
+    assertThat(section.paperSize()).isEqualTo(PaperSize.LETTER);
+    assertThat(section.marginTop()).isEqualTo(720);
+    assertThat(section.marginRight()).isEqualTo(900);
+    assertThat(section.marginBottom()).isEqualTo(1080);
+    assertThat(section.marginLeft()).isEqualTo(1260);
+  }
+
+  @Test
   void defaultSectionAlwaysPresent() {
     Document doc = Docx.create();
     assertThat(doc.sections()).hasSizeGreaterThanOrEqualTo(1);
@@ -199,15 +267,18 @@ class SectionTest {
 
   @Test
   void sectionEqualityDoesNotMutateDocument() {
-    // 只读 equals 不得创建页眉/页脚部分；比较前没有页眉的节
-    // 在比较后仍解析为空（无页眉）节
+    // 只读 equals 不得创建页眉/页脚部分，也不得顺手 materialize 页面设置。
     Document doc = Docx.create();
     Section before = doc.section(0);
 
-    boolean ignored = before.equals(Docx.create().section(0));
+    assertThat(before.equals(Docx.create().section(0))).isTrue();
 
     Section after = doc.section(0);
-    assertThat(after.header().paragraphs()).isEmpty();
+    assertThat(after.paperSize()).isNull();
+    assertThat(after.marginTop()).isZero();
+    assertThat(after.marginRight()).isZero();
+    assertThat(after.marginBottom()).isZero();
+    assertThat(after.marginLeft()).isZero();
     assertThat(before).isEqualTo(after);
   }
 

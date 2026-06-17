@@ -89,6 +89,7 @@ This is a POI wrapper. "Self-testing self" is a blind spot. Two strategies are m
   craft edge cases precisely.
 - **Secondary**: 1-2 real Word/WPS-generated `.docx` under `src/test/resources/fixtures/` for
   real-world compatibility smoke tests. Always annotate the source in a comment.
+- **Compatibility regressions**: when a bug reproduces only in a consumer such as WPS/Word, preserve either (a) a real fixture from that consumer, or (b) a structural assertion over the generated OOXML that captures the minimal trigger difference discovered during debugging. Do not stop at "POI round-trip passes" if the original bug was renderer-specific.
 
 ### Test stack
 

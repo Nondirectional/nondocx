@@ -17,6 +17,7 @@ nondocx 将 POI 冗长的 `XWPF*` API 封装为直观的领域模型
   超链接、列表、分节、页眉和页脚，均通过深度内容相等性测试验证
 - **可变活对象 + 构建器轨道** — 既可编辑现有文档，也可用 `DocumentBuilder`
   从零构建
+- **页眉页脚创建自带兼容性兜底** — 首次通过 `Section.header()` / `Section.footer()` 创建默认页眉页脚时，若该节尚未显式写入页面设置，库会按需补齐 `A4 + 1 英寸边距`，降低 WPS 对极简 `sectPr` 的显示敏感性
 - **自包含的全 unchecked `DocxException` 层级** — `catch` 子句中永远不会
   泄露 `org.apache.poi.*` 异常
 - **每个核心类型都提供 `raw()` 逃生舱** — 可下探到底层 `XWPF*` 对象，
@@ -70,6 +71,29 @@ doc.save(Path.of("report.docx"));
 
 `build()` 返回的 `Document` 与 `Docx.open` / `Docx.create` 获取的是同一种
 活的、可变的文档 —— 可继续修改，或用完关闭。
+
+### 页眉页脚与兼容性默认值
+
+```java
+import com.non.docx.core.Docx;
+import com.non.docx.core.api.Document;
+import java.nio.file.Path;
+
+try (Document doc = Docx.create()) {
+    // 首次创建默认页眉/页脚时，若当前节还没有显式页面设置，
+    // nondocx 会补齐一个兼容性最小值：A4 + 四边 1 英寸边距。
+    doc.header().addParagraph().addRun("nondocx 示例文档");
+    doc.footer().addParagraph().addRun("第 1 页");
+
+    // 如果你有明确的版式要求，仍然推荐显式设置。
+    // doc.section(0).paperSize(PaperSize.A4).margins(1440, 1440, 1440, 1440);
+
+    doc.save(Path.of("header-footer.docx"));
+}
+```
+
+> 这个兼容性默认值是“只补缺失，不覆盖已有设置”。如果你已经显式调用了
+> `paperSize(...)` / `margins(...)`，nondocx 不会改写你的页面属性。
 
 ### 使用逃生舱
 
