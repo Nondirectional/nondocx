@@ -39,14 +39,27 @@ public final class Run implements InlineElement {
   /**
    * 设置此运行的文本并返回 {@code this} 以支持链式调用。
    *
-   * <p>此方法委托给 {@code XWPFRun.setText(String)}；传入空字符串可生成 没有可见文本的运行。
+   * <p><b>POI 行为注意：</b> {@code XWPFRun.setText(String)} 内部调用 {@code setText(text,
+   * sizeOfTArray())}——当位置等于现有 {@code <w:t>} 数量时会 <em>追加</em> 一个新的 {@code <w:t>}，而非替换。因此对一个已有文本的运行调用
+   * {@code setText} 会把新文本拼到旧文本后面。 本方法先清空运行的底层 {@code CTR} 上所有 {@code <w:t>}，再调用 {@code setText}（此时
+   * sizeOfTArray()==0，会新建一个携带新文本的 {@code <w:t>}）， 确保「替换」语义，与用户对 setter 的直觉一致。详见 poi-bridge.md N9。
+   *
+   * <p>传入空字符串可生成没有可见文本的运行。
    *
    * @param text 新文本（不能为 {@code null}；使用 {@code ""} 清除）
    * @return 此运行
    * @throws IllegalArgumentException 如果 {@code text} 为 {@code null}
+   * @see poi-bridge.md N9（XWPFRun.setText 的追加行为）
    */
   public Run text(String text) {
     Objects.requireNonNull(text, "text");
+    // 与 Hyperlink.text(String) 同一手法：先清空 CTR 上所有 <w:t>，再 setText，
+    // 绕过 POI「pos==size 时追加」的行为，确保替换语义。
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR ctr = delegate.getCTR();
+    int tCount = ctr.sizeOfTArray();
+    for (int i = tCount - 1; i >= 0; i--) {
+      ctr.removeT(i);
+    }
     delegate.setText(text);
     return this;
   }

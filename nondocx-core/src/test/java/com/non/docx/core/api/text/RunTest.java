@@ -117,4 +117,40 @@ class RunTest {
     Run run = Docx.create().addParagraph().addRun("x");
     assertThat(run.raw()).isSameAs(run.raw());
   }
+
+  /**
+   * N9 回归测试：对一个已有文本的 run 调 {@code text(新文本)}，必须是替换语义， 不能把新文本拼到旧文本后面（POI {@code XWPFRun.setText}
+   * 的追加行为）。
+   */
+  @Test
+  void textReplacesRatherThanAppends() {
+    Run run = Docx.create().addParagraph().addRun("旧文本");
+    run.text("新文本");
+    assertThat(run.text()).isEqualTo("新文本");
+
+    // 反复替换也不应累积
+    run.text("再换一次");
+    assertThat(run.text()).isEqualTo("再换一次");
+  }
+
+  /** N9 回归测试（往返）：替换 run 文本后 save→reopen，读回的必须是新文本， 且不能是「旧+新」拼接。 */
+  @Test
+  void textReplacementSurvivesRoundTrip(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("run-replace.docx");
+
+    Document original = Docx.create();
+    original.addParagraph().addRun("原文");
+    original.save(file);
+
+    try (Document opened = Docx.open(file)) {
+      opened.paragraph(0).run(0).text("替换后的文本");
+      opened.save(file);
+    }
+
+    try (Document reopened = Docx.open(file)) {
+      String back = reopened.paragraph(0).run(0).text();
+      assertThat(back).isEqualTo("替换后的文本");
+      assertThat(back).doesNotContain("原文");
+    }
+  }
 }
