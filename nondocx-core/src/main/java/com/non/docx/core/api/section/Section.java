@@ -211,18 +211,18 @@ public final class Section {
   /**
    * 以只读方式返回章节级别的默认（奇数页）页眉；不存在时返回 {@code null}，绝不创建。
    *
-   * <p><b>读写分离。</b> POI 本身就把”读”（{@code getDefaultHeader()}，不存在返回 null）与”写”
-   * （{@code createHeader()}，新建并附加 part）分成了两个方法。nondocx 早期把两者合并进 {@code header()}
-   * 一个方法、采用”访问即创建”语义，换取写入场景”取到就能用”的便利；但这会让只读场景
-   * （搜索、遍历、{@code equals}）意外创建空页眉 part、污染文档。现在遵循 POI 的读写分离：
+   * <p><b>读写分离。</b> POI 本身就把”读”（{@code getDefaultHeader()}，不存在返回 null）与”写” （{@code
+   * createHeader()}，新建并附加 part）分成了两个方法。nondocx 早期把两者合并进 {@code header()}
+   * 一个方法、采用”访问即创建”语义，换取写入场景”取到就能用”的便利；但这会让只读场景 （搜索、遍历、{@code equals}）意外创建空页眉 part、污染文档。现在遵循 POI
+   * 的读写分离：
    *
    * <ul>
    *   <li>{@code header()} —— 纯只读，不存在返回 {@code null}，永不动文档。
    *   <li>{@link #ensureHeader()} —— 显式创建（不存在才建），用于写入场景。
    * </ul>
    *
-   * <p>页眉通过绑定到此章节 {@code CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析，因此返回的页眉属于
-   * <em>此</em> 章节：在多章节文档中，每个 {@link Section} 携带自己的默认页眉。
+   * <p>页眉通过绑定到此章节 {@code CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析，因此返回的页眉属于 <em>此</em>
+   * 章节：在多章节文档中，每个 {@link Section} 携带自己的默认页眉。
    *
    * @return 此章节的默认页眉，不存在则返回 {@code null}
    */
@@ -240,10 +240,9 @@ public final class Section {
   /**
    * 显式确保此章节存在一个默认页眉：不存在则创建并附加一个空的，已存在则原样返回。
    *
-   * <p>用于<b>写入</b>场景——需要拿到一个可 {@code addParagraph} 的页眉时调用本方法。
-   * 只读遍历/搜索请用 {@link #header()}（不会凭空创建）。创建时若该节尚未显式写入
-   * {@code <w:pgSz>} / {@code <w:pgMar>}，nondocx 会补齐一个兼容性最小页面设置
-   * （A4 + 四边 1 英寸边距），以降低 WPS 等消费者对”裸 {@code <w:sectPr>}”的显示敏感性。
+   * <p>用于<b>写入</b>场景——需要拿到一个可 {@code addParagraph} 的页眉时调用本方法。 只读遍历/搜索请用 {@link
+   * #header()}（不会凭空创建）。创建时若该节尚未显式写入 {@code <w:pgSz>} / {@code <w:pgMar>}，nondocx 会补齐一个兼容性最小页面设置 （A4
+   * + 四边 1 英寸边距），以降低 WPS 等消费者对”裸 {@code <w:sectPr>}”的显示敏感性。
    *
    * @return 此章节的默认页眉（从不返回 {@code null}）
    * @throws DocxIOException 如果页眉部分无法创建或附加
@@ -283,8 +282,7 @@ public final class Section {
   /**
    * 显式确保此章节存在一个默认页脚：不存在则创建并附加一个空的，已存在则原样返回。
    *
-   * <p>用于<b>写入</b>场景。只读遍历/搜索请用 {@link #footer()}。创建时的兼容性页面设置补齐
-   * 与 {@link #ensureHeader()} 一致。
+   * <p>用于<b>写入</b>场景。只读遍历/搜索请用 {@link #footer()}。创建时的兼容性页面设置补齐 与 {@link #ensureHeader()} 一致。
    *
    * @return 此章节的默认页脚（从不返回 {@code null}）
    * @throws DocxIOException 如果页脚部分无法创建或附加
@@ -422,8 +420,7 @@ public final class Section {
   /**
    * 以只读方式解析此章节的默认页眉段落，供 {@code equals} / {@code hashCode} 使用。
    *
-   * <p>读写分离后 {@link #header()} 本身就是只读的（null=不存在），这里只是把 null 归一化为空列表，
-   * 让相等性比较的写法不必处理 null 样板。
+   * <p>读写分离后 {@link #header()} 本身就是只读的（null=不存在），这里只是把 null 归一化为空列表， 让相等性比较的写法不必处理 null 样板。
    */
   private List<Paragraph> defaultHeaderParagraphs() {
     Header header = header();

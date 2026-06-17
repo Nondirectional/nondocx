@@ -12,10 +12,10 @@ import java.nio.file.Path;
  * <p>OOXML 中，页眉/页脚是独立的 ZIP 部分 ({@code word/header*.xml}、{@code word/footer*.xml})， 通过章节属性 ({@code
  * <w:sectPr>}) 中的 {@code <w:headerReference>} / {@code <w:footerReference>} 引用。
  *
- * <p>nondocx 通过 {@code Document.ensureHeader()} 和 {@code Document.ensureFooter()} 提供便捷的<b>显式创建</b>访问，
- * 内部委托 POI 的 {@code XWPFHeaderFooterPolicy} 在不存在时创建页眉/页脚部分。 （读写分离后，{@code header()} / {@code footer()} 改为纯只读、
- * 不存在返回 null；需要拿到可写入的页眉页脚时用 {@code ensureXxx()}。） 为了让生成结果在 WPS 等对极简 {@code <w:sectPr>}
- * 更敏感的消费者里更稳定地显示，本示例还会显式写入页面大小与页边距。
+ * <p>nondocx 通过 {@code Document.ensureHeader()} 和 {@code Document.ensureFooter()}
+ * 提供便捷的<b>显式创建</b>访问， 内部委托 POI 的 {@code XWPFHeaderFooterPolicy} 在不存在时创建页眉/页脚部分。 （读写分离后，{@code
+ * header()} / {@code footer()} 改为纯只读、 不存在返回 null；需要拿到可写入的页眉页脚时用 {@code ensureXxx()}。） 为了让生成结果在 WPS
+ * 等对极简 {@code <w:sectPr>} 更敏感的消费者里更稳定地显示，本示例还会显式写入页面大小与页边距。
  */
 public final class HeaderFooterExample {
 
