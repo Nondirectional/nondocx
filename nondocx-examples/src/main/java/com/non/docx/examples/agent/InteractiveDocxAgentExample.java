@@ -26,26 +26,24 @@ import java.nio.file.StandardCopyOption;
  *
  * <ul>
  *   <li>{@link DocxAgentExample} —— 批处理驱动：{@code main} 里写死两段 query（先读后改），跑完即退出，适合「一次性演示」。
- *   <li>本类 {@code InteractiveDocxAgentExample} —— REPL 驱动：循环读取 stdin 一行用户消息，
- *       调 Agent 实时输出，直到输入 {@code :q} 退出。适合「反复试探 / 联调 prompt / 测试工具边界」。
+ *   <li>本类 {@code InteractiveDocxAgentExample} —— REPL 驱动：循环读取 stdin 一行用户消息， 调 Agent 实时输出，直到输入
+ *       {@code :q} 退出。适合「反复试探 / 联调 prompt / 测试工具边界」。
  * </ul>
  *
  * <p><b>实时对话靠 nonchain 的两块能力拼出来</b>（无需自己造轮子）：
  *
  * <ol>
- *   <li><b>多轮记忆</b>：{@link Agent.Builder#memory(com.non.chain.memory.ChatMemory)} +
- *       {@link MessageWindowChatMemory}。配置后 {@code agent.run(query)} 会自动把每轮
- *       user/assistant/tool 消息存进 memory，并在下一轮携带历史上下文——
- *       于是「你刚才打开的那个文档」「表格第二行那个单元格」这种指代能被 Agent 记住。
- *       滑动窗口（{@code maxMessages}）负责在对话变长时裁剪老消息，控制 token 成本。
- *   <li><b>流式输出</b>：{@link Agent#run(String, java.util.function.Consumer)} 接一个
- *       {@code Consumer<AgentEvent>} 回调。Agent 循环每产生一个增量（一段文本、一次工具开始 / 结束）就回调一次，
- *       终端因此可以「token 一边生成一边打印」，而不是憋到整段回复才显示——这正是「实时」的体感来源。
+ *   <li><b>多轮记忆</b>：{@link Agent.Builder#memory(com.non.chain.memory.ChatMemory)} + {@link
+ *       MessageWindowChatMemory}。配置后 {@code agent.run(query)} 会自动把每轮 user/assistant/tool 消息存进
+ *       memory，并在下一轮携带历史上下文—— 于是「你刚才打开的那个文档」「表格第二行那个单元格」这种指代能被 Agent 记住。 滑动窗口（{@code
+ *       maxMessages}）负责在对话变长时裁剪老消息，控制 token 成本。
+ *   <li><b>流式输出</b>：{@link Agent#run(String, java.util.function.Consumer)} 接一个 {@code
+ *       Consumer<AgentEvent>} 回调。Agent 循环每产生一个增量（一段文本、一次工具开始 / 结束）就回调一次， 终端因此可以「token
+ *       一边生成一边打印」，而不是憋到整段回复才显示——这正是「实时」的体感来源。
  * </ol>
  *
- * <p><b>会话生命周期</b>：和批处理示例不同，这里不预置输入文档。你在对话里告诉 Agent 要操作哪个文件
- * （或先 {@code :new} 让它从空白文档开始），Agent 自己 {@code open_docx} / {@code save_docx}。
- * 这更贴近真实联调场景：你想测什么就发什么指令。
+ * <p><b>会话生命周期</b>：和批处理示例不同，这里不预置输入文档。你在对话里告诉 Agent 要操作哪个文件 （或先 {@code :new} 让它从空白文档开始），Agent 自己
+ * {@code open_docx} / {@code save_docx}。 这更贴近真实联调场景：你想测什么就发什么指令。
  *
  * <p><b>运行前置</b>：环境变量 {@code DASHSCOPE_API_KEY}。运行：
  *
@@ -54,8 +52,8 @@ import java.nio.file.StandardCopyOption;
  *   -Dexec.mainClass=com.non.docx.examples.agent.InteractiveDocxAgentExample
  * }</pre>
  *
- * <p>进入后输入任意中文指令（例如「打开 /path/to/a.docx 并告诉我段落数」），输入 {@code :q} 退出，
- * {@code :new <path>} 让 Agent 从一份样例文档副本开始测试。
+ * <p>进入后输入任意中文指令（例如「打开 /path/to/a.docx 并告诉我段落数」），输入 {@code :q} 退出， {@code :new <path>} 让 Agent
+ * 从一份样例文档副本开始测试。
  */
 public final class InteractiveDocxAgentExample {
 
@@ -76,6 +74,10 @@ public final class InteractiveDocxAgentExample {
           + "优先用 search_text 一次性拿到坐标，再用 replace_run_text/replace_table_cell_run_text 修改，"
           + "不要逐个 read_paragraph 盲读。页眉页脚里的文本也能被 search_text 命中，"
           + "需要其结构细节时用 read_header/read_footer。"
+          // 目录(TOC)读取引导:文档有目录时,read_toc 一次拿到「标题/层级/页码/锚点」,
+          // 比逐段 read 拼结构高效得多;页码是文档缓存值,过期(dirty)时结果会标注。
+          + "需要看文档的目录(章节结构 + 页码)时用 read_toc 一次拿到全部条目，"
+          + "不要逐段 read_paragraph 盲拼。"
           // 这是「交互式」特有的补充：多轮对话里用户会用「刚才那个文档」「第二个表格」这类指代，
           // 显式告诉 Agent 它有记忆，能减少 Agent 反复要求用户重述路径。
           + "这是一段连续的多轮对话：记住用户此前给出的文件路径、docId 与已读到的结构，"
@@ -127,7 +129,9 @@ public final class InteractiveDocxAgentExample {
       if (input.isEmpty()) {
         continue;
       }
-      if (":q".equals(input) || ":quit".equalsIgnoreCase(input) || ":exit".equalsIgnoreCase(input)) {
+      if (":q".equals(input)
+          || ":quit".equalsIgnoreCase(input)
+          || ":exit".equalsIgnoreCase(input)) {
         System.out.println("再见。");
         break;
       }
@@ -216,6 +220,7 @@ public final class InteractiveDocxAgentExample {
     System.out.println("直接输入中文指令与助手对话，例如：");
     System.out.println("  打开 /abs/path/to/a.docx 并告诉我它有几段、几个表格");
     System.out.println("  把第 1 段第 0 个 run 改成「你好」，然后保存到 /abs/path/out.docx");
+    System.out.println("  打开 /abs/path/with-toc.docx 并用 read_toc 读出目录");
     System.out.println("命令：");
     System.out.println("  :new [path]   准备一份样例文档副本（默认写到 target/examples-output/）");
     System.out.println("  :help         显示本帮助");

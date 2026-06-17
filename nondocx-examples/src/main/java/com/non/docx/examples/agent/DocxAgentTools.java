@@ -8,6 +8,8 @@ import com.non.docx.core.api.InlineElement;
 import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
+import com.non.docx.core.api.toc.TableOfContents;
+import com.non.docx.core.api.toc.TocEntry;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -420,32 +422,31 @@ public final class DocxAgentTools {
    * 在整份文档里搜索 keyword，一次返回所有命中位置的坐标。
    *
    * <p><b>为什么需要这个工具。</b> 现有的 {@code read_paragraph} / {@code read_table_cell} 都是
-   * <em>按索引寻址</em>——知道位置才能读。但 Agent 要改某段文字时，往往不知道它在第几段、第几个单元格，
-   * 只能 {@code get_paragraph_count} → 逐个 {@code read_paragraph} 盲读，每步都是一轮 LLM 往返，
-   * 定位特别慢。本工具把"线性扫描"从 Agent 循环里搬出来：一次调用遍历正文段落、表格所有单元格、
-   * 各 section 的页眉页脚段落，直接吐出所有命中坐标。
+   * <em>按索引寻址</em>——知道位置才能读。但 Agent 要改某段文字时，往往不知道它在第几段、第几个单元格， 只能 {@code get_paragraph_count} → 逐个
+   * {@code read_paragraph} 盲读，每步都是一轮 LLM 往返， 定位特别慢。本工具把"线性扫描"从 Agent 循环里搬出来：一次调用遍历正文段落、表格所有单元格、 各
+   * section 的页眉页脚段落，直接吐出所有命中坐标。
    *
    * <p><b>遍历范围（OOXML 三层对应）：</b>
    *
    * <ul>
-   *   <li><b>正文段落</b> —— {@code doc.paragraphs()}，对应 {@code word/document.xml} 里 body 直属的
-   *       {@code <w:p>}。
+   *   <li><b>正文段落</b> —— {@code doc.paragraphs()}，对应 {@code word/document.xml} 里 body 直属的 {@code
+   *       <w:p>}。
    *   <li><b>表格单元格内段落</b> —— {@code doc.tables().get(t).rows().get(r).cells().get(c).paragraphs()}，
    *       对应 {@code <w:tbl>} → {@code <w:tr>} → {@code <w:tc>} 内的 {@code <w:p>}。表格 cell 内才再有段落，
    *       这就是为什么表格寻址比段落深三层。
-   *   <li><b>页眉 / 页脚段落</b> —— {@code doc.sections().get(s).header()/footer()}（只读，null=不存在），
-   *       对应独立 ZIP part（{@code header1.xml} / {@code footer1.xml}），通过 section 的 {@code <w:sectPr>} 引用。
+   *   <li><b>页眉 / 页脚段落</b> —— {@code doc.sections().get(s).header()/footer()}（只读，null=不存在）， 对应独立
+   *       ZIP part（{@code header1.xml} / {@code footer1.xml}），通过 section 的 {@code <w:sectPr>} 引用。
    * </ul>
    *
-   * <p><b>命中粒度。</b> 用段落 {@code text()}（POI 拼好的纯文本）做匹配——天然跨 run，
-   * 即使"项"+"目进度"分属两个 run 也能命中整词"项目进度"。返回里另附"哪个 run 含命中"
-   * （逐 run 找首个 {@code text()} 含关键词的），便于直接喂给 {@code replace_run_text}。
+   * <p><b>命中粒度。</b> 用段落 {@code text()}（POI 拼好的纯文本）做匹配——天然跨 run， 即使"项"+"目进度"分属两个 run
+   * 也能命中整词"项目进度"。返回里另附"哪个 run 含命中" （逐 run 找首个 {@code text()} 含关键词的），便于直接喂给 {@code
+   * replace_run_text}。
    *
    * <p><b>匹配规则。</b> {@code exact=false}（默认）忽略大小写 + 子串包含；{@code exact=true} 精确相等。
    *
-   * <p><b>命中上限。</b> 由 {@code max_results} 控制：{@code >0} 为上限；{@code 0} 或负数表示不限（全部返回）。
-   * 默认 {@value #SEARCH_DEFAULT_MAX}。命中数达到上限时会提示"可能还有更多，请缩小关键词"。
-   * 某个词在文档里分布极广时，Agent 可主动传更大的 max_results（或 0 不限）拿全量，自行取舍。
+   * <p><b>命中上限。</b> 由 {@code max_results} 控制：{@code >0} 为上限；{@code 0} 或负数表示不限（全部返回）。 默认 {@value
+   * #SEARCH_DEFAULT_MAX}。命中数达到上限时会提示"可能还有更多，请缩小关键词"。 某个词在文档里分布极广时，Agent 可主动传更大的 max_results（或 0
+   * 不限）拿全量，自行取舍。
    *
    * @param keyword 要找的文本
    * @param exact 是否精确匹配（默认 false=忽略大小写的子串包含）
@@ -462,13 +463,8 @@ public final class DocxAgentTools {
   public String searchText(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
       @ToolParam(name = "keyword", description = "要查找的文本") String keyword,
-      @ToolParam(
-              name = "exact",
-              description = "true=精确相等；false（默认）=忽略大小写的子串包含")
-          boolean exact,
-      @ToolParam(
-              name = "max_results",
-              description = "命中数上限：>0 为上限，0 或负数=不限（默认 50）。命中很多时可调大或传 0")
+      @ToolParam(name = "exact", description = "true=精确相等；false（默认）=忽略大小写的子串包含") boolean exact,
+      @ToolParam(name = "max_results", description = "命中数上限：>0 为上限，0 或负数=不限（默认 50）。命中很多时可调大或传 0")
           Integer maxResults) {
     Document doc = sessions.get(docId);
     if (doc == null) {
@@ -477,8 +473,7 @@ public final class DocxAgentTools {
     // 用 Integer 而非 int：LLM 不传该参数时 nonchain 会注入 null，
     // 包装类型能安全接住 null，这里再归一化为默认值（避免基本类型收到 null 触发 NPE）。
     // 归一化：null 或 <=0 视为不限（用极大值，循环自然由真实命中数收尾）；>0 原样用。
-    int limit =
-        (maxResults == null || maxResults <= 0) ? Integer.MAX_VALUE : maxResults;
+    int limit = (maxResults == null || maxResults <= 0) ? Integer.MAX_VALUE : maxResults;
     List<String> hits = new ArrayList<>();
 
     // 1) 正文段落
@@ -546,12 +541,7 @@ public final class DocxAgentTools {
       return null;
     }
     int runIdx = firstRunContaining(p, keyword, exact);
-    return "正文段落 "
-        + paragraphIndex
-        + " · run "
-        + runIdx
-        + " 含命中\n文本: "
-        + p.text();
+    return "正文段落 " + paragraphIndex + " · run " + runIdx + " 含命中\n文本: " + p.text();
   }
 
   /** 表格单元格段落命中 → "表格(t,r,c) 段落 P · run R 含命中\n文本: ..."；未命中返回 null。 */
@@ -577,7 +567,12 @@ public final class DocxAgentTools {
 
   /** 页眉/页脚段落命中 → "[页眉|页脚] section=S 段落 P · run R 含命中\n文本: ..."；未命中返回 null。 */
   private static String matchHeaderFooterParagraph(
-      String kind, int sectionIndex, int paragraphIndex, Paragraph p, String keyword, boolean exact) {
+      String kind,
+      int sectionIndex,
+      int paragraphIndex,
+      Paragraph p,
+      String keyword,
+      boolean exact) {
     if (!matches(p.text(), keyword, exact)) {
       return null;
     }
@@ -596,8 +591,8 @@ public final class DocxAgentTools {
   /**
    * 遍历一个页眉/页脚的段落做搜索匹配，命中追加进 hits。{@code headerOrFooter} 为 null（该 section 无此 part）时直接返回。
    *
-   * <p>读写分离后 {@code Section.header()}/{@code footer()} 不存在时返回 null 而非创建空 part，
-   * 所以这里只需 null 跳过即可安全只读遍历，无需像旧版那样自建 POI 解析。
+   * <p>读写分离后 {@code Section.header()}/{@code footer()} 不存在时返回 null 而非创建空 part， 所以这里只需 null
+   * 跳过即可安全只读遍历，无需像旧版那样自建 POI 解析。
    */
   private static void searchHeaderFooter(
       Object headerOrFooter,
@@ -615,13 +610,13 @@ public final class DocxAgentTools {
             ? ((com.non.docx.core.api.header.Header) headerOrFooter).paragraphs()
             : ((com.non.docx.core.api.header.Footer) headerOrFooter).paragraphs();
     for (int pi = 0; pi < paras.size() && hits.size() < limit; pi++) {
-      String hit = matchHeaderFooterParagraph(kind, sectionIndex, pi, paras.get(pi), keyword, exact);
+      String hit =
+          matchHeaderFooterParagraph(kind, sectionIndex, pi, paras.get(pi), keyword, exact);
       if (hit != null) {
         hits.add(hit);
       }
     }
   }
-
 
   /** 段落文本是否命中关键词。 */
   private static boolean matches(String text, String keyword, boolean exact) {
@@ -634,8 +629,8 @@ public final class DocxAgentTools {
   /**
    * 段落内首个 text() 含关键词的 run 索引；找不到（例如关键词横跨多个 run）返回 -1。
    *
-   * <p>这里按 {@code runs()}（普通 run）计数，与 {@code replace_run_text} 的 run_index 语义一致。
-   * 超链接里的文本不计入 run 索引，如需改超链接文本用 {@code update_hyperlink_text}。
+   * <p>这里按 {@code runs()}（普通 run）计数，与 {@code replace_run_text} 的 run_index 语义一致。 超链接里的文本不计入 run
+   * 索引，如需改超链接文本用 {@code update_hyperlink_text}。
    */
   private static int firstRunContaining(Paragraph p, String keyword, boolean exact) {
     var runs = p.runs();
@@ -665,9 +660,7 @@ public final class DocxAgentTools {
     return readHeaderFooterParagraph(docId, sectionIndex, paragraphIndex, /* isHeader= */ true);
   }
 
-  /**
-   * 读取页脚某段的结构摘要，语义同 {@link #readHeader} 但针对页脚。
-   */
+  /** 读取页脚某段的结构摘要，语义同 {@link #readHeader} 但针对页脚。 */
   @ToolDef(
       name = "read_footer",
       description = "读取第 section_index 个 section 的默认页脚里第 paragraph_index 段（均 0 起）的结构摘要")
@@ -684,16 +677,16 @@ public final class DocxAgentTools {
    * <p><b>OOXML 三层递进：</b>
    *
    * <ul>
-   *   <li><b>OOXML</b>：页眉页脚不在 {@code word/document.xml} 的 body 里，而是独立 ZIP part
-   *       （{@code header1.xml} / {@code footer1.xml}），通过 section 的 {@code <w:sectPr>} 里的
-   *       {@code <w:headerReference>} / {@code <w:footerReference>} 引用。
+   *   <li><b>OOXML</b>：页眉页脚不在 {@code word/document.xml} 的 body 里，而是独立 ZIP part （{@code header1.xml}
+   *       / {@code footer1.xml}），通过 section 的 {@code <w:sectPr>} 里的 {@code <w:headerReference>} /
+   *       {@code <w:footerReference>} 引用。
    *   <li><b>POI</b>：{@link XWPFHeaderFooterPolicy} 负责按某个 {@code sectPr} 解析出已附加的页眉页脚 part。
-   *       关键区别：{@code getDefaultHeader()} 只读返回（不存在返回 null），而
-   *       {@code createHeader(DEFAULT)} 会<em>新建</em>并附加一个 part——后者会修改文档。
-   *   <li><b>nondocx</b>：读写分离后，{@code Section.header()}/{@code footer()} 就是 POI
-   *       {@code getDefaultHeader/Footer()} 的只读映射（null=不存在）；需要创建时用 {@code ensureHeader()}/{@code
-   *       ensureFooter()}。所以本工具直接调 {@code header()}/{@code footer()} 即可安全只读，
-   *       不必像旧版那样在 core 外自建一份只读解析——这正是读写分离带来的简化。
+   *       关键区别：{@code getDefaultHeader()} 只读返回（不存在返回 null），而 {@code createHeader(DEFAULT)}
+   *       会<em>新建</em>并附加一个 part——后者会修改文档。
+   *   <li><b>nondocx</b>：读写分离后，{@code Section.header()}/{@code footer()} 就是 POI {@code
+   *       getDefaultHeader/Footer()} 的只读映射（null=不存在）；需要创建时用 {@code ensureHeader()}/{@code
+   *       ensureFooter()}。所以本工具直接调 {@code header()}/{@code footer()} 即可安全只读， 不必像旧版那样在 core
+   *       外自建一份只读解析——这正是读写分离带来的简化。
    * </ul>
    */
   private String readHeaderFooterParagraph(
@@ -736,9 +729,77 @@ public final class DocxAgentTools {
         + hyperlinkCount;
   }
 
+  // ==================== G. 目录（TOC，只读） ====================
+
+  /**
+   * 读取文档的目录(Table of Contents),一次返回所有条目(标题 / 层级 / 页码 / 内部锚点)。
+   *
+   * <p><b>OOXML 三层递进</b>:
+   *
+   * <ul>
+   *   <li><b>OOXML</b>:TOC 不是独立元素,而是正文里的一个<b>域</b>(由 {@code fldChar} 的 begin/separate/end 界定,指令文本以
+   *       {@code "TOC "} 开头);begin 与 end 之间的段落是条目, 用 {@code pStyle=TOC1..TOC9} 标层级,内容常包在 {@code
+   *       <w:hyperlink w:anchor="_Toc...">} 里。
+   *   <li><b>POI</b>:没有 {@code XWPFToc} 高级 API,域字符当普通 run 吐出;条目内容在 CTP 级 {@code <w:hyperlink>} 内,
+   *       {@code getRuns()} 不暴露。
+   *   <li><b>nondocx</b>:把「找域 → 解析条目」收进 core 的 {@code internal/poi/TocFields}, 这里只调 {@code
+   *       doc.toc()} 拿到 {@link TableOfContents} 后逐条拼成纯文本。
+   * </ul>
+   *
+   * <p><b>只读 / 不刷新</b>: POI 没有 Word 的分页引擎,算不出页码,故创建/刷新目录不在能力范围。 这里返回的页码是文档里<b>已缓存的</b>值——若目录被标记为
+   * {@code dirty}（源文档改动后未刷新）， 会在结果顶部提示「可能已过期」，Agent 应据此提醒用户页码可能不准。
+   *
+   * @param docId 文档句柄
+   * @return 目录条目列表（多行纯文本）；无目录时返回提示串
+   */
+  @ToolDef(
+      name = "read_toc",
+      description =
+          "读取文档的目录(TOC),一次返回所有条目:每条含标题、层级(1-9)、页码、内部锚点。" + "无目录时返回提示。需要看文档结构/目录时优先用它,不要逐段 read 盲读。")
+  public String readToc(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    TableOfContents toc = doc.toc();
+    if (toc == null) {
+      return "该文档没有目录(TOC 域)。";
+    }
+    List<TocEntry> entries = toc.entries();
+    if (entries.isEmpty()) {
+      // 有 TOC 域但解析不出条目:罕见,可能 TOC 尚未在 Word 里生成(只有空域壳)。提示用户去 Word 刷新。
+      return "存在目录域,但未能解析出条目(可能尚未在 Word 中生成,请打开文档刷新目录)。";
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append("目录(").append(entries.size()).append(" 条)");
+    if (toc.dirty()) {
+      sb.append(" · 已标记过期(页码可能不准,需在 Word 里刷新)");
+    }
+    sb.append('\n');
+    for (int i = 0; i < entries.size(); i++) {
+      TocEntry e = entries.get(i);
+      sb.append('[').append(i).append("] ").append(e.level()).append("级 「").append(e.title());
+      appendPageAndAnchor(sb, e);
+      if (i < entries.size() - 1) {
+        sb.append('\n');
+      }
+    }
+    return sb.toString();
+  }
+
+  /** 把条目的页码与锚点追加进结果串:页码非空则附「· 第N页」,有锚点则附「· 锚点 _Toc...」。 */
+  private static void appendPageAndAnchor(StringBuilder sb, TocEntry e) {
+    if (!e.pageNumber().isEmpty()) {
+      sb.append("」· 第 ").append(e.pageNumber()).append(" 页");
+    } else {
+      sb.append("」");
+    }
+    if (e.anchor() != null) {
+      sb.append(" · 锚点 ").append(e.anchor());
+    }
+  }
 
   // ==================== 内部辅助 ====================
-
 
   /** 段落内超链接计数（从 inlineElements 过滤 Hyperlink，而非 runs()）。 */
   private static long hyperlinkCount(Paragraph p) {
