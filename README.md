@@ -1,52 +1,53 @@
 # nondocx
 
-A fluent, domain-friendly **docx read/write library for Java**, built on top of
-[Apache POI](https://poi.apache.org/).
+面向 Java 的流畅、领域友好的 **docx 读写库**，基于
+[Apache POI](https://poi.apache.org/) 构建。
 
-nondocx wraps POI's verbose `XWPF*` API into an intuitive domain model
-(`Document`, `Paragraph`, `Run`, `Table`, `Section`, …) so you can read, build, and modify
-`.docx` files with a few lines of code — while keeping a `raw()` escape hatch to the
-underlying POI objects for advanced cases.
+nondocx 将 POI 冗长的 `XWPF*` API 封装为直观的领域模型
+（`Document`、`Paragraph`、`Run`、`Table`、`Section`…），让你用
+几行代码就能读取、构建和修改 `.docx` 文件 —— 同时保留 `raw()` 逃生舱
+在高级场景下直接操作底层 POI 对象。
 
-> **Status:** work in progress (MVP). APIs are not yet stable and may change before `1.0.0`.
+> **状态：** 正在开发中（MVP）。API 尚不稳定，`1.0.0` 之前可能变更。
 
-## Features
+## 特性
 
-- **Fluent, chainable, live domain objects** — mutate the document in place: `run.text("Hi").bold()`
-- **Full read *and* write round-trip** for documents, paragraphs, runs, tables, images,
-  hyperlinks, lists, sections, headers, and footers, verified by deep content-equality tests
-- **Mutable live objects + a builder track** — edit existing documents, or assemble new ones
-  with `DocumentBuilder`
-- **Self-contained, all-unchecked `DocxException` hierarchy** — no `org.apache.poi.*` exceptions
-  ever leak into your `catch` clauses
-- **`raw()` escape hatch on every core type** — drop down to the underlying `XWPF*` object for
-  features outside the deep-wrap scope (tracked changes, fields, OLE, math, …)
-- **Zero POI leakage on the public API** — POI types appear *only* in `raw()` return types
-- **Targets JDK 11+**, verified on 11 / 17 / 21 via CI
+- **流畅、可链式调用的活对象** — 原地修改文档：`run.text("Hi").bold()`
+- **完整的读 *和* 写往返保真** — 文档、段落、run、表格、图片、
+  超链接、列表、分节、页眉和页脚，均通过深度内容相等性测试验证
+- **可变活对象 + 构建器轨道** — 既可编辑现有文档，也可用 `DocumentBuilder`
+  从零构建
+- **自包含的全 unchecked `DocxException` 层级** — `catch` 子句中永远不会
+  泄露 `org.apache.poi.*` 异常
+- **每个核心类型都提供 `raw()` 逃生舱** — 可下探到底层 `XWPF*` 对象，
+  处理深度封装范围外的特性（修订、字段、OLE、公式…）
+- **公开 API 零 POI 泄露** — POI 类型 *仅* 出现在 `raw()` 返回类型中
+- **目标 JDK 11+**，已在 CI 上通过 11 / 17 / 21 验证
 - **Apache License 2.0**
+- **全中文编写** — 代码注释、Javadoc、异常消息均为中文
 
-## Quick start
+## 快速开始
 
-### Open, modify, and save
+### 打开、修改并保存
 
 ```java
 import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
 import java.nio.file.Path;
 
-// Open an existing document and edit it live.
+// 打开现有文档并实时编辑。
 try (Document doc = Docx.open(Path.of("input.docx"))) {
-    // Edit existing content: fluent mutators write straight through to POI.
+    // 编辑现有内容：流式修改器直接写入 POI。
     doc.paragraph(0).run(0).text("Hello, nondocx!").bold();
 
-    // Append a new styled paragraph.
+    // 追加带样式的新段落。
     doc.addParagraph().addRun("New paragraph").italic().color("FF0000");
 
     doc.save(Path.of("output.docx"));
 }
 ```
 
-### Build from scratch
+### 从零构建
 
 ```java
 import com.non.docx.core.api.Document;
@@ -54,8 +55,8 @@ import com.non.docx.core.api.style.HeadingLevel;
 import com.non.docx.core.builder.DocumentBuilder;
 import java.nio.file.Path;
 
-// Assemble a document declaratively. The configurator lambdas receive the live
-// Paragraph / Table, so the full run / cell / style API is available inline.
+// 声明式组装文档。配置器 lambda 接收活对象
+// Paragraph / Table，因此可内联使用完整的 run / cell / 样式 API。
 Document doc = DocumentBuilder.start()
     .heading(HeadingLevel.H1, "Quarterly Report")
     .paragraph(p -> p.addRun("Summary").bold().fontSize(14))
@@ -67,12 +68,12 @@ Document doc = DocumentBuilder.start()
 doc.save(Path.of("report.docx"));
 ```
 
-The `Document` returned by `build()` is the same kind of live, mutable document you get from
-`Docx.open` / `Docx.create` — keep mutating it, or close it when done.
+`build()` 返回的 `Document` 与 `Docx.open` / `Docx.create` 获取的是同一种
+活的、可变的文档 —— 可继续修改，或用完关闭。
 
-### Using the escape hatch
+### 使用逃生舱
 
-For docx features that are outside the deep-wrap scope, reach for `raw()`:
+对于深度封装范围之外的 docx 特性，使用 `raw()`：
 
 ```java
 import com.non.docx.core.Docx;
@@ -80,14 +81,14 @@ import com.non.docx.core.api.Document;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 
 try (Document doc = Docx.open(Path.of("in.docx"))) {
-    XWPFDocument raw = doc.raw(); // the backing POI object; modify with caution
-    // ... use any POI capability not wrapped by nondocx ...
+    XWPFDocument raw = doc.raw(); // 底层 POI 对象，谨慎修改
+    // ... 使用 nondocx 未封装的任意 POI 能力 ...
 }
 ```
 
-> POI exceptions thrown through the `raw()` path propagate as-is — `raw()` is POI's territory.
+> 通过 `raw()` 路径抛出的 POI 异常原样传播 —— `raw()` 是 POI 的领地。
 
-## Maven coordinates
+## Maven 坐标
 
 ```xml
 <dependency>
@@ -97,14 +98,13 @@ try (Document doc = Docx.open(Path.of("in.docx"))) {
 </dependency>
 ```
 
-Apache POI is pulled in transitively (`compile` scope); no extra configuration is required on
-the consumer side.
+Apache POI 被传递引入（`compile` 作用域）；消费方无需额外配置。
 
-## Requirements
+## 要求
 
-- **Java 11 or above**
-- A Maven-compatible build (the project is published as a Maven artifact)
+- **Java 11 或以上**
+- 兼容 Maven 的构建（项目以 Maven 构件形式发布）
 
-## License
+## 许可
 
-Licensed under the [Apache License, Version 2.0](./LICENSE).
+依据 [Apache License, Version 2.0](./LICENSE) 授权。
