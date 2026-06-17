@@ -211,6 +211,39 @@ Keep it this way: never compare raw XmlBeans fragments in `equals`.
 
 **Rule**: on the **first** `Section.header()` / `Section.footer()` creation path, if the section still lacks page settings, nondocx materializes a compatibility default: `PaperSize.A4` + 1-inch margins (`1440` twips on all four sides). This fill is **missing-only** — never overwrite user-specified `pgSz` / `pgMar`, and do not mutate a section merely because an existing header/footer is being read. Examples may still set page size/margins explicitly for teaching clarity.
 
+### N9 — `XWPFRun.setText(String)` APPENDS a `<w:t>` when the run already has text
+
+OOXML allows multiple `<w:t>` children inside one `<w:r>`. POI's `XWPFRun.setText(String text)` delegates to `setText(text, sizeOfTArray())`. When `pos == size` (i.e. the run already carries one or more `<w:t>`), the overload **appends** a new `<w:t>` carrying `text` rather than replacing the existing one. Net effect: calling `setText` on a run that already has text silently **concatenates** (old + new), which violates every caller's "replace" intuition.
+
+**Rule**: any nondocx setter that replaces run-class text (`Run.text(String)`, `Hyperlink.text(String)`, and any future analog) MUST clear every existing `<w:t>` on the underlying `CTR` first, then call `setText`. Pattern (copy-paste between the two call sites):
+
+```java
+CTR ctr = delegate.getCTR();
+int tCount = ctr.sizeOfTArray();
+for (int i = tCount - 1; i >= 0; i--) {
+  ctr.removeT(i);
+}
+delegate.setText(text); // now sizeOfTArray()==0 → creates a single fresh <w:t>
+```
+
+Iterate **backwards** (`tCount-1 → 0`) so indices stay valid as you remove. Both call sites carry a Javadoc note + `@see poi-bridge.md N9`, and each is guarded by a round-trip regression test (`RunTest#textReplacementSurvivesRoundTrip`, `HyperlinkTest` setter round-trips). This is a load-bearing gotcha — an Agent-driven "replace run text" tool surfaced it immediately when the output doc came back as "旧文本新文本".
+
+### N10 — Hyperlink URL rewrite: rebuild the relationship, don't trust the open-time cache; use `getRelation()` not `toString()`
+
+POI has **no** API to mutate a hyperlink's target URL. The only path is to rebuild the OPC relationship the hyperlink's `r:id` points at:
+
+1. Read the old rId via `XWPFHyperlinkRun.getHyperlinkId()`.
+2. `document.getPackagePart().removeRelationship(oldRid)`.
+3. `part.addExternalRelationship(url, XWPFRelation.HYPERLINK.getRelation())` — let OpenXML4J **auto-allocate** the new rId; do **not** assume the old rId is reusable.
+4. `delegate.setHyperlinkId(newRel.getId())`.
+
+**Two POI traps here**:
+
+- **Relationship type URI**: the second arg to `addExternalRelationship` must be `XWPFRelation.HYPERLINK.getRelation()`, **not** `.toString()`. `toString()` returns a debug string, which produces an illegal relationship type and makes the URL unreadable after reopen (`Hyperlink.url()` returns `null`). `getRelation()` returns the correct namespace URI.
+- **Open-time cache**: `XWPFDocument.hyperlinks` is a `List` populated once on open; `getHyperlinkByID` reads from this cache, so after a relationship rebuild the **same instance** may still report the old URL via `url()`. The contract that holds is `save → reopen → url()` reads the new value (the on-disk relationship is correct). For `Docx.create()` documents the cache is never pre-populated, so in-memory reads are unaffected.
+
+**Rule**: nondocx's `Hyperlink.url(String)` implements the rebuild above, wraps OpenXML4J/XmlBeans failures as `DocxIOException` (cause preserved), and its Javadoc spells out the cache caveat. Round-trip tests assert only after `save → reopen`. Any future code that mutates OPC relationships for hyperlinks (or any rId-bearing run) must follow the same pattern and must not rely on the in-memory cache reflecting the change immediately.
+
 ---
 
 ## Out-of-Scope feature policy
