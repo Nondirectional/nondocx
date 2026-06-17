@@ -55,6 +55,7 @@
         <log4j-api.version>2.22.0</log4j-api.version>
         <junit-jupiter.version>5.10.2</junit-jupiter.version>
         <assertj.version>3.26.3</assertj.version>
+        <chain.version>0.8.4</chain.version>
 
         <!-- Plugin versions -->
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
@@ -115,6 +116,13 @@
                 <artifactId>assertj-core</artifactId>
                 <version>${assertj.version}</version>
                 <scope>test</scope>
+            </dependency>
+
+            <!-- nonchain Agent 框架（仅在 nondocx-examples 中使用，演示把 docx 能力交给 Agent） -->
+            <dependency>
+                <groupId>com.non</groupId>
+                <artifactId>chain</artifactId>
+                <version>${chain.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -23,6 +23,11 @@
             <artifactId>nondocx-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- nonchain Agent 框架：演示把 docx 读写能力注册为一组工具交给 Agent（版本由父 pom 管理） -->
+        <dependency>
+            <groupId>com.non</groupId>
+            <artifactId>chain</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
