@@ -52,3 +52,6 @@ gradle-app.setting
 *.tmp
 .env
 .env.local
+
+# ─── Local agent/tooling state (.pi workspace, machine-local paths) ───
+.pi/
