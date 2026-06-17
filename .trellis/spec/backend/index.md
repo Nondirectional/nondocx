@@ -60,11 +60,11 @@ These are the load-bearing conventions; each links to its full treatment.
   → [Quality §3](./quality-guidelines.md)
 - **Content equality** — `equals`/`hashCode` compare content, never the delegate reference.
   → [Quality §2](./quality-guidelines.md)
-- **All-unchecked `DocxException`** — POI exceptions wrapped on the public surface; English
+|- **全 unchecked `DocxException`** — POI 异常在公开表面包装；中文
   messages with context. → [Error Handling](./error-handling.md)
 - **No Lombok, fluent `this`-returning mutators** — `run.text("x").bold()`, not `setBold`.
   → [Quality §1, Code Style](./quality-guidelines.md)
-- **English outward-facing** — README/Javadoc/comments/exception messages in English; Trellis
+|- **全中文对外** — README/Javadoc/注释/异常消息均为中文；Trellis
   task docs in Chinese. → [Quality §5](./quality-guidelines.md)
 
 ---
@@ -82,4 +82,4 @@ When any of these lands, add a spec entry and link it here.
 
 ---
 
-**Language**: All documentation is written in **English**.
+**Language**: 所有文档均使用**中文**编写。

@@ -238,4 +238,4 @@ This keeps the abstraction honest. "Not supported" is a valid, explicit answer.
 
 ---
 
-**Language**: This spec and all outward-facing code artifacts are written in **English**.
+**Language**: 本规范及所有对外代码工件均使用**中文**编写。

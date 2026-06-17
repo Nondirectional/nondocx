@@ -62,9 +62,9 @@ Every `Docx*Exception` should help the user locate the problem:
 - `DocxFormatException` carries the **file path** (`Path` / `String`).
 - `DocxOperationException` carries the **element index / name** it was operating on
   (paragraph index, table index, etc.).
-- Messages are **English**, actionable, and mention the operation that failed.
+- 消息均为**中文**，可操作，并说明失败的操作。
 
-### Rule 3 — Messages are English, plain-text, no stack-trace plumbing
+### Rule 3 — 消息为中文、纯文本、不含堆栈跟踪信息
 
 ```
 "Failed to open document: /path/to/file.docx"
@@ -105,4 +105,4 @@ Never return a degraded/empty result silently for an unsupported feature.
 
 ---
 
-**Language**: All exception messages, Javadoc, and this spec are written in **English**.
+**Language**: 所有异常消息、Javadoc 及本规范均使用**中文**编写。

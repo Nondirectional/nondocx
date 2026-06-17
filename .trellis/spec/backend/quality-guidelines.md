@@ -63,10 +63,10 @@ Every public domain type (`Document`, `Paragraph`, `Run`, `Table`, `Row`, `Cell`
 `Image`, `Header`, `Footer`) MUST expose `public XWPF* raw()`. This is the escape hatch for
 features outside the deep-wrap scope.
 
-### 5. English everywhere outward-facing
+### 5. 全中文对外
 
-README, Javadoc, code comments on public API, and exception messages are **English**.
-Trellis task docs (PRD/design/implement) remain Chinese.
+README、Javadoc、代码注释、异常消息均为**中文**。
+Trellis 任务文档（PRD/design/implement）同样为中文。
 
 ---
 
@@ -125,7 +125,7 @@ run.text("hi").bold().fontSize(12);
 
 ### Javadoc
 
-- Public API: full Javadoc, English, with `@throws` referencing the `Docx*Exception` type
+- Public API: 完整 Javadoc、中文，`@throws` 引用 `Docx*Exception` 类型
   (not POI types).
 - `raw()` Javadoc MUST include the warning: *"Modifications to the returned object affect the
   document immediately. Use with caution."*
@@ -162,7 +162,7 @@ Before requesting review / before `trellis-check`:
 - [ ] Core types implement content-equal `equals`/`hashCode` (no delegate ref)
 - [ ] `raw()` present on every public domain type, with the warning Javadoc
 - [ ] POI exceptions wrapped into `Docx*Exception` on public surface
-- [ ] Exception messages English + carry context (path / index)
+- [ ] 异常消息中文 + 携带上下文（路径/索引）
 - [ ] No Lombok anywhere
 - [ ] Fluent mutators return `this`; no `setXxx` on live objects
 - [ ] Round-trip + POI cross-reference tests added for new domain behavior
@@ -170,4 +170,4 @@ Before requesting review / before `trellis-check`:
 
 ---
 
-**Language**: This spec and all outward-facing code artifacts are written in **English**.
+**Language**: 本规范及所有对外代码工件均使用**中文**编写。

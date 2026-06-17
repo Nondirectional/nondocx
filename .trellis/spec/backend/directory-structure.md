@@ -24,7 +24,7 @@ nondocx/
 │   ├── pom.xml                      # inherits parent; declares poi/poi-ooxml + junit/assertj
 │   └── src/{main,test}/java/com/non/docx/core/
 ├── LICENSE                          # Apache 2.0
-├── README.md                        # English
+├── README.md                        # 中文
 └── .github/workflows/ci.yml         # JDK matrix [11,17,21]
 ```
 
@@ -101,4 +101,4 @@ com.non.docx.core
 
 ---
 
-**Language**: All documentation is written in **English**.
+**Language**: 所有文档均使用**中文**编写。
