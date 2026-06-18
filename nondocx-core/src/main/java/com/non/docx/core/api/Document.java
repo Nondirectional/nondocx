@@ -388,6 +388,37 @@ public final class Document implements AutoCloseable {
         : null;
   }
 
+  // ---------- 修订（tracked changes，只读） ----------
+
+  /**
+   * 返回文档的修订(tracked changes)能力门面 —— 一个<b>只读</b>视图。
+   *
+   * <p>这是 nondocx 对 tracked changes 的统一入口(无论后续 accept/reject、authoring 等子任务如何演进,读取入口都集中在此)。
+   * 门面提供三件只读事:是否开启修订记录、按文档顺序枚举修订、按稳定 id 获取单条修订。
+   *
+   * <p><b>OOXML / POI / nondocx 三层。</b>
+   *
+   * <ul>
+   *   <li><b>OOXML</b>:开关在 {@code word/settings.xml} 的 {@code <w:trackChanges/>};修订标记散落在 {@code
+   *       word/document.xml} 正文各处,如 {@code <w:ins>} / {@code <w:del>}。
+   *   <li><b>POI</b>:没有 {@code XWPFTrackedChanges} 高级 API。开关需读 {@code CTSettings};修订节点需用 {@code
+   *       XmlCursor} 按文档顺序遍历 body 树。
+   *   <li><b>nondocx</b>:把这两件脏活收进 {@code internal/poi/TrackedChangeNodes},对外只暴露 {@link
+   *       com.non.docx.core.api.track.TrackedChanges} / {@link
+   *       com.non.docx.core.api.track.TrackedChange} 等干净类型。
+   * </ul>
+   *
+   * <p><b>与 {@code toc()} 的区别。</b> {@code toc()} 在文档无 TOC 时返回 {@code null};而 tracked changes 的「开关」与
+   * 「列表」总是有意义的(即便关闭、即便列表为空),故本方法<b>总是返回非 null</b>门面对象,不返回 {@code null}。
+   *
+   * <p><b>只读。</b> 开关写入、accept/reject 均不属于当前 read 子任务。
+   *
+   * @return 修订能力门面(从不为 {@code null})
+   */
+  public com.non.docx.core.api.track.TrackedChanges trackedChanges() {
+    return new com.non.docx.core.api.track.TrackedChanges(delegate);
+  }
+
   // ---------- save ----------
 
   /**
