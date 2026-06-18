@@ -206,6 +206,71 @@ public final class Run implements InlineElement {
   }
 
   /**
+   * 以「删除旧文本 + 插入新文本」的方式完成一条 tracked replacement,并返回新插入 run 的活跃包装。
+   *
+   * <p>底层把本 run 迁入 {@code <w:del>}(删除旧文本),随后新建 {@code <w:ins>}(插入新文本),两者各自携带修订元数据(author / 自动 date
+   * / 自动分配的 {@code w:id})。新插入 run 复制本 run 替换前的文本样式(六个内联样式属性),贴近「替换文本但保留格式」的直觉。
+   *
+   * <p>替换后本 {@code Run} 已迁入 deletion 语义路径,不再是稳定的普通 live wrapper;请改用返回的新 run 继续操作。与 {@code
+   * <w:trackChanges/>} 开关<b>正交</b>。
+   *
+   * <p><b>OOXML / POI / nondocx 三层。</b> replacement 不是独立 OOXML 元素,而是 del + ins 的组合;POI 无高层
+   * API,节点创建下沉到 {@code internal/poi/TrackedChangeNodes}。
+   *
+   * @param author 修订作者(不能为 {@code null} 或空白)
+   * @param newText 替换后的新文本(不能为 {@code null})
+   * @return 新插入 run 的活跃包装
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白,或 {@code newText} 为
+   *     {@code null}
+   */
+  public Run replaceTracked(String author, String newText) {
+    Objects.requireNonNull(author, "author");
+    if (author.isBlank()) {
+      throw new IllegalArgumentException("author 不能为空白");
+    }
+    Objects.requireNonNull(newText, "newText");
+    org.apache.poi.xwpf.usermodel.XWPFParagraph parent = delegate.getParagraph();
+    if (parent == null) {
+      // run 未挂在段落上(罕见,如裸 CTR 构造的 Run),无法做 replacement。
+      throw new java.util.NoSuchElementException("本 run 未挂在段落上,无法做 tracked replacement");
+    }
+    // 替换前先捕获样式,用于复制到新插入 run(本 run 在 deletion 后样式不再可信)。
+    RunStyle snapshot = style();
+    org.apache.poi.xwpf.usermodel.XWPFDocument doc = parent.getDocument();
+    java.util.Calendar now = java.util.Calendar.getInstance();
+    java.math.BigInteger baseId =
+        com.non.docx.core.internal.poi.TrackedChangeNodes.nextRevisionId(doc);
+    // 先 deletion,再 insertion;各用一个递增 w:id。
+    com.non.docx.core.internal.poi.TrackedChangeNodes.addDeletion(
+        parent, delegate.getCTR(), author, now, baseId);
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange ins =
+        com.non.docx.core.internal.poi.TrackedChangeNodes.addInsertion(
+            parent, newText, author, now, baseId.add(java.math.BigInteger.ONE));
+    XWPFRun inserted = new XWPFRun(ins.getRList().get(0), parent);
+    Run newRun = new Run(inserted);
+    // 复制替换前的文本样式到新插入 run。
+    if (snapshot.isBold()) {
+      newRun.bold();
+    }
+    if (snapshot.isItalic()) {
+      newRun.italic();
+    }
+    if (snapshot.isUnderline()) {
+      newRun.underline();
+    }
+    if (snapshot.font() != null) {
+      newRun.font(snapshot.font());
+    }
+    if (snapshot.size() != null) {
+      newRun.fontSize(snapshot.size());
+    }
+    if (snapshot.color() != null) {
+      newRun.color(snapshot.color());
+    }
+    return newRun;
+  }
+
+  /**
    * 返回底层的 POI 运行。
    *
    * <p>对返回对象的修改会立即影响文档。请谨慎使用。

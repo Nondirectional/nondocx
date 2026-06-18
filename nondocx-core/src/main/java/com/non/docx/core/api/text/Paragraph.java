@@ -21,6 +21,7 @@ import java.util.List;
 import org.apache.poi.ooxml.POIXMLException;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.xwpf.usermodel.IRunElement;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFHyperlinkRun;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFPicture;
@@ -186,6 +187,95 @@ public final class Paragraph implements BodyElement {
     XWPFRun run = delegate.createRun();
     run.setText(text);
     return new Run(run);
+  }
+
+  /**
+   * 在段落末尾追加一条 tracked insertion(插入)修订,并返回新插入 run 的活跃包装。
+   *
+   * <p>与普通 {@link #addRun(String)} 不同:本方法写出的是被追踪的插入——底层生成 {@code <w:ins>} 修订节点(带 author / 自动 date /
+   * 自动分配的 {@code w:id}),其内的 run 承载新文本。该修订随后可被 {@code doc.trackedChanges().list()} 读回,也能被
+   * accept/reject 子任务按稳定 id 命中。
+   *
+   * <p>与 {@code <w:trackChanges/>} 开关<b>正交</b>:无论文档是否开启修订记录,本方法都显式写出修订节点(不依赖开关)。新 run 按普通新 run
+   * 起步,不复制外部 run 样式。
+   *
+   * <p><b>OOXML / POI / nondocx 三层。</b> {@code <w:ins>} 是包住 {@code <w:r>} 的包装元素;POI 没有创建 tracked
+   * insertion 的高层 API,nondocx 把节点创建下沉到 {@code internal/poi/TrackedChangeNodes};POI 的 {@code
+   * XWPFParagraph.getRuns()} <b>不</b>暴露 {@code ins} 内的 run,故这里从底层 {@code CTR} 重新构造 {@code XWPFRun}
+   * 以保证返回的 {@link Run} 可继续链式操作。
+   *
+   * @param author 修订作者(不能为 {@code null} 或空白)
+   * @param text 插入的文本(不能为 {@code null})
+   * @return 新插入 run 的活跃包装
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白,或 {@code text} 为 {@code
+   *     null}
+   * @see com.non.docx.core.api.track.TrackedChanges
+   */
+  public Run addInsertion(String author, String text) {
+    requireAuthor(author);
+    Objects.requireNonNull(text, "text");
+    XWPFDocument doc = delegate.getDocument();
+    java.util.Calendar now = java.util.Calendar.getInstance();
+    java.math.BigInteger revisionId =
+        com.non.docx.core.internal.poi.TrackedChangeNodes.nextRevisionId(doc);
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange ins =
+        com.non.docx.core.internal.poi.TrackedChangeNodes.addInsertion(
+            delegate, text, author, now, revisionId);
+    // ins 内的 run 不被 XWPFParagraph.getRuns() 暴露,从 CTR 重新构造 XWPFRun。
+    XWPFRun inserted = new XWPFRun(ins.getRList().get(0), delegate);
+    return new Run(inserted);
+  }
+
+  /**
+   * 将本段落中一个已有的 run 显式标记为 tracked deletion(删除),并返回 {@code this}。
+   *
+   * <p>目标 run 从「普通正文 run」迁入 {@code <w:del>} 修订节点(其 {@code <w:t>} 转为 {@code
+   * <w:delText>}),成为被追踪的删除内容。该修订随后可被 {@code doc.trackedChanges().list()} 读回。
+   *
+   * <p>本方法<b>不返回</b>原 {@link Run}:迁入 deletion 语义路径后,原 run 已不再是稳定的「普通正文 live
+   * wrapper」,继续暴露它会制造误导。要继续在段落上操作,用返回的 {@code this} 链式调用。
+   *
+   * @param author 修订作者(不能为 {@code null} 或空白)
+   * @param target 要标记删除的目标 run(不能为 {@code null},且必须属于本段落)
+   * @return 本段落(便于链式)
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白,或 {@code target} 为 {@code
+   *     null}
+   * @throws java.util.NoSuchElementException 如果 {@code target} 不属于本段落
+   * @see com.non.docx.core.api.track.TrackedChanges
+   */
+  public Paragraph addDeletion(String author, Run target) {
+    requireAuthor(author);
+    Objects.requireNonNull(target, "target");
+    // 校验 target 属于本段落(避免把别的段落的 run 当成本段落的来标记)。
+    if (!containsRun(target)) {
+      throw new java.util.NoSuchElementException("目标 run 不属于本段落,无法标记为 tracked deletion");
+    }
+    XWPFDocument doc = delegate.getDocument();
+    java.util.Calendar now = java.util.Calendar.getInstance();
+    java.math.BigInteger revisionId =
+        com.non.docx.core.internal.poi.TrackedChangeNodes.nextRevisionId(doc);
+    com.non.docx.core.internal.poi.TrackedChangeNodes.addDeletion(
+        delegate, target.raw().getCTR(), author, now, revisionId);
+    return this;
+  }
+
+  /** 校验 author 参数:非 {@code null} 且非空白,否则抛 {@link IllegalArgumentException}。 */
+  private static void requireAuthor(String author) {
+    Objects.requireNonNull(author, "author");
+    if (author.isBlank()) {
+      throw new IllegalArgumentException("author 不能为空白");
+    }
+  }
+
+  /** 判断给定 run 是否属于本段落(按底层 CTR 引用相等)。 */
+  private boolean containsRun(Run run) {
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR target = run.raw().getCTR();
+    for (XWPFRun r : delegate.getRuns()) {
+      if (r.getCTR() == target) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

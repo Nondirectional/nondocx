@@ -363,3 +363,59 @@ AC1 acceptAll/rejectAll ✅ / AC2 byAuthor 精确+大小写敏感 ✅ / AC3 acce
 - commit
 - accept-text 子任务归档
 - 下一子任务:authoring 或 advanced-types
+
+---
+
+## Session 9: authoring 子任务(显式创作 API)
+
+**Task**: `06-18-tracked-changes-authoring`(实现)
+
+### What
+
+在 `Paragraph`/`Run` 上补齐文本类 tracked 创作的显式 API:`addInsertion` / `addDeletion` / `replaceTracked`。写出的修订能被 `TrackedChanges.list()` 读回,与开关正交。
+
+### 关键决策
+
+1. **方法落点在内容所属类型,不在门面**(design §3.1):创作属于「在某处写内容」,门面是「对文档修订状态负责」。与 accept/reject 落在门面不同。
+2. **`addDeletion` 不返回原 Run**:迁入 deletion 语义路径后原 run 已非稳定普通 live wrapper,继续暴露会误导(design §3.2)。返回 `this` 段落。
+3. **`replaceTracked` 复制源 run 样式**:替换前快照六个内联样式属性,应用到新 ins run。
+4. **`w:id` 与稳定 id 是两套概念**:`nextRevisionId` 扫 max+1 生成底层 OOXML id;它与 read 侧 nondocx 稳定 id 混合串不是一回事(design §5.3)。
+
+### 探针发现的两个 POI 坑(先探针后实现)
+
+1. **`XWPFParagraph.getRuns()` 不暴露 ins/del 内的 run**:必须从 `CTRunTrackChange.getRList()` 拿 CTR,再 `new XWPFRun(ctr, paragraph)` 重构,否则返回的 Run 无法链式操作。
+2. **迁既有 run 入 `<w:del>` 不是 `addNewR`**:要新建空 del → t 转 delText → `XmlCursor.toEndToken()`+`moveXml` 把 CTR 迁入 del 内部。
+
+### 改动产出(4 文件 + spec + 新测试)
+
+- `internal/poi/TrackedChangeNodes.java`:新增 `addInsertion` / `addDeletion` / `nextRevisionId`;类 Javadoc 补创作职责
+- `api/text/Paragraph.java`:新增 `addInsertion` / `addDeletion` + `requireAuthor`/`containsRun` 私有
+- `api/text/Run.java`:新增 `replaceTracked`(含样式复制)
+- 新增 `TrackedAuthoringTest.java`:10 用例
+- spec `poi-bridge.md` 新增 **N14**(两个 POI 坑 + w:id/稳定 id 概念区分);同步 N13 范围行、Rule 3、`error-handling.md` Rule 5、README bullet——反映 authoring 已落地
+
+### OOXML/POI/nondocx 三层(教学要点)
+
+- **OOXML**:`ins`/`del` 是包住 `<w:r>` 的包装元素。insertion=新建包装+run;deletion=迁既有 run 入包装 + t→delText;replacement=del+ins 组合。
+- **POI**:无创建 tracked 修订的高层 API。两个坑:getRuns 不暴露包装内 run;迁 run 要 toEndToken+moveXml。
+- **nondocx**:节点创建下沉 `internal/poi`,公共 API 在 `Paragraph`/`Run`,POI-free。
+
+### Testing
+
+- [OK] 探针 2 场景(insertion 读回 / deletion 迁入)全绿,确认 mechanics
+- [OK] `TrackedAuthoringTest`:10/10 通过
+- [OK] 全量 `mvn -pl nondocx-core verify`:**159 tests, 0 failures**,spotless clean
+
+### AC 自检
+
+AC1 insertion ✅ / AC2 deletion ✅ / AC3 replacement(del+ins,样式复制)✅ / AC4 元数据 author/date/w:id ✅ / AC5 写出可被 list() 读回 ✅ / AC6 普通写 API 无回归(普通 addRun 不产修订)✅
+
+### Status
+
+[OK] **实现与质检完成,待 commit**
+
+### Next Steps
+
+- commit
+- authoring 子任务归档
+- 最后一个子任务:advanced-types

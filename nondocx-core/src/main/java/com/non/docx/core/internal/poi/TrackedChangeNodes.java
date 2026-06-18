@@ -29,6 +29,8 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTText;
  *   <li>{@link #collect(XWPFDocument)} —— 按文档顺序枚举正文里的修订节点,解析为 {@link TrackedChange} 领域视图。
  *   <li>{@link #acceptText(CTRunTrackChange)} / {@link #rejectText(CTRunTrackChange)} ——
  *       对文本类修订做破坏性应用或撤销。
+ *   <li>{@link #addInsertion} / {@link #addDeletion} / {@link #nextRevisionId} —— 创作文本类 tracked
+ *       修订节点。
  * </ol>
  *
  * <p><b>OOXML 结构(教学要点)。</b> 修订标记是带属性的容器元素:
@@ -225,6 +227,124 @@ public final class TrackedChangeNodes {
         t.setStringValue(s == null ? "" : s);
       }
     }
+  }
+
+  // ---------- 破坏性写:文本类 authoring ----------
+
+  /**
+   * 在段落末尾创建一条 tracked insertion(插入)修订,内含一个承载 {@code text} 的 run。
+   *
+   * <p>OOXML 形态:在 {@code <w:p>} 下新建 {@code <w:ins w:id=.. w:author=..
+   * w:date=..><w:r><w:t>text</w:t></w:r></w:ins>}。
+   *
+   * <p>返回新建的 {@code <w:ins>} 节点;调用方通过 {@link CTRunTrackChange#getRList()} 取其内部 run(再用 {@code new
+   * XWPFRun(ctr, paragraph)} 包成 POI run——POI 的 {@code XWPFParagraph.getRuns()} <b>不</b>暴露 ins 内的
+   * run,见 N14)。
+   *
+   * <p>新 run 的 {@code <w:r>} 是「普通新 run」起步(无样式);若需要复制外部 run 样式,由调用方在拿到 run 后自行处理。
+   *
+   * @param paragraph 目标段落的 POI 句柄(不能为 {@code null})
+   * @param text 插入的文本(不能为 {@code null})
+   * @param author 修订作者(不能为 {@code null})
+   * @param date 修订时间(不能为 {@code null})
+   * @param revisionId 底层 OOXML {@code w:id}(不能为 {@code null})
+   * @return 新建的 {@code <w:ins>} 节点
+   */
+  public static CTRunTrackChange addInsertion(
+      org.apache.poi.xwpf.usermodel.XWPFParagraph paragraph,
+      String text,
+      String author,
+      java.util.Calendar date,
+      java.math.BigInteger revisionId) {
+    java.util.Objects.requireNonNull(paragraph, "paragraph");
+    java.util.Objects.requireNonNull(text, "text");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(date, "date");
+    java.util.Objects.requireNonNull(revisionId, "revisionId");
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p = paragraph.getCTP();
+    CTRunTrackChange ins = p.addNewIns();
+    ins.setId(revisionId);
+    ins.setAuthor(author);
+    ins.setDate(date);
+    CTR r = ins.addNewR();
+    CTText t = r.addNewT();
+    t.setStringValue(text);
+    return ins;
+  }
+
+  /**
+   * 把段落中一个<b>已有</b>的普通 run 显式标记为 tracked deletion(删除)。
+   *
+   * <p>OOXML 形态:在 {@code <w:p>} 下新建 {@code <w:del>},把目标 run 的 {@code <w:t>} 转成 {@code
+   * <w:delText>}(被删文本才用 delText,见 N12),并把该 {@code <w:r>} 从段落直接子位置迁入 {@code <w:del>} 内部。
+   *
+   * <p>迁移用 {@link XmlCursor}:把 {@code <w:del>} cursor 下移到结束 token({@code toEndToken} 指向其内部末尾),再
+   * {@code moveXml} 目标 run 至该位置——这样 run 成为 {@code <w:del>} 的子节点。详见 N14。
+   *
+   * @param paragraph 目标 run 所在段落的 POI 句柄(不能为 {@code null})
+   * @param targetRun 要标记删除的目标 run 的底层 {@code CTR}(不能为 {@code null})
+   * @param author 修订作者(不能为 {@code null})
+   * @param date 修订时间(不能为 {@code null})
+   * @param revisionId 底层 OOXML {@code w:id}(不能为 {@code null})
+   * @return 新建的 {@code <w:del>} 节点
+   */
+  public static CTRunTrackChange addDeletion(
+      org.apache.poi.xwpf.usermodel.XWPFParagraph paragraph,
+      CTR targetRun,
+      String author,
+      java.util.Calendar date,
+      java.math.BigInteger revisionId) {
+    java.util.Objects.requireNonNull(paragraph, "paragraph");
+    java.util.Objects.requireNonNull(targetRun, "targetRun");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(date, "date");
+    java.util.Objects.requireNonNull(revisionId, "revisionId");
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p = paragraph.getCTP();
+    // 先建 <w:del>,再把目标 run 迁入(注意:迁入前目标 run 仍在段落直接子位置)
+    CTRunTrackChange del = p.addNewDel();
+    del.setId(revisionId);
+    del.setAuthor(author);
+    del.setDate(date);
+    // t → delText(被删文本用 delText)
+    for (int i = targetRun.sizeOfTArray() - 1; i >= 0; i--) {
+      String s = targetRun.getTArray(i).getStringValue();
+      targetRun.removeT(i);
+      targetRun.addNewDelText().setStringValue(s == null ? "" : s);
+    }
+    // 把目标 run 迁入 <w:del> 内部末尾
+    XmlCursor delCur = del.newCursor();
+    XmlCursor runCur = targetRun.newCursor();
+    try {
+      delCur.toEndToken();
+      runCur.moveXml(delCur);
+    } finally {
+      delCur.dispose();
+      runCur.dispose();
+    }
+    return del;
+  }
+
+  /**
+   * 计算文档下一个可用的修订 {@code w:id}(扫描已有 {@code ins}/{@code del} 等的 {@code w:id},取最大值 +1;无任何修订时返回 0)。
+   *
+   * <p>这是底层 OOXML 修订 id,与 read 子任务对外的 nondocx 稳定 id <b>不是</b>同一概念(见 design §5.3)。
+   *
+   * @param document POI 文档(不能为 {@code null})
+   * @return 下一个可用的 {@code w:id}
+   */
+  public static java.math.BigInteger nextRevisionId(XWPFDocument document) {
+    java.util.Objects.requireNonNull(document, "document");
+    long max = -1;
+    for (TrackedChange c : collect(document)) {
+      java.math.BigInteger id = c.raw().getId();
+      if (id != null) {
+        long v = id.longValue();
+        if (v > max) {
+          max = v;
+        }
+      }
+    }
+    return java.math.BigInteger.valueOf(max + 1);
   }
 
   // ---------- body 遍历 ----------

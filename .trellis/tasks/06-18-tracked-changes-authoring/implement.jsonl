@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/06-18-tracked-changes/design.md", "reason": "父任务定义 tracked changes 的统一边界、门面位置与显式 authoring 总方向，子任务实现必须对齐"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-read/design.md", "reason": "authoring 写出的文本类修订最终需被 read 子任务的稳定 id / details / location 模型读回"}
+{"file": ".trellis/spec/backend/index.md", "reason": "backend 总体规范入口，确保 authoring 子任务仍遵守公共 API、异常与质量约束"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "显式 tracked 写路径需要遵守 holding-wrapper、raw()、POI 脏活下沉与桥接约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "author / text 参数校验与写路径失败语义需对齐异常规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "明确 Paragraph / Run 上的新 API 与内部写路径支持类应落在哪些包层"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "值对象、Javadoc 中文、测试覆盖与公共 API POI-free 约束依赖此规范"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "实现与解释 authoring API 时继续按 OOXML -> POI -> nondocx 三层递进讲解"}

@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/06-18-tracked-changes/design.md", "reason": "check 阶段需回看父任务边界，确保 authoring 子任务没有漂移成自动追踪或门面写入口"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-read/design.md", "reason": "检查 authoring 结果能否与 read 子任务的稳定 id / location / details 契约对齐"}
+{"file": ".trellis/spec/backend/index.md", "reason": "对照 backend 总体规范检查新增写 API 的公共边界、异常与质量"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "检查 tracked 写路径是否仍满足 holding-wrapper、raw() 与 POI 下沉约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查参数校验与写路径失败语义是否符合异常规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "检查 Paragraph / Run 新 API 与内部支持类是否落在正确包层"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查值对象、测试覆盖、Javadoc 中文与公共 API POI-free 约束"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "评审输出与 authoring 说明继续遵守教学式协作约定"}
