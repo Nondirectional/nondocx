@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/06-18-tracked-changes/design.md", "reason": "check 阶段需回看父任务设计，确认 read 子任务没有偏离统一门面、details、location 与稳定 id 契约"}
+{"file": ".trellis/spec/backend/index.md", "reason": "对照 backend 总体规范检查 tracked changes 只读实现是否保持既有 API 边界"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "检查只读路径是否仍满足 holding-wrapper、raw()、读写分离与 POI 脏活下沉约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查 `get(id)` miss 与其他失败语义是否符合异常规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "检查新增类型是否落在正确包层，避免 API / internal 边界漂移"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查值对象语义、测试覆盖、Javadoc 中文与 POI-free 公共表面"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "评审输出与文档说明继续遵守教学式协作约定"}

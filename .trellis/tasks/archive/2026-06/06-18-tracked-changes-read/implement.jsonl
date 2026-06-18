@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/06-18-tracked-changes/design.md", "reason": "父任务设计定义 tracked changes 的统一门面、type/family/details/location 总契约，子任务实现必须对齐"}
+{"file": ".trellis/spec/backend/index.md", "reason": "backend 总体规范入口，确保 read 子任务实现仍遵守公共 API、异常、质量与 POI bridge 约束"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "实现 tracked changes 只读路径时必须遵守 holding-wrapper、raw()、POI 脏活下沉与读写分离约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "`get(id)` miss、参数校验与只读读取过程中的失败语义需对齐异常规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "明确 `TrackedChanges` / `TrackedChange` / location / details 等类型应落在哪些包层"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "值对象语义、内容相等、测试风格与公共 API POI-free 约束都依赖此规范"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "实现与解释 tracked changes 时继续遵守 OOXML -> POI -> nondocx 三层递进讲解方式"}
