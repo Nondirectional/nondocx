@@ -22,11 +22,13 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTText;
  * <p>这是 nondocx 里<b>唯一</b>接触 tracked changes 的 OOXML 结构的地方,因此公有类型 {@link TrackedChange} / {@link
  * com.non.docx.core.api.track.TrackedChanges} 在源代码层面保持无 {@code org.apache.poi.*}。
  *
- * <p><b>职责。</b> 提供两件只读能力:
+ * <p><b>职责。</b> 提供只读能力与文本类破坏性写能力:
  *
  * <ol>
  *   <li>{@link #isEnabled(XWPFDocument)} —— 读取 {@code settings.xml} 的 {@code <w:trackChanges/>} 开关。
  *   <li>{@link #collect(XWPFDocument)} —— 按文档顺序枚举正文里的修订节点,解析为 {@link TrackedChange} 领域视图。
+ *   <li>{@link #acceptText(CTRunTrackChange)} / {@link #rejectText(CTRunTrackChange)} ——
+ *       对文本类修订做破坏性应用或撤销。
  * </ol>
  *
  * <p><b>OOXML 结构(教学要点)。</b> 修订标记是带属性的容器元素:
@@ -107,6 +109,122 @@ public final class TrackedChangeNodes {
     path.add(new TrackedChangeSegment(TrackedChangeSegmentKind.BODY, 0));
     walkBody(body, path, out);
     return out;
+  }
+
+  // ---------- 破坏性写:accept / reject 文本类 ----------
+
+  /**
+   * 应用(accept)一条文本类修订,使其成为正文永久内容或被永久删除。
+   *
+   * <p>语义:
+   *
+   * <ul>
+   *   <li>{@code ins} / {@code moveTo}:拆除包装,保留内部 run(插入生效)。
+   *   <li>{@code del} / {@code moveFrom}:移除整个包装子树(删除生效)。
+   * </ul>
+   *
+   * <p>调用方负责在调用前确认 {@code node} 的 type 属于本子任务范围(文本类);否则应改抛 {@code
+   * UnsupportedFeatureException},而不是调用本方法。
+   *
+   * @param node 要 accept 的修订节点(不能为 {@code null})
+   */
+  public static void acceptText(CTRunTrackChange node) {
+    java.util.Objects.requireNonNull(node, "node");
+    String local = localName(node);
+    if ("ins".equals(local) || "moveTo".equals(local)) {
+      unwrapRunsAndRemove(node);
+    } else {
+      // del / moveFrom:accept 即删除生效,整个包装移除
+      removeNode(node);
+    }
+  }
+
+  /**
+   * 拒绝(reject)一条文本类修订,撤销该次变更。
+   *
+   * <p>语义:
+   *
+   * <ul>
+   *   <li>{@code ins} / {@code moveTo}:移除整个包装子树(插入被撤销)。
+   *   <li>{@code del} / {@code moveFrom}:拆除包装,并把内部 {@code delText} 恢复为普通 {@code t}(删除被撤销,原文本回正文)。
+   * </ul>
+   *
+   * @param node 要 reject 的修订节点(不能为 {@code null})
+   */
+  public static void rejectText(CTRunTrackChange node) {
+    java.util.Objects.requireNonNull(node, "node");
+    String local = localName(node);
+    if ("ins".equals(local) || "moveTo".equals(local)) {
+      removeNode(node);
+    } else {
+      // del / moveFrom:reject 即删除被撤销,恢复正文
+      restoreDelTextToT(node);
+      unwrapRunsAndRemove(node);
+    }
+  }
+
+  /** 返回修订节点的 OOXML 本地名(ins / del / moveFrom / moveTo)。 */
+  private static String localName(CTRunTrackChange node) {
+    XmlCursor c = node.newCursor();
+    try {
+      return c.getName().getLocalPart();
+    } finally {
+      c.dispose();
+    }
+  }
+
+  /** 删除整个节点(连同其子树)。用于 reject ins / accept del。 */
+  private static void removeNode(CTRunTrackChange node) {
+    XmlCursor c = node.newCursor();
+    try {
+      c.removeXml();
+    } finally {
+      c.dispose();
+    }
+  }
+
+  /**
+   * 把包装内的 {@code <w:r>} 移到包装之前(即挂回父级),再删除空的包装。
+   *
+   * <p>用于 accept ins / accept moveTo。{@code moveXml(anchor)} 把 cursor 指向的节点移到 {@code anchor} 之前,并 让
+   * cursor 自动指向下一个兄弟(因此 {@code toNextSibling()} 继续推进而不重复)。
+   */
+  private static void unwrapRunsAndRemove(CTRunTrackChange wrapper) {
+    XmlCursor anchor = wrapper.newCursor();
+    try {
+      XmlCursor child = wrapper.newCursor();
+      try {
+        if (child.toFirstChild()) {
+          do {
+            if ("r".equals(child.getName().getLocalPart())) {
+              child.moveXml(anchor);
+            }
+          } while (child.toNextSibling());
+        }
+      } finally {
+        child.dispose();
+      }
+      anchor.removeXml();
+    } finally {
+      anchor.dispose();
+    }
+  }
+
+  /**
+   * 把节点内各 run 的 {@code <w:delText>} 恢复为普通 {@code <w:t>}(删除被撤销的文本回到正文)。
+   *
+   * <p>用于 reject del / reject moveFrom。{@code delText} 与 {@code t} 在 OOXML 里是不同元素(本地名 {@code
+   * delText} vs {@code t}),仅靠 moveXml 无法完成类型转换,因此先读出文本、删旧 {@code delText}、再新建 {@code t}。
+   */
+  private static void restoreDelTextToT(CTRunTrackChange wrapper) {
+    for (CTR r : wrapper.getRList()) {
+      for (int i = r.sizeOfDelTextArray() - 1; i >= 0; i--) {
+        String s = r.getDelTextArray(i).getStringValue();
+        r.removeDelText(i);
+        CTText t = r.addNewT();
+        t.setStringValue(s == null ? "" : s);
+      }
+    }
   }
 
   // ---------- body 遍历 ----------

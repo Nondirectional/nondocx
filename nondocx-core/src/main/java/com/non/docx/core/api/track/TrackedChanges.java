@@ -1,5 +1,6 @@
 package com.non.docx.core.api.track;
 
+import com.non.docx.core.api.exception.UnsupportedFeatureException;
 import com.non.docx.core.internal.poi.TrackedChangeNodes;
 import com.non.docx.core.internal.util.Objects;
 import java.util.AbstractList;
@@ -10,9 +11,11 @@ import java.util.NoSuchElementException;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 
 /**
- * 文档的修订(tracked changes)能力门面 —— 一个只读视图,持有 {@link XWPFDocument} 委托。
+ * 文档的修订(tracked changes)能力门面 —— 持有 {@link XWPFDocument} 委托,提供只读消费与文本类破坏性写。
  *
- * <p>由 {@link com.non.docx.core.api.Document#trackedChanges()} 返回。本门面负责三件<b>只读</b>事:
+ * <p>由 {@link com.non.docx.core.api.Document#trackedChanges()} 返回。本门面负责两类事:
+ *
+ * <p><b>只读消费</b>:
  *
  * <ul>
  *   <li>{@link #enabled()} —— 读取文档是否开启修订记录({@code settings.xml} 的 {@code <w:trackChanges/>})。
@@ -20,27 +23,31 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
  *   <li>{@link #get(String)} —— 按 {@link TrackedChange#id() 稳定 id} 获取单条修订(进程内稳定)。
  * </ul>
  *
+ * <p><b>文本类破坏性写</b>(accept/reject,见同名方法):对 {@code ins}/{@code del} 文本类修订做应用或撤销。高级类型(move / 属性类 /
+ * cell 类)的写语义仍属 {@code raw()} 范围,由 {@code advanced-types} 子任务补齐。
+ *
  * <p><b>OOXML / POI / nondocx 三层。</b>
  *
  * <ul>
  *   <li><b>OOXML</b>:开关在 {@code word/settings.xml} 的 {@code <w:trackChanges/>}(有即开启);修订标记散落在 {@code
  *       word/document.xml} 正文各处,如 {@code <w:ins>} / {@code <w:del>}。
- *   <li><b>POI</b>:没有 {@code XWPFTrackedChanges} 高级 API,也没有遍历修订的现成方法。开关需通过 {@code CTSettings}
- *       读取;修订节点需用 {@code XmlCursor} 按文档顺序遍历 body 树。
- *   <li><b>nondocx</b>:把这两件脏活收进 {@code internal/poi/TrackedChangeNodes},对外只暴露本类与 {@link
+ *   <li><b>POI</b>:没有 {@code XWPFTrackedChanges} 高级 API,也没有遍历/应用修订的现成方法。开关需通过 {@code CTSettings}
+ *       读取;修订节点需用 {@code XmlCursor} 按文档顺序遍历 body 树;accept/reject 需用 {@code XmlCursor} 做节点重挂/删除。
+ *   <li><b>nondocx</b>:把这些脏活收进 {@code internal/poi/TrackedChangeNodes},对外只暴露本类与 {@link
  *       TrackedChange} 等干净类型。
  * </ul>
  *
- * <p><b>只读。</b> 本门面只负责诚实暴露修订状态与列表,不修改 {@code settings.xml}、不修改 {@code document.xml}。
- * 开关写入、accept/reject 均不属于本子任务。
+ * <p><b>读写边界。</b> 只读方法不修改文档;accept/reject 是破坏性写,会改动 {@code document.xml} 的修订标记树。开关写入({@code
+ * <w:trackChanges/>} 的增删)与创作侧(authoring)均不属于本门面。
  *
  * <p><b>活对象语义(无字段快照)。</b> 本门面持有单个 {@code final XWPFDocument} 委托;{@code list()} 与 {@code get(id)}
- * 每次调用都<b>当场重算</b>,不缓存修订列表——因此文档改动会实时反映,守住「无字段快照」精神(与 {@code TableOfContents.entries()} 一致)。{@code
- * get(id)} 内部为反查 id 会临时构建一张「id → 修订」映射,但那是方法内的 临时状态,不跨调用存活,因此不违反 holding-wrapper 约定。
+ * 每次调用都<b>当场重算</b>,不缓存修订列表——因此文档改动(包括 accept/reject 之后)会实时反映,守住「无字段快照」精神(与 {@code
+ * TableOfContents.entries()} 一致)。{@code get(id)} 内部为反查 id 会临时构建一张「id → 修订」映射,但那是方法内的
+ * 临时状态,不跨调用存活,因此不违反 holding-wrapper 约定。
  *
  * <p><b>稳定 id 的进程内稳定性(design §4.5)。</b> {@link #list()} 与 {@link #get(String)} 各自独立重算;同一修订在
  * <b>同一次</b>调用内 id 稳定、可在该调用内被 {@code get} 反查。{@code list()} 两次调用的 id 也保持一致(同一委托、 同一文档顺序、同一 id
- * 生成规则)。但<b>不承诺</b> {@code save()} 后重新 {@code Docx.open()} 仍稳定。
+ * 生成规则)。但<b>不承诺</b> {@code save()} 后重新 {@code Docx.open()} 仍稳定。accept/reject 操作同会话内基于当前 id 进行。
  *
  * <p><b>不参与 {@code Document.equals}。</b> 与 TOC 类似,修订列表不纳入 {@code Document} 的内容相等性。
  */
@@ -125,6 +132,168 @@ public final class TrackedChanges {
       throw new NoSuchElementException("找不到 id 为 " + id + " 的修订");
     }
     return found;
+  }
+
+  // ---------- 破坏性写:文本类 accept / reject ----------
+
+  /**
+   * 应用(accept)文档中的全部文本类修订。
+   *
+   * <p>对每条文本类修订({@link TrackedChangeType#INS INS} / {@link TrackedChangeType#DEL DEL})执行 accept:
+   * 插入类成为正文永久内容,删除类被永久删除。非文本类修订(move / 属性类 / cell 类)不受影响,保持原样。
+   *
+   * <p>破坏性写操作会改动文档树;为保证稳定,本方法采用「重算 + 应用第一条匹配」的循环,直到没有文本类修订为止。
+   *
+   * @return 实际应用的文本类修订条数(0 表示文档本来就没有文本类修订)
+   */
+  public int acceptAll() {
+    return applyRepeated(null, true);
+  }
+
+  /**
+   * 撤销(reject)文档中的全部文本类修订。
+   *
+   * <p>对每条文本类修订执行 reject:插入类被丢弃,删除类的原文恢复为正文文本。非文本类修订不受影响。
+   *
+   * @return 实际撤销的文本类修订条数
+   * @see #acceptAll()
+   */
+  public int rejectAll() {
+    return applyRepeated(null, false);
+  }
+
+  /**
+   * 应用(accept)指定作者的全部文本类修订。
+   *
+   * <p>作者匹配采用<b>大小写敏感的精确字符串匹配</b>(见 design §5.2)。只作用于作者精确匹配的文本类修订。
+   *
+   * @param author 要应用的修订作者(不能为 {@code null} 或空白)
+   * @return 实际应用的文本类修订条数
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白
+   */
+  public int acceptByAuthor(String author) {
+    requireAuthor(author);
+    return applyRepeated(author, true);
+  }
+
+  /**
+   * 撤销(reject)指定作者的全部文本类修订。
+   *
+   * @param author 要撤销的修订作者(不能为 {@code null} 或空白)
+   * @return 实际撤销的文本类修订条数
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白
+   * @see #acceptByAuthor(String)
+   */
+  public int rejectByAuthor(String author) {
+    requireAuthor(author);
+    return applyRepeated(author, false);
+  }
+
+  /**
+   * 应用(accept)单条文本类修订。
+   *
+   * <p>按 {@link TrackedChange#id() 稳定 id} 精确定位(进程内稳定,见 design §4.5)。
+   *
+   * @param id nondocx 稳定 id(不能为 {@code null} 或空白)
+   * @throws IllegalArgumentException 如果 {@code id} 为 {@code null} 或空白
+   * @throws NoSuchElementException 如果没有 id 等于 {@code id} 的修订
+   * @throws UnsupportedFeatureException 若命中的修订是当前任务范围外的高级类型(move / 属性类 / cell 类)
+   */
+  public void accept(String id) {
+    applySingle(id, true);
+  }
+
+  /**
+   * 撤销(reject)单条文本类修订。
+   *
+   * @param id nondocx 稳定 id(不能为 {@code null} 或空白)
+   * @throws IllegalArgumentException 如果 {@code id} 为 {@code null} 或空白
+   * @throws NoSuchElementException 如果没有 id 等于 {@code id} 的修订
+   * @throws UnsupportedFeatureException 若命中的修订是当前任务范围外的高级类型(move / 属性类 / cell 类)
+   * @see #accept(String)
+   */
+  public void reject(String id) {
+    applySingle(id, false);
+  }
+
+  /**
+   * 循环「重算 → 应用第一条匹配的文本类修订」,直到没有匹配为止。
+   *
+   * <p>每次只应用一条后立刻重算,是因为 accept/reject 会改写文档树,此前 {@link TrackedChangeNodes#collect} 返回的节点
+   * 句柄可能失效。重算保证每条都在当前文档状态下定位。{@code author == null} 表示不按作者筛选(用于 all 粒度)。
+   *
+   * @param author 作者过滤({@code null} 表示全部);非 {@code null} 时大小写敏感精确匹配
+   * @param accept {@code true} 应用,{@code false} 撤销
+   * @return 实际操作的条数
+   */
+  private int applyRepeated(String author, boolean accept) {
+    int count = 0;
+    while (true) {
+      TrackedChange target = null;
+      for (TrackedChange c : TrackedChangeNodes.collect(delegate)) {
+        if (c.family() != TrackedChangeFamily.TEXT) {
+          continue;
+        }
+        if (author != null && !author.equals(c.author())) {
+          continue;
+        }
+        target = c;
+        break;
+      }
+      if (target == null) {
+        return count;
+      }
+      applyOne(target, accept);
+      count++;
+    }
+  }
+
+  /**
+   * 按稳定 id 应用或撤销单条修订。
+   *
+   * <p>命中后先检查 family:非文本类抛 {@link UnsupportedFeatureException}(当前任务范围外);文本类才执行。
+   */
+  private void applySingle(String id, boolean accept) {
+    Objects.requireNonNull(id, "id");
+    if (id.isBlank()) {
+      throw new IllegalArgumentException("id 不能为空白");
+    }
+    Map<String, TrackedChange> byId = new HashMap<>();
+    for (TrackedChange c : TrackedChangeNodes.collect(delegate)) {
+      byId.put(c.id(), c);
+    }
+    TrackedChange target = byId.get(id);
+    if (target == null) {
+      throw new NoSuchElementException("找不到 id 为 " + id + " 的修订");
+    }
+    if (target.family() != TrackedChangeFamily.TEXT) {
+      throw new UnsupportedFeatureException(
+          "id 为 "
+              + id
+              + " 的修订是 "
+              + target.type()
+              + "("
+              + target.family()
+              + "),文本类 accept/reject 尚未支持;请使用 raw()");
+    }
+    applyOne(target, accept);
+  }
+
+  /** 对单条已校验为文本类的修订执行底层 accept / reject。 */
+  private static void applyOne(TrackedChange change, boolean accept) {
+    if (accept) {
+      TrackedChangeNodes.acceptText(change.raw());
+    } else {
+      TrackedChangeNodes.rejectText(change.raw());
+    }
+  }
+
+  /** 校验 author 参数:非 {@code null} 且非空白,否则抛 {@link IllegalArgumentException}。 */
+  private static void requireAuthor(String author) {
+    Objects.requireNonNull(author, "author");
+    if (author.isBlank()) {
+      throw new IllegalArgumentException("author 不能为空白");
+    }
   }
 
   /**

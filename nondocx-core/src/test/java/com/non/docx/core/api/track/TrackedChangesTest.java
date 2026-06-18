@@ -255,6 +255,252 @@ class TrackedChangesTest {
     }
   }
 
+  // ---------- 文本类 accept / reject ----------
+
+  /**
+   * accept ins:插入内容成为正文永久内容,修订包装消失。
+   *
+   * <p>OOXML: {@code <w:ins><w:r><w:t>新增</w:t></w:r></w:ins>} accept 后变成 {@code
+   * <w:r><w:t>新增</w:t></w:r>}(run 提升到段落,包装删除)。
+   */
+  @Test
+  void acceptInsKeepsTextAndDropsWrapper(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("accept-ins.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+          poi.getDocument().getBody().addNewP();
+      addIns(p, "1", "non", "新增");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      doc.trackedChanges().acceptAll();
+      assertThat(doc.trackedChanges().list()).isEmpty();
+      // run 提升为段落直接子,文本保留
+      assertThat(paragraphChildText(doc, 0, "t")).isEqualTo("新增");
+    }
+  }
+
+  /** reject ins:整段插入内容被丢弃。 */
+  @Test
+  void rejectInsDiscardsText(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("reject-ins.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+          poi.getDocument().getBody().addNewP();
+      addIns(p, "1", "non", "不该出现");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      doc.trackedChanges().rejectAll();
+      assertThat(doc.trackedChanges().list()).isEmpty();
+      // 插入被撤销,段落里没有任何 t 文本
+      assertThat(paragraphChildText(doc, 0, "t")).isEmpty();
+    }
+  }
+
+  /**
+   * accept del:删除生效,被删内容彻底消失。
+   *
+   * <p>OOXML: {@code <w:del><w:r><w:delText>删除</w:delText></w:r></w:del>} accept 后整个子树移除。
+   */
+  @Test
+  void acceptDelRemovesDeletedText(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("accept-del.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+          poi.getDocument().getBody().addNewP();
+      addDel(p, "2", "non", "删除");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      doc.trackedChanges().acceptAll();
+      assertThat(doc.trackedChanges().list()).isEmpty();
+      // del 子树整体移除,段落空
+      assertThat(paragraphChildText(doc, 0, "delText")).isEmpty();
+    }
+  }
+
+  /**
+   * reject del:删除被撤销,原 {@code delText} 恢复为普通 {@code t},回到正文。
+   *
+   * <p>OOXML: {@code <w:del><w:r><w:delText>恢复</w:delText></w:r></w:del>} reject 后变成 {@code
+   * <w:r><w:t>恢复</w:t></w:r>}(delText→t,run 提升到段落,包装删除)。
+   */
+  @Test
+  void rejectDelRestoresTextAsNormalT(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("reject-del.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+          poi.getDocument().getBody().addNewP();
+      addDel(p, "2", "non", "恢复");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      doc.trackedChanges().rejectAll();
+      assertThat(doc.trackedChanges().list()).isEmpty();
+      // delText 消失,普通 t 恢复了原文
+      assertThat(paragraphChildText(doc, 0, "delText")).isEmpty();
+      assertThat(paragraphChildText(doc, 0, "t")).isEqualTo("恢复");
+    }
+  }
+
+  /** acceptAll 同时含 ins 与 del:两者都被应用,返回条数,列表清空。 */
+  @Test
+  void acceptAllAppliesBothInsAndDel(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("accept-all.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+          poi.getDocument().getBody().addNewP();
+      addIns(p, "1", "non", "保留");
+      addDel(p, "2", "non", "丢弃");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      int applied = doc.trackedChanges().acceptAll();
+      assertThat(applied).isEqualTo(2);
+      assertThat(doc.trackedChanges().list()).isEmpty();
+      // ins 保留为 t,del 已移除
+      assertThat(paragraphChildText(doc, 0, "t")).isEqualTo("保留");
+    }
+  }
+
+  /** acceptByAuthor 只应用作者精确匹配的文本类修订,不匹配者保留。 */
+  @Test
+  void acceptByAuthorOnlyMatchesExactAuthor(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("by-author.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+          poi.getDocument().getBody().addNewP();
+      addIns(p, "1", "non", "我的");
+      addIns(p, "2", "alice", "她的");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      int applied = doc.trackedChanges().acceptByAuthor("non");
+      assertThat(applied).isEqualTo(1);
+      // 只剩 alice 那一条
+      List<TrackedChange> rest = doc.trackedChanges().list();
+      assertThat(rest).hasSize(1);
+      assertThat(rest.get(0).author()).isEqualTo("alice");
+    }
+  }
+
+  /** 作者匹配大小写敏感(CaseSensitive): "non" 不匹配 "Non"。 */
+  @Test
+  void acceptByAuthorIsCaseSensitive(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("by-author-case.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+          poi.getDocument().getBody().addNewP();
+      addIns(p, "1", "Non", "大写");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      int applied = doc.trackedChanges().acceptByAuthor("non");
+      assertThat(applied).isZero();
+      assertThat(doc.trackedChanges().list()).hasSize(1);
+    }
+  }
+
+  /** accept(id) 按稳定 id 命中单条,只影响该条。 */
+  @Test
+  void acceptByIdHitsSingle(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("by-id.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+          poi.getDocument().getBody().addNewP();
+      addIns(p, "1", "non", "第一条");
+      addIns(p, "2", "non", "第二条");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      String firstId = doc.trackedChanges().list().get(0).id();
+      doc.trackedChanges().accept(firstId);
+      // 只剩第二条
+      List<TrackedChange> rest = doc.trackedChanges().list();
+      assertThat(rest).hasSize(1);
+      assertThat(((TextChangeDetails) rest.get(0).details()).text()).isEqualTo("第二条");
+    }
+  }
+
+  /** accept(id) 未命中抛 NoSuchElementException。 */
+  @Test
+  void acceptByIdMissThrowsNoSuchElement(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("by-id-miss.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      poi.createParagraph().createRun().setText("无修订");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThatThrownBy(() -> doc.trackedChanges().accept("不存在"))
+          .isInstanceOf(java.util.NoSuchElementException.class)
+          .hasMessageContaining("不存在");
+    }
+  }
+
+  /** 非法参数:id 为 null 或空白抛 IllegalArgumentException。 */
+  @Test
+  void acceptByIdRejectsBlankAndNull(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("by-id-blank.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      poi.createParagraph().createRun().setText("x");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThatThrownBy(() -> doc.trackedChanges().accept((String) null))
+          .isInstanceOf(java.lang.IllegalArgumentException.class);
+      assertThatThrownBy(() -> doc.trackedChanges().accept("  "))
+          .isInstanceOf(java.lang.IllegalArgumentException.class);
+      assertThatThrownBy(() -> doc.trackedChanges().acceptByAuthor(null))
+          .isInstanceOf(java.lang.IllegalArgumentException.class);
+      assertThatThrownBy(() -> doc.trackedChanges().rejectByAuthor(""))
+          .isInstanceOf(java.lang.IllegalArgumentException.class);
+    }
+  }
+
+  /** 表格单元格内的文本类修订也能被 accept(穿越 table/row/cell)。 */
+  @Test
+  void acceptTextInsideTableCell(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("accept-table.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBody body =
+          poi.getDocument().getBody();
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTbl tbl = body.addNewTbl();
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRow tr = tbl.addNewTr();
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc tc = tr.addNewTc();
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p = tc.addNewP();
+      addIns(p, "10", "non", "单元格插入");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      int applied = doc.trackedChanges().acceptAll();
+      assertThat(applied).isEqualTo(1);
+      assertThat(doc.trackedChanges().list()).isEmpty();
+    }
+  }
+
   /** date() 透传 OOXML w:date;date 未置时为 null。 */
   @Test
   void readsDateWhenPresent(@TempDir Path tmp) throws Exception {
@@ -319,5 +565,36 @@ class TrackedChangesTest {
   private static TrackedChangeSegment lastSegment(TrackedChangeLocation location) {
     List<TrackedChangeSegment> segs = location.segments();
     return segs.get(segs.size() - 1);
+  }
+
+  /**
+   * 读取指定段落直接子 run 里某类文本元素({@code t} 或 {@code delText})的拼接文本。
+   *
+   * <p>用于 accept/reject 后核对正文结构:accept ins / reject del 后 run 提升为段落直接子,其 {@code t} 应出现;reject ins /
+   * accept del 后相应文本应消失。直接遍历段落 CT 而非走 {@code Paragraph.text()},避免 POI 的 {@code getText()} 对 ins/del
+   * 的含混行为干扰断言。
+   */
+  private static String paragraphChildText(Document doc, int paragraphIndex, String textLocalName) {
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+        doc.raw().getDocument().getBody().getPArray(paragraphIndex);
+    StringBuilder sb = new StringBuilder();
+    for (CTR r : p.getRList()) {
+      if ("t".equals(textLocalName)) {
+        for (int i = 0; i < r.sizeOfTArray(); i++) {
+          String s = r.getTArray(i).getStringValue();
+          if (s != null) {
+            sb.append(s);
+          }
+        }
+      } else if ("delText".equals(textLocalName)) {
+        for (int i = 0; i < r.sizeOfDelTextArray(); i++) {
+          String s = r.getDelTextArray(i).getStringValue();
+          if (s != null) {
+            sb.append(s);
+          }
+        }
+      }
+    }
+    return sb.toString();
   }
 }

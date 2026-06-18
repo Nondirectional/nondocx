@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/06-18-tracked-changes/design.md", "reason": "父任务定义统一门面、tracked changes 总体边界与子任务分工，文本类写路径实现必须对齐"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-read/design.md", "reason": "accept/reject 文本类直接依赖 read 子任务定义的稳定 id、details 与 location 契约"}
+{"file": ".trellis/spec/backend/index.md", "reason": "backend 总体规范入口，确保文本类 accept/reject 仍遵守 API、异常与质量约束"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "CT 手术实现需要持续遵守 holding-wrapper、raw()、POI 脏活下沉与读写边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "`accept/reject` 的参数校验、miss id 与范围外类型处理需对齐异常规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "明确门面、内部 CT 手术类与测试支持类型的代码落点"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "值对象、测试、Javadoc 中文与公共 API POI-free 约束都依赖此规范"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "实现与解释 accept/reject 时继续按 OOXML -> POI -> nondocx 三层递进讲解"}
