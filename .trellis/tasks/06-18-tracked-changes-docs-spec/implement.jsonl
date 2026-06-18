@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/06-18-tracked-changes/design.md", "reason": "父任务定义 tracked changes 的总体边界与子任务分工，文档收尾必须以此为总框架"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-read/design.md", "reason": "若 read 子任务已落地，其门面、稳定 id、location 与 details 模型需体现在文档说明中"}
+{"file": ".trellis/tasks/06-18-tracked-changes-accept-text/design.md", "reason": "文本类 accept/reject 的真实能力与边界需要同步到 README / spec"}
+{"file": ".trellis/tasks/06-18-tracked-changes-authoring/design.md", "reason": "显式 authoring API 的方法落点、开关正交性与原始 `w:id` 区分需体现在文档说明中"}
+{"file": ".trellis/tasks/06-18-tracked-changes-advanced-types/design.md", "reason": "高级类型是否已完成、完成到哪，需要以该子任务设计与实现结果为依据更新说明"}
+{"file": ".trellis/spec/backend/index.md", "reason": "backend 总体 spec 首页需要与 tracked changes 新边界保持一致"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "tracked changes 已不再整体 raw-only，该桥接规范需按真实能力边界回写"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "unsupported feature 示例与异常边界需要同步 tracked changes 的新状态"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "文档说明仍需服务教学式协作，解释 tracked changes 时继续遵守三层递进"}

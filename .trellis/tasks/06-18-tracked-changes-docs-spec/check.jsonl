@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/06-18-tracked-changes/design.md", "reason": "check 阶段需回看父任务总体边界，确认文档收尾没有脱离真实 tracked changes 规划"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-read/design.md", "reason": "核对 read 子任务真实落地能力是否已正确体现在文档与 spec 中"}
+{"file": ".trellis/tasks/06-18-tracked-changes-accept-text/design.md", "reason": "核对文本类 accept/reject 能力与边界是否被诚实写入文档"}
+{"file": ".trellis/tasks/06-18-tracked-changes-authoring/design.md", "reason": "核对显式 authoring API、开关正交性与元数据说明是否被正确同步"}
+{"file": ".trellis/tasks/06-18-tracked-changes-advanced-types/design.md", "reason": "核对高级类型是否已完成、完成到哪，避免文档过度承诺"}
+{"file": ".trellis/spec/backend/index.md", "reason": "检查 backend 总体 spec 首页是否与 tracked changes 新边界一致"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "检查桥接规范中的 tracked changes 描述是否已脱离整体 raw-only 旧表述"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查 unsupported feature 示例与异常边界是否与真实能力一致"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "检查文档说明是否继续服务教学式协作而非只写结果口号"}

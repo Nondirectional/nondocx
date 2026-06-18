@@ -83,12 +83,15 @@ cause is informative, it stays in `getCause()`, not the message.
 
 ### Rule 5 — Unsupported features are explicit, not silent
 
-When a docx feature is outside the deep-wrap scope (tracked changes, fields, OLE, math, etc.),
-the wrapper method either:
+When a docx feature is outside the deep-wrap scope (fields, OLE, math, etc.), the wrapper method
+either:
 - provides `raw()` (always available), OR
 - throws `UnsupportedFeatureException` with a message pointing to `raw()`.
 
-Never return a degraded/empty result silently for an unsupported feature.
+Never return a degraded/empty result silently for an unsupported feature. (Partial wraps count as
+supported for the part that is wrapped — e.g. tracked-changes *read* is wrapped via
+`Document.trackedChanges()`, while accept/reject, authoring, and advanced revision types still fall
+back to `raw()` until their sub-tasks land.)
 
 ---
 

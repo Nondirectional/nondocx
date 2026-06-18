@@ -213,3 +213,104 @@ core 新增 TableOfContents/TocEntry + Document.toc(),解析逻辑收进 interna
 ### Next Steps
 
 - None - task complete
+
+---
+
+## Session 6: tracked changes 只读消费侧(read 子任务实现)
+
+**Task**: `06-18-tracked-changes-read`(父任务 `06-18-tracked-changes` 的第一个实现子任务)
+
+### What
+
+为 tracked changes 建立**最小但稳定**的只读消费侧底座:`Document.trackedChanges()` → `TrackedChanges` 门面,提供 `enabled()` / `list()` / `get(id)`。
+
+### 实现产出
+
+新增 `api/track` 包(9 个类型):
+- `TrackedChanges`(门面,持有 `XWPFDocument`)、`TrackedChange`(holding-wrapper,持有 `CTRunTrackChange`)
+- `TrackedChangeType` / `TrackedChangeFamily`(细粒度 kind + 粗粒度分组)
+- `TrackedChangeLocation` / `TrackedChangeSegment` / `TrackedChangeSegmentKind`(path/segment 结构化位置)
+- `ChangeDetails`(判别联合根)+ `TextChangeDetails`(文本类 payload)
+
+新增 `internal/poi/TrackedChangeNodes`(唯一接触 OOXML 的脏活层):`isEnabled` 读 `<w:trackChanges/>`;`collect` 用 `XmlCursor` 按 body→table→row→cell→paragraph 深度遍历,命中 `ins/del/moveFrom/moveTo` 产出修订。
+
+`Document.trackedChanges()` 接入(参照 `toc()` 模式,但总是返回非 null)。
+
+测试:`TrackedChangesTest` 10 个用例。
+
+### 关键决策(planning 评审拍板,已回写 design.md)
+
+- **A. 包装形态**:`TrackedChange` 走 holding-wrapper 持 `CTRunTrackChange`(参照 `Section(XWPFDocument, CTSectPr)` 先例),**不是**不可变解析值——因 tracked changes 有干净 per-revision CT 节点(与 TOC 不同)。
+- **B. 稳定 id 边界**:**进程内稳定**,不承诺跨 save/reopen 稳定。
+- **C. 高级类型节点**:`list()` 目前跳过 `*PrChange`/`cellIns` 等,留给 advanced-types 子任务。
+
+### 实现中发现的两条 POI/OOXML gotcha(留给 docs-spec 子任务回写 poi-bridge.md)
+
+1. **开关读取**:`<w:trackChanges/>` 在 POI 暴露为 `XWPFSettings.isTrackRevisions()`(OOXML 元素名与 POI 方法名不一致)。
+2. **四类文本/移动修订同型**:`ins`/`del`/`moveFrom`/`moveTo` 在精简 schema 下统一由 `CTRunTrackChange` 承载(继承 `CTTrackChange` 给 author/date,`CTMarkup` 给 id);`del`/`moveFrom` 用 `<w:delText>` 而非 `<w:t>`。
+
+### Testing
+
+- [OK] `TrackedChangesTest`:10/10 通过
+- [OK] 全量 `mvn -pl nondocx-core verify`:**138 tests, 0 failures**,spotless clean
+- [OK] 手工往返验证:带 `<w:ins>` 的 docx save→reopen 后修订正确重现
+
+### AC 自检
+
+AC1 开关 ✅ / AC2 文档顺序枚举(文本类)✅ / AC3 get(id) 命中+miss 抛 NoSuchElementException ✅ / AC4 无便利筛选 ✅ / AC5 现有 API 无回归 ✅
+
+### Status
+
+[OK] **实现与质检完成,待开发者验收 + commit**
+
+### Next Steps
+
+- 开发者验收
+- commit;docs-spec 子任务负责把上述两条 gotcha 回写 spec、纠 README/异常示例的 tracked-changes raw-only 旧表述
+
+---
+
+## Session 7: read 子任务归档 + docs-spec 文档与 spec 收尾
+
+**Task**: `06-18-tracked-changes-read`(归档)→ `06-18-tracked-changes-docs-spec`(实现)
+
+### What
+
+1. **归档 read 子任务**:read 代码已在 `0c673f0`/`e75c6e5` 落地并提交,但 task 状态一直停在 `in_progress`。`task.py archive` 把它移到 `archive/2026-06/`,scoped 自动提交 `82247c1`(仅触碰 read 源→目路径,未卷入其他未跟踪任务目录)。父任务进度变为 1/5(read 计入 done)。
+2. **docs-spec 收尾**:核对 read 侧真实落地边界(以代码为 source of truth),纠正 4 处把 tracked changes 整体视作 raw-only 的过期描述,并回写 2 条 POI/OOXML gotcha。
+
+### 改动产出(7 文件)
+
+**纠正过期描述(4 处)**:
+- `README.md`:raw-only 列举去掉「修订」,新增「修订只读消费」正面 bullet(写清覆盖文本类、accept/reject/创作侧待后续)
+- `UnsupportedFeatureException.java`:典型示例从「修订更改未被封装」换成「文本框/形状」(真正仍 raw-only);顺带修了一个误引入的 `派进`→`深度` 错字
+- `poi-bridge.md` Rule 3:`raw()` 覆盖的 out-of-scope 列举去掉 tracked changes,补说明是 partial wrap
+- `error-handling.md` Rule 5:同上 + 「部分封装按已封装部分算支持」
+
+**回写 gotcha(1 处)**:
+- `poi-bridge.md` 新增 **N12** 注记:① 开关 `<w:trackChanges/>` ↔ POI `isTrackRevisions()` 名字不一致;② 四类文本/移动修订同型由 `CTRunTrackChange` 承载、`del`/`moveFrom` 用 `<w:delText>`;并说明为何对 Rule 1 无偏离(有干净 per-revision CT 节点,与 TOC N11 不同)
+
+**连带**:`docs-spec/{implement,check}.jsonl` 的 `read/design.md` 路径同步到 `archive/2026-06/`。
+
+### 诚实边界(贯穿全部改动)
+
+- ✅ 已封装:只读消费(`enabled()`/`list()`/`get(id)`)
+- ⚠️ 仍 raw-only:accept/reject、authoring、advanced-types(三块均未实现,文档保留此边界)
+
+### Testing
+
+- [OK] `task.py validate` — 9/9 entries 通过
+- [OK] `mvn -pl nondocx-core test` — 138 tests, 0 failures,BUILD SUCCESS
+
+### AC 自检
+
+AC1 不再整体 raw-only ✅ / AC2 异常示例文案已换 ✅ / AC3 spec 与真实边界一致 ✅ / AC4 gotcha 已回写 N12 ✅ / AC5 未过度承诺 ✅
+
+### Status
+
+[OK] **实现与质检完成,待 commit**
+
+### Next Steps
+
+- commit(代码 + 文档 + spec + journal 一起)
+- docs-spec 子任务归档
