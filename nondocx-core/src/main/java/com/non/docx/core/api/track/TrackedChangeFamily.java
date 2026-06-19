@@ -15,7 +15,8 @@ package com.non.docx.core.api.track;
  *   <li>{@link #TEXT} —— 文本类插入/删除,对应 {@code <w:ins>} / {@code <w:del>}。
  *   <li>{@link #MOVE} —— 移动类,对应 {@code <w:moveFrom>} / {@code <w:moveTo>}。
  *   <li>{@link #PROPERTY} —— 属性类修订(运行/段落/节属性变更),对应 {@code rPrChange} 等各类 {@code *PrChange}。
- *   <li>{@link #CELL} —— 表格单元格级插入/删除,对应 {@code <w:cellIns>} / {@code <w:cellDel>}。
+ *   <li>{@link #CELL} —— 表格单元格级插入/删除/合并,对应 {@code <w:cellIns>} / {@code <w:cellDel>} / {@code
+ *       <w:cellMerge>}。
  * </ul>
  *
  * <p>当前 read 子任务稳定覆盖 {@link #TEXT}(其余 family 的完整建模留给 {@code advanced-types} 子任务)。
@@ -27,6 +28,9 @@ public enum TrackedChangeFamily {
   MOVE,
   /** 属性类修订:运行/段落/节等属性变更。对应 OOXML 各类 {@code *PrChange}。 */
   PROPERTY,
-  /** 表格单元格级修订:单元格插入/删除。对应 OOXML {@code <w:cellIns>} / {@code <w:cellDel>}。 */
+  /**
+   * 表格单元格级修订:单元格插入/删除/合并。对应 OOXML {@code <w:cellIns>} / {@code <w:cellDel>} / {@code
+   * <w:cellMerge>}。
+   */
   CELL,
 }

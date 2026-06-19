@@ -114,6 +114,40 @@ public final class TrackedChange {
   }
 
   /**
+   * 包装一个<b>无底层委托</b>的修订(只读值对象)。
+   *
+   * <p>用于 {@code cellMerge}:其 CT 类型 {@code CTCellMergeTrackChange} 在 POI 精简 schema 下连 XmlBeans 的
+   * {@code .xsb} schema 资源都缺失(research/cell-forms.md §4),既不能经类型化对象读 author/date,也不能持可写委托。 因此
+   * cellMerge 的 author/date 在 read 期用 XmlCursor 直接读属性文本传入,产出一条纯值 {@code TrackedChange}。
+   *
+   * <p>对这类修订,{@link #raw()}、{@code acceptCell}/{@code rejectCell} 都会抛 {@code
+   * UnsupportedFeatureException}(无委托可写)。{@link #propertyNode()} 返回 {@code null}。
+   *
+   * @param id nondocx 稳定 id(不能为 {@code null})
+   * @param type 具体修订 kind(不能为 {@code null})
+   * @param location 结构化位置(不能为 {@code null})
+   * @param details 具体 payload(不能为 {@code null})
+   * @param author 修订作者(已解析;不能为 {@code null},无作者时传 {@code ""})
+   * @param date 修订时间(已解析;可为 {@code null})
+   */
+  public TrackedChange(
+      String id,
+      TrackedChangeType type,
+      TrackedChangeLocation location,
+      ChangeDetails details,
+      String author,
+      Calendar date) {
+    this.id = Objects.requireNonNull(id, "id");
+    this.type = Objects.requireNonNull(type, "type");
+    this.location = Objects.requireNonNull(location, "location");
+    this.details = Objects.requireNonNull(details, "details");
+    this.author = Objects.requireNonNull(author, "author");
+    this.date = date;
+    this.runDelegate = null;
+    this.propertyDelegate = null;
+  }
+
+  /**
    * 返回 nondocx 对外稳定 id。
    *
    * <p><b>进程内稳定</b>(design §4.5):对同一 {@link TrackedChanges} 门面对象,同一修订的 id 在多次 {@code list()}/
@@ -189,28 +223,34 @@ public final class TrackedChange {
    * <p>对返回对象的修改会立即影响文档。请谨慎使用。文本类与移动类修订标记的底层类型是 XmlBeans 的 {@code CTRunTrackChange};想直接操作修订的 OOXML
    * 结构时(例如手工 accept/reject),从此处拿到节点后走其 {@code getRList()} 等。
    *
-   * <p><b>属性类修订不支持</b>:属性类的底层节点是 {@code CTTrackChange} 的具体子类型({@code CTRPrChange} / {@code
-   * CTPPrChange}),不走本方法;对属性类修订调用本方法 抛 {@link
-   * com.non.docx.core.api.exception.UnsupportedFeatureException}。属性类的 accept/reject 用门面专用方法({@code
-   * acceptProperty}/{@code rejectProperty}),其内部经包内接缝 {@link #propertyNode()} 取节点。
+   * <p><b>属性类与单元格类修订不支持</b>:这两类的底层节点是 {@code CTTrackChange}(属性类是其子类型 {@code CTRPrChange}; 单元格类
+   * {@code cellIns}/{@code cellDel} 直接是 {@code CTTrackChange}),都不走本方法;对它们调用本方法抛 {@link
+   * com.non.docx.core.api.exception.UnsupportedFeatureException}。属性类的 accept/reject 用门面专用方法 {@code
+   * acceptProperty}/{@code rejectProperty},单元格类用 {@code acceptCell}/{@code rejectCell},二者内部经包内接缝
+   * {@link #propertyNode()} 取节点。
    *
    * @return 底层的 {@code CTRunTrackChange} 实例(包装器生命周期内同一实例)
    * @throws com.non.docx.core.api.exception.UnsupportedFeatureException 若本修订是属性类({@link #family()}
-   *     == {@link TrackedChangeFamily#PROPERTY PROPERTY})
+   *     == {@link TrackedChangeFamily#PROPERTY PROPERTY})或单元格类({@link #family()} == {@link
+   *     TrackedChangeFamily#CELL CELL})
    */
   public CTRunTrackChange raw() {
     if (runDelegate == null) {
       throw new com.non.docx.core.api.exception.UnsupportedFeatureException(
-          "属性类修订没有 CTRunTrackChange 节点(raw() 仅支持文本/移动类);请使用 TrackedChanges.acceptProperty/rejectProperty");
+          "本修订没有 CTRunTrackChange 节点(raw() 仅支持文本/移动类);属性类请使用 acceptProperty/rejectProperty,"
+              + "单元格类请使用 acceptCell/rejectCell");
     }
     return runDelegate;
   }
 
   /**
-   * 返回属性类修订的底层 {@code CTTrackChange} 节点(具体子类型为 {@code CTRPrChange} / {@code CTPPrChange};包内接缝)。
+   * 返回属性类 / 单元格类修订的底层 {@code CTTrackChange} 节点(包内接缝)。
    *
-   * <p>仅对属性类修订({@link #family()} == {@link TrackedChangeFamily#PROPERTY PROPERTY})有效;其余返回 {@code
-   * null}。供门面的 {@code acceptProperty}/{@code rejectProperty} 经 {@code internal/poi} 做整树替换。
+   * <p>对属性类({@link #family()} == {@link TrackedChangeFamily#PROPERTY PROPERTY},具体子类型 {@code
+   * CTRPrChange}) 与单元格类({@link #family()} == {@link TrackedChangeFamily#CELL CELL},{@code
+   * cellIns}/{@code cellDel} 的节点直接是 {@code CTTrackChange})有效;文本/移动类返回 {@code null}。供门面的 {@code
+   * acceptProperty}/{@code rejectProperty} 与 {@code acceptCell}/{@code rejectCell} 经 {@code
+   * internal/poi} 取节点做写穿透。
    */
   org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange propertyNode() {
     return propertyDelegate;

@@ -245,6 +245,45 @@ public final class TrackedChanges {
   }
 
   /**
+   * 应用(accept)单条单元格结构类修订({@code cellIns} / {@code cellDel}):让单元格的存亡修订生效。
+   *
+   * <p>语义(见 {@code research/cell-forms.md}):
+   *
+   * <ul>
+   *   <li>{@code cellIns}(单元格被插入):保留整个 {@code <w:tc>},仅删标记。
+   *   <li>{@code cellDel}(单元格被删除):移除整个 {@code <w:tc>}。
+   * </ul>
+   *
+   * <p>单元格结构类修订的底层节点类型是 {@code CTTrackChange}(与 property 类同委托,但写语义作用于整个 {@code <w:tc>}
+   * 祖父节点而非属性子树),故走<b>专用方法</b>(而非 {@link #accept(String)}),与 property 类同属方案 C。
+   *
+   * @param id nondocx 稳定 id(不能为 {@code null} 或空白)
+   * @throws IllegalArgumentException 如果 {@code id} 为 {@code null} 或空白
+   * @throws NoSuchElementException 如果没有 id 等于 {@code id} 的修订
+   * @throws UnsupportedFeatureException 若命中的修订是 {@code cellMerge}(其 CT 类型缺失,accept/reject 不支持),或不是
+   *     cell 类
+   */
+  public void acceptCell(String id) {
+    applyCell(id, true);
+  }
+
+  /**
+   * 撤销(reject)单条单元格结构类修订:使单元格回到修订前的存亡状态。
+   *
+   * <p>语义(与 accept 对称):{@code cellIns} reject 移除整个 {@code <w:tc>};{@code cellDel} reject 保留 {@code
+   * <w:tc>}、删标记。
+   *
+   * @param id nondocx 稳定 id(不能为 {@code null} 或空白)
+   * @throws IllegalArgumentException 如果 {@code id} 为 {@code null} 或空白
+   * @throws NoSuchElementException 如果没有 id 等于 {@code id} 的修订
+   * @throws UnsupportedFeatureException 若命中的修订是 {@code cellMerge},或不是 cell 类
+   * @see #acceptCell(String)
+   */
+  public void rejectCell(String id) {
+    applyCell(id, false);
+  }
+
+  /**
    * 按稳定 id 应用或撤销单条<b>属性类</b>修订。
    *
    * <p>命中后校验 family 必须是 {@link TrackedChangeFamily#PROPERTY PROPERTY}(否则抛 {@link
@@ -277,6 +316,51 @@ public final class TrackedChanges {
       TrackedChangeNodes.acceptProperty(target.propertyNode());
     } else {
       TrackedChangeNodes.rejectProperty(target.propertyNode());
+    }
+  }
+
+  /**
+   * 按稳定 id 应用或撤销单条<b>单元格结构类</b>修订。
+   *
+   * <p>命中后校验 family 必须是 {@link TrackedChangeFamily#CELL CELL}(否则抛 {@link
+   * UnsupportedFeatureException})。 {@code cellMerge} 虽属 CELL family,但其 CT 类型缺失、accept/reject
+   * 不支持,命中时抛 {@link UnsupportedFeatureException}(明确拒绝,不静默降级)。{@code cellIns}/{@code cellDel} 经
+   * {@code TrackedChange.propertyNode()} 取底层节点,再对整个 {@code <w:tc>} 做存亡手术。
+   */
+  private void applyCell(String id, boolean accept) {
+    Objects.requireNonNull(id, "id");
+    if (id.isBlank()) {
+      throw new IllegalArgumentException("id 不能为空白");
+    }
+    Map<String, TrackedChange> byId = new HashMap<>();
+    for (TrackedChange c : TrackedChangeNodes.collect(delegate)) {
+      byId.put(c.id(), c);
+    }
+    TrackedChange target = byId.get(id);
+    if (target == null) {
+      throw new NoSuchElementException("找不到 id 为 " + id + " 的修订");
+    }
+    if (target.family() != TrackedChangeFamily.CELL) {
+      throw new UnsupportedFeatureException(
+          "id 为 "
+              + id
+              + " 的修订是 "
+              + target.type()
+              + "("
+              + target.family()
+              + "),不是单元格类;acceptCell/rejectCell 仅支持 cellIns/cellDel");
+    }
+    if (target.type() == TrackedChangeType.CELL_MERGE) {
+      throw new UnsupportedFeatureException(
+          "id 为 "
+              + id
+              + " 的修订是 cellMerge,其 CT 类型(CTCellMergeTrackChange)在 POI 精简 schema 下缺失,"
+              + "accept/reject 暂不支持;请使用 raw()");
+    }
+    if (accept) {
+      TrackedChangeNodes.acceptCell(target.propertyNode(), target.type());
+    } else {
+      TrackedChangeNodes.rejectCell(target.propertyNode(), target.type());
     }
   }
 
@@ -345,7 +429,10 @@ public final class TrackedChanges {
               + target.type()
               + "("
               + target.family()
-              + "),accept/reject 尚未支持;请使用 raw()");
+              + "),accept/reject 仅支持文本/移动类;"
+              + (target.family() == TrackedChangeFamily.CELL
+                  ? "单元格类请使用 acceptCell/rejectCell"
+                  : "请使用 raw()"));
     }
     if (target.family() == TrackedChangeFamily.MOVE) {
       applyMove(target, accept);

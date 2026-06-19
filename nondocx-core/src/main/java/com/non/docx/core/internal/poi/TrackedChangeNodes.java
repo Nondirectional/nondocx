@@ -1,5 +1,7 @@
 package com.non.docx.core.internal.poi;
 
+import com.non.docx.core.api.track.CellChangeDetails;
+import com.non.docx.core.api.track.CellChangeKind;
 import com.non.docx.core.api.track.ChangeDetails;
 import com.non.docx.core.api.track.PropertyChangeDetails;
 import com.non.docx.core.api.track.PropertyChangeKind;
@@ -559,6 +561,121 @@ public final class TrackedChangeNodes {
     }
   }
 
+  // ---------- 破坏性写:单元格结构类 accept / reject ----------
+
+  /**
+   * 应用(accept)一条单元格结构类修订({@code cellIns} / {@code cellDel}),使单元格的存亡修订生效。
+   *
+   * <p><b>OOXML 语义(见 research/cell-forms.md §3)</b>:{@code cellIns}/{@code cellDel} 标记的是「单元格本身被
+   * 插入/删除」,accept 即让该存亡生效:
+   *
+   * <ul>
+   *   <li>{@code cellIns}(单元格被插入)accept:<b>保留整个 {@code <w:tc>}</b>(插入生效),仅删 {@code cellIns} 标记。
+   *   <li>{@code cellDel}(单元格被删除)accept:<b>移除整个 {@code <w:tc>}</b>(删除生效),标记随之而去。
+   * </ul>
+   *
+   * <p><b>与文本类 / 属性类 accept 的本质差异</b>:文本类 ins 的 accept 操作 run(unwrap),属性类 rPrChange 的 accept 操作
+   * 属性子树(删标记);而 cell 类的 accept 操作<b>整个 {@code <w:tc>} 祖父节点</b>。这是 cell 修订独有的结构语义,误当文本
+   * 类处理会写出「本应删除却仍存在」的单元格(advanced-types research 点名的最高风险点)。
+   *
+   * @param node 单元格结构类修订节点({@code CTTrackChange},来自 {@code CTTcPr.getCellIns()/getCellDel()};不能为
+   *     {@code null})
+   * @param type 修订 kind({@link TrackedChangeType#CELL_INS CELL_INS} 或 {@link
+   *     TrackedChangeType#CELL_DEL CELL_DEL})
+   */
+  public static void acceptCell(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node,
+      TrackedChangeType type) {
+    java.util.Objects.requireNonNull(node, "node");
+    java.util.Objects.requireNonNull(type, "type");
+    if (type == TrackedChangeType.CELL_INS) {
+      // 保留 tc、删标记
+      removeCellMarker(node);
+    } else {
+      // cellDel:移除整个 tc(删除生效)
+      removeCellNode(node);
+    }
+  }
+
+  /**
+   * 撤销(reject)一条单元格结构类修订,使单元格回到修订前的存亡状态。
+   *
+   * <p>语义(与 accept 对称):
+   *
+   * <ul>
+   *   <li>{@code cellIns}(单元格被插入)reject:<b>移除整个 {@code <w:tc>}</b>(插入被撤销,单元格本不该存在)。
+   *   <li>{@code cellDel}(单元格被删除)reject:<b>保留整个 {@code <w:tc>}</b>(删除被撤销,单元格恢复),仅删 {@code cellDel}
+   *       标记。
+   * </ul>
+   *
+   * @param node 单元格结构类修订节点(不能为 {@code null})
+   * @param type 修订 kind({@link TrackedChangeType#CELL_INS CELL_INS} 或 {@link
+   *     TrackedChangeType#CELL_DEL CELL_DEL})
+   */
+  public static void rejectCell(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node,
+      TrackedChangeType type) {
+    java.util.Objects.requireNonNull(node, "node");
+    java.util.Objects.requireNonNull(type, "type");
+    if (type == TrackedChangeType.CELL_INS) {
+      // 插入被撤销:移除整个 tc
+      removeCellNode(node);
+    } else {
+      // cellDel:删除被撤销,保留 tc、删标记
+      removeCellMarker(node);
+    }
+  }
+
+  /**
+   * 从一个 {@code cellIns}/{@code cellDel} 节点提升到祖父 {@code <w:tc>},返回指向 {@code tc} 的 cursor。
+   *
+   * <p>结构(见 research/cell-forms.md §3.2 探针验证):{@code cellIns}/{@code cellDel} 嵌在 {@code <w:tcPr>}
+   * 内,故 {@code toParent()}×2 准确到达 {@code <w:tc>}(探针确认祖父本地名为 {@code tc},不是 {@code tr} 或 {@code
+   * tcPr})。
+   *
+   * <p>防御式:若父链异常(如节点直接挂在 {@code tc} 而非 {@code tcPr},畸形文档),返回的 cursor 指向的本地名不是 {@code tc}
+   * 时,调用方应跳过而非强删(避免误删错误层级)。
+   */
+  private static XmlCursor cursorToCell(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node) {
+    XmlCursor cur = node.newCursor();
+    cur.toParent(); // -> tcPr
+    cur.toParent(); // -> tc
+    return cur;
+  }
+
+  /** 删 {@code cellIns}/{@code cellDel} 标记本身(保留 {@code tc})。用于 accept cellIns / reject cellDel。 */
+  private static void removeCellMarker(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node) {
+    XmlCursor c = node.newCursor();
+    try {
+      c.removeXml();
+    } finally {
+      c.dispose();
+    }
+  }
+
+  /**
+   * 移除整个 {@code <w:tc>}(含其内段落/run/标记)。用于 reject cellIns / accept cellDel。
+   *
+   * <p>先 {@link #cursorToCell} 提升到 {@code tc};若祖父本地名不是 {@code tc}(父链异常,畸形文档),抛 {@link
+   * com.non.docx.core.api.exception.DocxOperationException} 提示结构异常,不静默删错层级。
+   */
+  private static void removeCellNode(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node) {
+    XmlCursor c = cursorToCell(node);
+    try {
+      String local = c.getName() == null ? "" : c.getName().getLocalPart();
+      if (!"tc".equals(local)) {
+        throw new com.non.docx.core.api.exception.DocxOperationException(
+            "单元格结构类修订的祖父节点应为 <w:tc>,实际为 <w:" + local + ">(文档结构异常,拒绝执行删除)");
+      }
+      c.removeXml();
+    } finally {
+      c.dispose();
+    }
+  }
+
   /** 收集一个属性元素(rPr/pPr)直接子的本地名,排序拼成摘要(见 {@link PropertyChangeDetails#summarize})。 */
   private static String summarizeChildren(org.apache.xmlbeans.XmlObject props) {
     if (props == null) {
@@ -630,12 +747,28 @@ public final class TrackedChangeNodes {
     }
   }
 
-  /** 遍历单元格:下钻到其内的 {@code <w:p>}(单元格内段落),再走段落遍历。 */
+  /**
+   * 遍历单元格:先下钻 {@code <w:tcPr>}(单元格属性)枚举单元格结构类修订({@code cellIns}/{@code cellDel}/{@code
+   * cellMerge}),再下钻其内的 {@code <w:p>}(单元格内段落)走段落遍历。
+   *
+   * <p><b>OOXML 结构(见 research/cell-forms.md §2)</b>:单元格结构类修订嵌在 {@code <w:tcPr>} 内,是裸属性元素(只有
+   * id/author/date,无 run、无文本),标记「这个单元格本身是被插入/删除/合并的」(表格结构修订)。
+   *
+   * <p><b>location path 不含 {@code paragraph} segment</b>:cell 结构修订挂在 {@code tcPr},比单元格内段落高一层,故产出时
+   * path 停在 {@code [BODY, TABLE, ROW, CELL]}(与单元格内文本类修订的 {@code [..., CELL, PARAGRAPH]} 区分)。
+   *
+   * <p><b>cellMerge 的只读路径</b>:其 CT 类型 {@code CTCellMergeTrackChange} 在 POI 精简 schema
+   * 下编译期不可达(dangling reference,见 research/cell-forms.md §1),typed 访问器 {@code getCellMerge()} 连
+   * javac 都过不了,故 cellMerge 走 XmlCursor 在 {@code tcPr} 子里按本地名探测,只读出「存在一次未确认的合并」,不持可写委托。
+   */
   private static void walkCell(
       Object cell, List<TrackedChangeSegment> path, int cellIdx, List<TrackedChange> out) {
     List<TrackedChangeSegment> segs = withSegment(path, TrackedChangeSegmentKind.CELL, cellIdx);
     org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc tc =
         (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc) cell;
+    // 先下钻 tcPr 读单元格结构类修订(cellIns/cellDel/cellMerge)。
+    collectCellChanges(tc, segs, out);
+    // 再下钻单元格内的段落(单元格内文本类/属性类修订)。
     XmlCursor cur = tc.newCursor();
     try {
       if (!cur.toFirstChild()) {
@@ -651,6 +784,122 @@ public final class TrackedChangeNodes {
     } finally {
       cur.dispose();
     }
+  }
+
+  /**
+   * 在一个单元格里枚举单元格结构类修订({@code cellIns} / {@code cellDel} / {@code cellMerge})。
+   *
+   * <p>结构(见 research/cell-forms.md):三种都嵌在 {@code <w:tcPr>} 内。{@code cellIns}/{@code cellDel} 的节点类型是
+   * {@code CTTrackChange}(与 property 类同委托),走 typed 访问器 {@code getCellIns()}/{@code getCellDel()};
+   * {@code cellMerge} 的 CT 类型 {@code CTCellMergeTrackChange} 编译期不可达,走 XmlCursor 按本地名探测。
+   *
+   * <p>防御式:若 {@code tcPr} 缺失或解析失败,跳过该 cell 的结构类枚举,不影响其余修订产出。
+   */
+  private static void collectCellChanges(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc tc,
+      List<TrackedChangeSegment> segs,
+      List<TrackedChange> out) {
+    if (!tc.isSetTcPr()) {
+      return;
+    }
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTcPr tcPr = tc.getTcPr();
+    // cellIns / cellDel:typed 访问器,CTTrackChange 委托(复用 property 类的产出路径)。
+    if (tcPr.isSetCellIns()) {
+      produceCell(tcPr.getCellIns(), "cellIns", TrackedChangeType.CELL_INS, segs, out);
+    }
+    if (tcPr.isSetCellDel()) {
+      produceCell(tcPr.getCellDel(), "cellDel", TrackedChangeType.CELL_DEL, segs, out);
+    }
+    // cellMerge:CT 类型编译期不可达,走 XmlCursor 按本地名探测(只读)。
+    produceCellMergeIfPresent(tcPr, segs, out);
+  }
+
+  /**
+   * 产出一个 {@code cellIns}/{@code cellDel} 修订 {@link TrackedChange}。
+   *
+   * <p>节点类型是 {@code CTTrackChange}(与 property 类 {@code CTRPrChange} 的共同父),走 {@link TrackedChange}
+   * 的属性 构造函数(持 {@code CTTrackChange} 委托);{@code raw()} 对 cell 类抛 {@code
+   * UnsupportedFeatureException}(方案 C, 同 property),accept/reject 经门面专用方法 {@code acceptCell}/{@code
+   * rejectCell} 走。
+   */
+  private static void produceCell(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node,
+      String local,
+      TrackedChangeType type,
+      List<TrackedChangeSegment> path,
+      List<TrackedChange> out) {
+    TrackedChangeLocation location = new TrackedChangeLocation(path);
+    CellChangeKind kind =
+        type == TrackedChangeType.CELL_INS
+            ? CellChangeKind.CELL_INSERTION
+            : CellChangeKind.CELL_DELETION;
+    ChangeDetails details = new CellChangeDetails(kind);
+    String id = buildPropertyId(type, location, node, local);
+    out.add(new TrackedChange(id, type, location, details, node));
+  }
+
+  /**
+   * 用 XmlCursor 在 {@code tcPr} 子里探测 {@code cellMerge};命中则产出只读 {@code CELL_MERGE} 修订(纯值,不持委托)。
+   *
+   * <p><b>cellMerge 的双重阻塞(见 research/cell-forms.md §4)</b>:其 CT 类型 {@code CTCellMergeTrackChange} 在
+   * POI 精简 schema 下<b>既无 Java 类文件(编译期不可达),也无 XmlBeans 的 {@code .xsb} schema 资源(运行期不可反序列化)</b>。 因此:
+   *
+   * <ul>
+   *   <li>不能走 typed 访问器 {@code getCellMerge()}(javac 拒绝)。
+   *   <li><b>不能</b>对 cellMerge 节点调 {@code cur.getObject()}——XmlBeans 一旦要把它当类型化对象,就会查 {@code
+   *       CTCellMergeTrackChange} 的 schema 资源,查不到即抛 {@code SchemaTypeLoaderException}。
+   * </ul>
+   *
+   * <p>故本方法全程用 {@link XmlCursor} 裸读:按本地名 {@code cellMerge} 命中后,直接读 {@code w:id}/{@code w:author}
+   * 属性文本({@code getAttributeText},不触发类型化),产出一条经「无委托构造」的纯值 {@code TrackedChange}。该修订的 {@code raw()}
+   * 与 {@code acceptCell}/{@code rejectCell} 都抛 {@code UnsupportedFeatureException}。
+   *
+   * <p>防御式:探测或读属性失败时跳过,不抛异常。
+   */
+  private static void produceCellMergeIfPresent(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTcPr tcPr,
+      List<TrackedChangeSegment> path,
+      List<TrackedChange> out) {
+    boolean found = false;
+    String wId = "?";
+    String author = "";
+    XmlCursor cur = tcPr.newCursor();
+    try {
+      if (cur.toFirstChild()) {
+        do {
+          if ("cellMerge".equals(cur.getName().getLocalPart())) {
+            found = true;
+            // 直接读属性文本,不调 getObject()(否则触发 CTCellMergeTrackChange 的 schema 查找,运行期抛异常)
+            wId = readWAttribute(cur, "id");
+            author = readWAttribute(cur, "author");
+            break;
+          }
+        } while (cur.toNextSibling());
+      }
+    } finally {
+      cur.dispose();
+    }
+    if (!found) {
+      return;
+    }
+    TrackedChangeLocation location = new TrackedChangeLocation(path);
+    ChangeDetails details = new CellChangeDetails(CellChangeKind.UNCONFIRMED_MERGE);
+    String id = buildIdFromStrings(TrackedChangeType.CELL_MERGE, location, wId);
+    out.add(new TrackedChange(id, TrackedChangeType.CELL_MERGE, location, details, author, null));
+  }
+
+  /**
+   * 从 cursor 指向的元素读 {@code w:<localName>} 属性的文本值;缺失返回 {@code defaultValue}。
+   *
+   * <p>OOXML 的修订属性({@code w:id}/{@code w:author}/{@code w:date})都在 {@code w} 命名空间下,故按带命名空间的 QName
+   * 读。
+   */
+  private static String readWAttribute(XmlCursor cur, String localName) {
+    String text =
+        cur.getAttributeText(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}" + localName));
+    return text == null ? "" : text;
   }
 
   // ---------- 产出一条 TrackedChange ----------
@@ -735,6 +984,17 @@ public final class TrackedChangeNodes {
       TrackedChangeType type,
       TrackedChangeLocation location,
       org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node) {
+    String wId = node.getId() == null ? "?" : node.getId().toString();
+    return buildIdFromStrings(type, location, wId);
+  }
+
+  /**
+   * id 生成的「字符串版」:用于无类型化委托的修订(如 cellMerge,其节点不能经 {@code getObject()} 取 id)。
+   *
+   * <p>与 {@link #buildIdFromNode} 同格式(type + locationPath + w:id),w:id 直接以字符串传入。
+   */
+  private static String buildIdFromStrings(
+      TrackedChangeType type, TrackedChangeLocation location, String wId) {
     StringBuilder loc = new StringBuilder();
     List<TrackedChangeSegment> segs = location.segments();
     for (int i = 0; i < segs.size(); i++) {
@@ -744,8 +1004,8 @@ public final class TrackedChangeNodes {
       }
       loc.append(s.kind().name().toLowerCase()).append(s.index());
     }
-    String wId = node.getId() == null ? "?" : node.getId().toString();
-    return type.name().toLowerCase() + ":" + loc + ":" + wId;
+    String id = wId == null || wId.isEmpty() ? "?" : wId;
+    return type.name().toLowerCase() + ":" + loc + ":" + id;
   }
 
   // ---------- 辅助 ----------

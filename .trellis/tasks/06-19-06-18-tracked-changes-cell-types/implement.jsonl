@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "N12-N15 已落地的 tracked changes 架构(开关/枚举/walker/accept-reject/双委托/property 方案 C)。cell 直接复用 property 的 CTTrackChange 委托 + propertyNode() 接缝;N15 的范围行需更新,N16 候选新增 lite schema dangling reference 模式。"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "cellMerge 的 accept/reject 与 cell 命中非 cell 类的 UnsupportedFeatureException 消息模板,遵循 Rule 1(POI 异常不泄漏)与 Rule 2(携带文档上下文)。"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "不可变值对象(CellChangeDetails)、活对象语义、equals/hashCode 不比委托引用(Rule 2)等 cell details 与 TrackedChange 扩展需遵守的质量契约。"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-advanced-types/research/ooxml-forms.md", "reason": "advanced-types 研究期捕获的 cell 真实 OOXML 形态(§1.3 cellIns/cellDel 嵌 tcPr、CTTrackChangeImpl 裸 id/author)与拆分判定(cell 风险最高、独立工程)。本子任务的直接前置研究,design §1 据此并经 javap 实测修正。"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-advanced-types/design.md", "reason": "统一模型接入策略(§3.3 cellIns/cellDel)、accept/reject 语义方向(§5.3 结构节点保留/移除)、research-first 策略(§6)的原始设计上下文。本子任务 design 直接延续其结论。"}

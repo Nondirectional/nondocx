@@ -1,1 +1,4 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "check 阶段核对:cell 类是否复用 property 的 CTTrackChange 委托与 propertyNode() 接缝、raw() 对 cell 类抛 UnsupportedFeatureException、holding-wrapper 不偏离 Rule 1、Review checklist 逐条(Holds single final delegate / 无缓存读字段 / equals 排除委托)。"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "check 阶段核对:cellMerge 与类型不符时抛 UnsupportedFeatureException 而非静默降级、POI 异常在 public API 被包成 Docx*Exception(raw 路径除外)。"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "check 阶段核对:CellChangeDetails 不可变值对象、round-trip 相等性、活对象语义无字段快照、中文 Javadoc 与三层(OOXML/POI/nondocx)教学注释齐备。"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-advanced-types/research/ooxml-forms.md", "reason": "check 阶段对照:实现是否与 research §1.3 的真实 cell 形态一致(cellIns/cellDel 嵌 tcPr、CTTrackChangeImpl),accept/reject 是否避免了 research 点名的「误当文本类会写结构错文档」。"}

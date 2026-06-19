@@ -95,10 +95,11 @@ Hard rules for `raw()`:
 This hatch is how nondocx covers out-of-scope features (fields, OLE, math, watermarks, shapes —
 see PRD "Out of Scope") without pretending to support them. It is also the de-facto answer to "POI
 can do X but we don't wrap it yet". Tracked changes is a partial example: the read side,
-text-class accept/reject/authoring, move accept/reject (paired), and run-property (rPrChange)
-read/accept/reject are wrapped (`Document.trackedChanges()` / `Paragraph` / `Run`, see N12 / N13 /
-N14 / N15), while cell revisions (cellIns/cellDel), pPrChange, and accept/reject/authoring of
-those still fall back to `raw()` until later sub-tasks land.
+text-class accept/reject/authoring, move accept/reject (paired), run-property (rPrChange)
+read/accept/reject, and cell-structure (cellIns/cellDel read+accept/reject, cellMerge read-only)
+are wrapped (`Document.trackedChanges()` / `Paragraph` / `Run`, see N12 / N13 / N14 / N15 / N16),
+while pPrChange/sectPrChange/tblPrChange/trPrChange (CT types absent from the lite schema) and
+accept/reject/authoring of cellMerge still fall back to `raw()` until later sub-tasks land.
 
 ---
 
@@ -374,7 +375,40 @@ advanced-types 子任务补齐两类高级修订:move(moveFrom/moveTo 的 accept
 
 **与 Rule 1 的关系(无偏离)**: property 的读出节点仍是 holding-wrapper(委托 `CTTrackChange`);accept/reject 经 `propertyNode()` 写穿透。`raw()` 对属性类抛异常是**显式契约**(方案 C),不是静默降级——调用方被引导到专用写方法。
 
-**范围**: 覆盖 move(accept/reject 配对联动)与 property(rPrChange 读 + accept/reject)。**不**含:cell(cellIns/cellDel)、pPrChange、`sectPrChange`/`tblPrChange` 等更高层属性类、move/property 的显式创作。回归:`TrackedAdvancedTypesTest` 8 用例(move 配对读回/accept/孤立异常 + property 读回/accept/reject/类型边界/raw 抛);全量 167 tests green、spotless clean。
+**范围**: 覆盖 move(accept/reject 配对联动)与 property(rPrChange 读 + accept/reject)。cell(cellIns/cellDel/cellMerge)已由后续子任务补齐(见 N16)。**仍不**含:pPrChange/`sectPrChange`/`tblPrChange`/`trPrChange`(其 CT 类型在 POI 精简 schema 下全部缺失,见 N16 的 dangling reference 说明)、move/property 的显式创作。回归:`TrackedAdvancedTypesTest` 8 用例(move 配对读回/accept/孤立异常 + property 读回/accept/reject/类型边界/raw 抛)。
+
+### N16 — Tracked changes 单元格结构类:精简 schema 的 dangling reference;cellIns/cellDel 走 typed 访问器,cellMerge 双重阻塞走纯 XmlCursor
+
+cell 子任务补齐表格单元格结构修订:`cellIns`/`cellDel`(完整 read + accept/reject)与 `cellMerge`(只读)。研究依据见 `tasks/.../cell-types/research/cell-forms.md`(一次性探针确认真实 XML 与 accept/reject 手术结果,确认后删除)。
+
+**精简 schema 的 dangling reference 模式(本子任务最重要的知识点)**:
+- POI 精简 jar(poi-ooxml-lite)只保留 POI 自身运行时调用到的 CT 类。一个 CT 接口可以**声明**返回某类型,但该类型的 class 文件与 XmlBeans 的 `.xsb` schema 资源**都不在** jar 内——叫 dangling reference。
+- 实测(lite 5.2.5,`javap` + 编译期 + 运行期三层验证):
+  - `CTTcPr.getCellIns()`/`getCellDel()` → `CTTrackChange`:**可达**(typed 访问器可用)。
+  - `CTTcPr.getCellMerge()` → `CTCellMergeTrackChange`:**编译期不可达**(`tcPr.getCellMerge()` 这行 javac 直接拒绝,报「无法访问 CTCellMergeTrackChange」)。
+  - `CTTcPr.getTcPrChange()` → `CTTcPrChange`:同 cellMerge,dangling。
+  - `CTPPrChange`/`CTSectPrChange`/`CTTblPrChange`/`CTTrPrChange`:**全缺**,pPrChange 等更高层属性类全部受阻。
+- **判断某 CT 类型是否可达,必须 `unzip -l`/`javap` 实测,不能只看接口声明**。dangling 的类型连「只读」都做不到——`cur.getObject()` 一旦要把它当类型化对象,就查 `.xsb` schema 资源,查不到运行期抛 `SchemaTypeLoaderException`。
+
+**cellIns / cellDel — 复用 property 类委托**:
+- 节点类型是 `CTTrackChange`(与 property 类 `CTRPrChange` 的共同父,都继承它给 author/date,id 来自 `CTMarkup`),经 `CTTcPr.getCellIns()`/`getCellDel()` 取得。**直接复用 `TrackedChange` 已有的「持 `CTTrackChange` 委托」构造函数与 `propertyNode()` 包内接缝,零新 CT 类型**。
+- `raw()` 对 cell 类抛 `UnsupportedFeatureException`(同 property 的方案 C);accept/reject 经门面专用方法 `acceptCell`/`rejectCell` 走。
+- **read**:`walkCell` 进入 cell 后先下钻 `tcPr`,枚举 `cellIns`/`cellDel` 为 `CELL_INS`/`CELL_DEL` + `CellChangeDetails`(kind=CELL_INSERTION/CELL_DELETION)。**location path 不含 `paragraph` segment**:cell 修订挂在 `tcPr`,比单元格内段落高一层,path 停在 `[BODY, TABLE, ROW, CELL]`(与单元格内文本类修订的 `[..., CELL, PARAGRAPH]` 区分)。
+
+**cell accept/reject — 作用于整个 `<w:tc>` 祖父节点(与文本类/属性类本质不同)**:
+- `cellIns`/`cellDel` 标记的是「**单元格本身**的存亡」(表格结构修订),不是单元格内的文本或属性。故 accept/reject 操作**整个 `<w:tc>` 元素**,不是标记本身——误当文本类处理会写出「本应删除却仍存在」的单元格(advanced-types research 点名的最高风险点)。
+- 语义:accept cellIns=保留 tc/删标记;reject cellIns=移除整个 tc;cellDel 对称(accept 移除 tc、reject 保留 tc/删标记)。
+- 实现:从 `cellIns`/`cellDel` 节点开 cursor,`toParent()`×2 到祖父 `tc`(探针确认本地名为 `tc`),再按语义 `removeXml()` 整个 tc 或仅删标记。防御:祖父本地名不是 `tc` 时抛 `DocxOperationException`,不静默删错层级。
+- **`acceptAll`/`rejectAll`/`acceptByAuthor`/`rejectByAuthor` 的 family gate(`TEXT || MOVE`)不放宽到 CELL**——cell 结构修订不应被批量 accept/reject 误伤(结构删除批量执行风险高),这是有意的范围控制。
+
+**cellMerge — 双重阻塞,纯 XmlCursor 只读**:
+- `CTCellMergeTrackChange` 既无 Java 类(编译期不可达)也无 `.xsb` schema 资源(运行期不可反序列化)。**不能**走 typed 访问器,**也不能**对节点调 `cur.getObject()`(触发 schema 查找即 `SchemaTypeLoaderException`)。
+- read:用 XmlCursor 在 `tcPr` 子里按本地名 `cellMerge` 命中,**直接读 `w:id`/`w:author` 属性文本**(`getAttributeText`,不触发类型化),产出一条经「无委托构造」的纯值 `TrackedChange`(`CellChangeDetails` kind=UNCONFIRMED_MERGE)。`TrackedChange` 为此新增第三构造函数:接收已解析的 author/date 字符串、不持委托;其 `raw()`/`acceptCell`/`rejectCell` 都抛 `UnsupportedFeatureException`。
+- accept/reject **不支持**,门面对 cellMerge 命中抛 `UnsupportedFeatureException`(合并/拆分涉及相邻单元格 vMerge 恢复,结构风险高;且根本无 CT 类型可操作)。
+
+**与 Rule 1 的关系(无偏离)**: cellIns/cellDel 的读出节点仍是 holding-wrapper(委托 `CTTrackChange`);accept/reject 经 `propertyNode()` 写穿透。cellMerge 是诚实的「只读、不持委托」——`raw()` 与 accept/reject 都明确抛异常,不静默降级。
+
+**范围**: 覆盖 cellIns/cellDel(读 + accept/reject)与 cellMerge(只读)。**不**含:pPrChange/sectPrChange/tblPrChange/trPrChange(CT 类型全缺)、cellMerge 的 accept/reject、cell 类的显式创作。回归:`TrackedCellTypesTest` 12 用例(cellIns/cellDel/cellMerge 读回 + accept/reject × cellIns/cellDel + cellMerge accept/reject 抛异常 + 类型边界 + acceptAll 不误伤 + raw 抛 + 与单元格内文本类共存);全量 179 tests green、spotless clean。
 
 ---
 

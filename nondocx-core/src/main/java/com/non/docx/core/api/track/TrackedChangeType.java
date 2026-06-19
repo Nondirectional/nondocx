@@ -13,7 +13,8 @@ package com.non.docx.core.api.track;
  *   <li>{@link #MOVE_FROM} / {@link #MOVE_TO} → {@link TrackedChangeFamily#MOVE MOVE}
  *   <li>{@link #RPR_CHANGE} / {@link #PPR_CHANGE} / {@link #SECT_PR_CHANGE} → {@link
  *       TrackedChangeFamily#PROPERTY PROPERTY}
- *   <li>{@link #CELL_INS} / {@link #CELL_DEL} → {@link TrackedChangeFamily#CELL CELL}
+ *   <li>{@link #CELL_INS} / {@link #CELL_DEL} / {@link #CELL_MERGE} → {@link
+ *       TrackedChangeFamily#CELL CELL}
  * </ul>
  *
  * <p><b>OOXML 对应(已按精简 schema 验证)。</b> 文本与移动类四种元素在 POI 5.2.5 精简 schema 下统一由 {@code
@@ -44,7 +45,9 @@ public enum TrackedChangeType {
   /** 表格单元格插入:对应 OOXML {@code <w:cellIns>}。 */
   CELL_INS(TrackedChangeFamily.CELL),
   /** 表格单元格删除:对应 OOXML {@code <w:cellDel>}。 */
-  CELL_DEL(TrackedChangeFamily.CELL);
+  CELL_DEL(TrackedChangeFamily.CELL),
+  /** 表格单元格合并/拆分:对应 OOXML {@code <w:cellMerge>}。仅读(CT 类型缺失),accept/reject 不支持。 */
+  CELL_MERGE(TrackedChangeFamily.CELL);
 
   private final TrackedChangeFamily family;
 
