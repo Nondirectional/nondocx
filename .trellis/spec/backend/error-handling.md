@@ -89,10 +89,10 @@ either:
 - throws `UnsupportedFeatureException` with a message pointing to `raw()`.
 
 Never return a degraded/empty result silently for an unsupported feature. (Partial wraps count as
-supported for the part that is wrapped — e.g. tracked-changes *read*, *text-class accept/reject*,
-and *text-class authoring* are wrapped via `Document.trackedChanges()` / `Paragraph` / `Run`,
-while move/property/cell revision types still fall back to `raw()` until the `advanced-types`
-sub-task lands.)
+supported for the part that is wrapped — e.g. tracked-changes *read*, *text-class accept/reject/
+authoring*, *move accept/reject (paired)*, and *run-property (rPrChange) read/accept/reject* are
+wrapped, while cell revisions, pPrChange, and accept/reject of those still fall back to `raw()`
+until later sub-tasks land.)
 
 ---
 

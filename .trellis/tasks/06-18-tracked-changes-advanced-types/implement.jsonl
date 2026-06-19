@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/06-18-tracked-changes/design.md", "reason": "父任务定义 advanced-types 仍保持单任务、统一门面与 details/location 总契约，本子任务实现必须对齐"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-read/design.md", "reason": "高级类型接入必须遵守 read 子任务已确定的稳定 id、location path 与统一外壳模型"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-accept-text/design.md", "reason": "高级类型写语义需要与文本类 accept/reject 的门面、异常与边界风格保持一致"}
+{"file": ".trellis/spec/backend/index.md", "reason": "backend 总体规范入口，确保 advanced-types 子任务继续遵守 API、异常、质量与 POI bridge 约束"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "高级类型实现高度依赖 CT 级读取与手术，必须遵守 holding-wrapper 与 POI 下沉约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "配对缺损、属性树处理与结构恢复失败语义需对齐异常规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "明确高级 details 类型、研究辅助类与内部实现类的包层落点"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "值对象、测试覆盖、内容相等与公共 API POI-free 约束都依赖此规范"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "实现与解释高级修订类型时继续按 OOXML -> POI -> nondocx 三层递进讲解"}

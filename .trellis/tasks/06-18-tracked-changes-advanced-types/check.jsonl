@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/06-18-tracked-changes/design.md", "reason": "check 阶段需回看父任务边界，确保 advanced-types 不偏离统一门面与单任务 research-first 方向"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-read/design.md", "reason": "检查高级类型是否仍遵守 read 子任务的稳定 id、location path 与统一外壳契约"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-accept-text/design.md", "reason": "检查高级类型写语义是否与文本类 accept/reject 的异常与门面风格保持一致"}
+{"file": ".trellis/spec/backend/index.md", "reason": "对照 backend 总体规范检查高级类型实现的 API、异常与质量边界"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "检查高级 CT 级实现是否继续满足 holding-wrapper、raw() 与 POI 下沉约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查配对缺损、属性树处理与结构恢复失败语义是否符合异常规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "检查高级 details 与内部实现类是否落在正确包层"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查值对象、测试覆盖、中文文档与公共 API POI-free 约束"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "评审输出与高级修订类型说明继续遵守教学式协作约定"}

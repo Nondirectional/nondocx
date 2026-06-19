@@ -1,6 +1,8 @@
 package com.non.docx.core.internal.poi;
 
 import com.non.docx.core.api.track.ChangeDetails;
+import com.non.docx.core.api.track.PropertyChangeDetails;
+import com.non.docx.core.api.track.PropertyChangeKind;
 import com.non.docx.core.api.track.TextChangeDetails;
 import com.non.docx.core.api.track.TrackedChange;
 import com.non.docx.core.api.track.TrackedChangeLocation;
@@ -385,6 +387,13 @@ public final class TrackedChangeNodes {
   /**
    * 遍历一个段落:先在该段落层级产出段落直属的修订节点(如直接挂在 {@code <w:p>} 下的 {@code <w:ins>}), 再下钻 run 层级(修订也可能包裹在段落直属 run
    * 序列里,但 run 层修订通常是 {@code <w:r>} 的兄弟, 已被段落直属遍历覆盖;这里为稳妥仍尝试 run 层)。
+   *
+   * <p>同时下钻两类属性树枚举属性类修订(见 research/ooxml-forms.md §1.2):
+   *
+   * <ul>
+   *   <li>段落自身的 {@code <w:pPr>} 内的 {@code pPrChange}。
+   *   <li>段落直属每个 {@code <w:r>} 的 {@code <w:rPr>} 内的 {@code rPrChange}。
+   * </ul>
    */
   private static void walkParagraph(
       XmlCursor parent,
@@ -393,7 +402,10 @@ public final class TrackedChangeNodes {
       List<TrackedChange> out) {
     List<TrackedChangeSegment> segs =
         withSegment(path, TrackedChangeSegmentKind.PARAGRAPH, paragraphIdx);
-    XmlCursor cur = parent.getObject().newCursor();
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p =
+        (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP) parent.getObject();
+    // 先枚举段落直属的文本/移动类修订节点。
+    XmlCursor cur = p.newCursor();
     try {
       if (!cur.toFirstChild()) {
         return;
@@ -407,6 +419,167 @@ public final class TrackedChangeNodes {
     } finally {
       cur.dispose();
     }
+    // 再下钻属性树,枚举属性类修订。
+    collectPropertyChanges(p, segs, out);
+  }
+
+  /**
+   * 在一个段落里枚举属性类修订(rPrChange / pPrChange)。
+   *
+   * <p>结构(见 research/ooxml-forms.md §1.2):{@code pPrChange} 装在段落的 {@code <w:pPr>} 内;{@code
+   * rPrChange} 装在段落直属各 run 的 {@code <w:rPr>} 内。属性类节点类型是 {@code CTRPrChange} / {@code
+   * CTPPrChange},都继承自 {@code CTTrackChange}(共同父),故产出时按 {@code CTTrackChange} 委托。
+   */
+  private static void collectPropertyChanges(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP p,
+      List<TrackedChangeSegment> segs,
+      List<TrackedChange> out) {
+    // 运行属性:每个直属 run 的 rPr → rPrChange
+    // (段落属性 pPrChange 的 CT 类型 CTPPrChange 在 POI 精简 schema 下尚未被引用、暂不在 classpath,
+    //  故本子任务 v1 仅覆盖 rPrChange;pPrChange 留作已知边界,见 research/ooxml-forms.md。)
+    for (CTR r : p.getRList()) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr rPr = r.getRPr();
+      if (rPr != null && rPr.isSetRPrChange()) {
+        org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPrChange change =
+            rPr.getRPrChange();
+        produceProperty(
+            change,
+            "rPrChange",
+            TrackedChangeType.RPR_CHANGE,
+            PropertyChangeKind.RUN_PROPERTIES,
+            summarizeChildren(rPr),
+            summarizeChildren(change.getRPr()),
+            segs,
+            out);
+      }
+    }
+  }
+
+  /**
+   * 产出一个属性类修订 {@link TrackedChange}。
+   *
+   * <p>属性类节点(具体是 {@code CTRPrChange} / {@code CTPPrChange},共同父 {@code CTTrackChange})走 {@link
+   * TrackedChange} 的属性构造函数; {@code newSummary}/{@code oldSummary} 来自新旧属性树的直接子本地名摘要。
+   */
+  private static void produceProperty(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node,
+      String local,
+      TrackedChangeType type,
+      PropertyChangeKind kind,
+      String newSummary,
+      String oldSummary,
+      List<TrackedChangeSegment> path,
+      List<TrackedChange> out) {
+    TrackedChangeLocation location = new TrackedChangeLocation(path);
+    ChangeDetails details = new PropertyChangeDetails(kind, newSummary, oldSummary);
+    String id = buildPropertyId(type, location, node, local);
+    out.add(new TrackedChange(id, type, location, details, node));
+  }
+
+  // ---------- 破坏性写:属性类 accept / reject ----------
+
+  /**
+   * 应用(accept)一条属性类修订:保留<b>新(当前)属性树</b>,移除 {@code *PrChange} 标记。
+   *
+   * <p>OOXML 形态(以 rPrChange 为例):外层 {@code <w:rPr>} 表达新样式,{@code <w:rPrChange>} 内的 {@code <w:rPr>}
+   * 表达旧样式。accept = 删 {@code <w:rPrChange>} 节点(外层 rPr 的新样式保留不变)。
+   *
+   * @param node 属性类修订节点(具体是 {@code CTRPrChange};共同父 {@code CTTrackChange}。不能为 {@code null})
+   */
+  public static void acceptProperty(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node) {
+    java.util.Objects.requireNonNull(node, "node");
+    XmlCursor c = node.newCursor();
+    try {
+      c.removeXml();
+    } finally {
+      c.dispose();
+    }
+  }
+
+  /**
+   * 撤销(reject)一条属性类修订:用 {@code *PrChange} 内的<b>旧(pristine)属性树</b>覆盖外层新树,再移除 {@code *PrChange} 标记。
+   *
+   * <p>OOXML 形态:把 {@code <w:rPrChange>} 内旧 {@code <w:rPr>} 的全部直接子,搬到外层 {@code <w:rPr>}(替换新样式),再删
+   * {@code <w:rPrChange>}。若旧属性树为空,则外层 rPr 也将被清空(即撤销成"无属性")。
+   *
+   * <p>注意:本方法先把外层属性树的<b>现有直接子</b>(不含 {@code *PrChange} 本身)全部移除,再把旧属性树的子搬入,实现"整树替换"(design §5.2)。
+   *
+   * @param node 属性类修订节点(不能为 {@code null})
+   */
+  public static void rejectProperty(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node) {
+    java.util.Objects.requireNonNull(node, "node");
+    // node 是 rPrChange;其父是外层 rPr;node 内第一个子是旧属性元素(rPr,类型为 CTRPrOriginal,与 CTRPr 不同)。
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPrChange asRPrChange =
+        (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPrChange) node;
+    // 外层 rPr 是 *PrChange 的父
+    XmlCursor parentCur = node.newCursor();
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr outerRPr;
+    try {
+      parentCur.toParent();
+      outerRPr =
+          (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr) parentCur.getObject();
+    } finally {
+      parentCur.dispose();
+    }
+    // 清空外层 rPr 的现有直接子(除 rPrChange 外),为新旧树替换腾位
+    XmlCursor outerCur = outerRPr.newCursor();
+    try {
+      if (outerCur.toFirstChild()) {
+        do {
+          if (!"rPrChange".equals(outerCur.getName().getLocalPart())) {
+            outerCur.removeXml();
+          }
+        } while (outerCur.toNextSibling());
+      }
+    } finally {
+      outerCur.dispose();
+    }
+    // 把旧 rPr(CTRPrOriginal,与 CTRPr 不同类型,故走 XmlCursor 通用搬运)的直接子搬入外层 rPr
+    XmlCursor oldCur = asRPrChange.newCursor();
+    XmlCursor anchor = outerRPr.newCursor();
+    try {
+      // 下钻到 rPrChange 内的旧 rPr(第一个子)
+      if (oldCur.toFirstChild()) {
+        do {
+          oldCur.moveXml(anchor); // 搬到外层 rPr 内部末尾
+        } while (oldCur.toNextSibling());
+      }
+    } finally {
+      oldCur.dispose();
+      anchor.dispose();
+    }
+    // 删 *PrChange 标记
+    XmlCursor c = node.newCursor();
+    try {
+      c.removeXml();
+    } finally {
+      c.dispose();
+    }
+  }
+
+  /** 收集一个属性元素(rPr/pPr)直接子的本地名,排序拼成摘要(见 {@link PropertyChangeDetails#summarize})。 */
+  private static String summarizeChildren(org.apache.xmlbeans.XmlObject props) {
+    if (props == null) {
+      return PropertyChangeDetails.summarize(java.util.Collections.emptyList());
+    }
+    java.util.List<String> names = new java.util.ArrayList<>();
+    XmlCursor c = props.newCursor();
+    try {
+      if (c.toFirstChild()) {
+        do {
+          // 跳过 *PrChange 自身(它出现在 rPr/pPr 的子里,但不是"属性",是修订标记)
+          String local = c.getName().getLocalPart();
+          if (!local.endsWith("PrChange")) {
+            names.add(local);
+          }
+        } while (c.toNextSibling());
+      }
+    } finally {
+      c.dispose();
+    }
+    return PropertyChangeDetails.summarize(names);
   }
 
   /** 遍历表格:下钻到 {@code <w:tr>}(行)。 */
@@ -542,6 +715,26 @@ public final class TrackedChangeNodes {
    */
   private static String buildId(
       TrackedChangeType type, TrackedChangeLocation location, CTRunTrackChange node) {
+    return buildIdFromNode(type, location, node);
+  }
+
+  /**
+   * 属性类修订的稳定 id 生成(同 {@link #buildId} 的格式:type + location + w:id)。{@code CTTrackChange} 与 {@code
+   * CTRunTrackChange} 都有 {@code getId()},故共用同一生成逻辑。
+   */
+  private static String buildPropertyId(
+      TrackedChangeType type,
+      TrackedChangeLocation location,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node,
+      String local) {
+    return buildIdFromNode(type, location, node);
+  }
+
+  /** 共用的 id 生成:type + locationPath + 原始 w:id(对调用方不透明,同文档同会话稳定)。 */
+  private static String buildIdFromNode(
+      TrackedChangeType type,
+      TrackedChangeLocation location,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange node) {
     StringBuilder loc = new StringBuilder();
     List<TrackedChangeSegment> segs = location.segments();
     for (int i = 0; i < segs.size(); i++) {

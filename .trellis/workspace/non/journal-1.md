@@ -419,3 +419,65 @@ AC1 insertion ✅ / AC2 deletion ✅ / AC3 replacement(del+ins,样式复制)✅ 
 - commit
 - authoring 子任务归档
 - 最后一个子任务:advanced-types
+
+---
+
+## Session 10: advanced-types 子任务(move + property;cell 拆出)
+
+**Task**: `06-18-tracked-changes-advanced-types`(research-first,实际做 move + property)
+
+### What
+
+研究先行(探针捕获真实 OOXML),据研究拆分范围:**做 move + property,cell 拆出独立子任务**。move 补 accept/reject 配对联动;property 补 rPrChange 的读 + accept/reject 整树替换。
+
+### 研究产出(research/ooxml-forms.md,关键结论)
+
+1. **move 与文本类完全同型**(CTRunTrackChange),read 侧已覆盖;accept/reject mechanics 直接复用。
+2. **property 结构不同**:rPrChange 嵌在 `<w:rPr>` 内部(不是 run 包装层),类型是 CTRPrChange;与 CTRunTrackChange 共同父是 CTTrackChange(无 CTPrChange 中间类)。
+3. **cell 嵌在 tcPr 内**,结构风险最高 → 拆出。
+4. **配对无显式指针**:靠 author+text 启发式(date 不作硬约束)。
+
+### 关键决策
+
+1. **范围**:move + property;cell 拆新子任务(用户决策)。pPrChange 因 CTPPrChange 不在 POI 精简 classpath,v1 留边界。
+2. **property 走方案 C**(用户决策):读统一(进 list() + PropertyChangeDetails),写专用(acceptProperty/rejectProperty)。不动现有 raw() 契约。
+3. **TrackedChange 改双委托**:CTRunTrackChange(文本/移动)+ CTTrackChange(属性);raw() 对 property 抛 UnsupportedFeatureException;新增包内 propertyNode()。
+4. **move 配对靠 author+text**:曾用 author+date+text 三元组,但 date 跨秒不稳,测试暴露后改为 author+text;孤立 move 抛异常不降级。
+
+### 改动产出
+
+- `TrackedChange`:双委托字段 + 属性构造函数(public)+ propertyNode() 包内接缝;raw() 对 property 抛
+- `TrackedChangeNodes`:read walker 下钻 rPr 枚举 rPrChange;新增 acceptProperty/rejectProperty(整树替换,旧 rPr 是 CTRPrOriginal 走 XmlCursor 搬运)
+- `TrackedChanges`:门面 gate 放宽到含 MOVE;applyMove 配对联动(findMoveCounterpart);acceptProperty/rejectProperty 专用写
+- 新增 `PropertyChangeDetails` + `PropertyChangeKind`
+- 新增 `TrackedAdvancedTypesTest`(8 用例)
+- `research/ooxml-forms.md`(研究文档,保留)
+- spec `poi-bridge.md` 新增 **N15**;同步 N14 范围行、Rule 3、error-handling Rule 5、README bullet
+
+### 探针验证的 mechanics(先探针后实现)
+
+- move 同型(CTRunTrackChangeImpl)确认
+- property 嵌在 rPr 内、类型 CTRPrChange 确认
+- 配对 author+text 启发式(测试 fixture 用 delText 表示 moveFrom 文本)
+
+### Testing
+
+- [OK] 探针 3 类(move/property/cell)真实 OOXML 捕获,结论入 research
+- [OK] `TrackedAdvancedTypesTest`:8/8 通过
+- [OK] 全量 `mvn -pl nondocx-core verify`:**167 tests, 0 failures**,spotless clean
+- [OK] TrackedChange 双委托重构未破坏 read/accept/authoring 现有测试
+
+### AC 自检
+
+AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPrChange)读 ✅ / AC property accept(留新树)✅ / AC property reject(旧树覆盖)✅ / AC property raw() 抛 + 专用写 ✅
+
+### Status
+
+[OK] **实现与质检完成,待 commit**
+
+### Next Steps
+
+- commit
+- advanced-types 归档
+- 回 planning 创建 `06-18-tracked-changes-cell-types` 子任务(cell)
+- 父任务接近完成:剩 cell + pPrChange/sectPr 等更高层属性类

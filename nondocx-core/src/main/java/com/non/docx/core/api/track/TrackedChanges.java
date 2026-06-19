@@ -217,6 +217,70 @@ public final class TrackedChanges {
   }
 
   /**
+   * 应用(accept)单条属性类修订:保留新(当前)属性树,移除 {@code *PrChange} 标记。
+   *
+   * <p>属性类修订的 accept/reject 走<b>专用方法</b>(而非 {@link #accept(String)}),因为属性类底层节点类型与文本/移动类不同(见 design
+   * §3.2、 {@link TrackedChange#raw()} 的不支持说明)。按 {@link TrackedChange#id() 稳定 id} 定位。
+   *
+   * @param id nondocx 稳定 id(不能为 {@code null} 或空白)
+   * @throws IllegalArgumentException 如果 {@code id} 为 {@code null} 或空白
+   * @throws NoSuchElementException 如果没有 id 等于 {@code id} 的修订
+   * @throws UnsupportedFeatureException 若命中的修订不是属性类
+   */
+  public void acceptProperty(String id) {
+    applyProperty(id, true);
+  }
+
+  /**
+   * 撤销(reject)单条属性类修订:用旧(pristine)属性树覆盖新树,再移除 {@code *PrChange} 标记。
+   *
+   * @param id nondocx 稳定 id(不能为 {@code null} 或空白)
+   * @throws IllegalArgumentException 如果 {@code id} 为 {@code null} 或空白
+   * @throws NoSuchElementException 如果没有 id 等于 {@code id} 的修订
+   * @throws UnsupportedFeatureException 若命中的修订不是属性类
+   * @see #acceptProperty(String)
+   */
+  public void rejectProperty(String id) {
+    applyProperty(id, false);
+  }
+
+  /**
+   * 按稳定 id 应用或撤销单条<b>属性类</b>修订。
+   *
+   * <p>命中后校验 family 必须是 {@link TrackedChangeFamily#PROPERTY PROPERTY}(否则抛 {@link
+   * UnsupportedFeatureException}),再经 {@code TrackedChange.propertyNode()} 取底层节点做整树替换。
+   */
+  private void applyProperty(String id, boolean accept) {
+    Objects.requireNonNull(id, "id");
+    if (id.isBlank()) {
+      throw new IllegalArgumentException("id 不能为空白");
+    }
+    Map<String, TrackedChange> byId = new HashMap<>();
+    for (TrackedChange c : TrackedChangeNodes.collect(delegate)) {
+      byId.put(c.id(), c);
+    }
+    TrackedChange target = byId.get(id);
+    if (target == null) {
+      throw new NoSuchElementException("找不到 id 为 " + id + " 的修订");
+    }
+    if (target.family() != TrackedChangeFamily.PROPERTY) {
+      throw new UnsupportedFeatureException(
+          "id 为 "
+              + id
+              + " 的修订是 "
+              + target.type()
+              + "("
+              + target.family()
+              + "),不是属性类;acceptProperty/rejectProperty 仅支持属性类");
+    }
+    if (accept) {
+      TrackedChangeNodes.acceptProperty(target.propertyNode());
+    } else {
+      TrackedChangeNodes.rejectProperty(target.propertyNode());
+    }
+  }
+
+  /**
    * 循环「重算 → 应用第一条匹配的文本类修订」,直到没有匹配为止。
    *
    * <p>每次只应用一条后立刻重算,是因为 accept/reject 会改写文档树,此前 {@link TrackedChangeNodes#collect} 返回的节点
@@ -231,7 +295,7 @@ public final class TrackedChanges {
     while (true) {
       TrackedChange target = null;
       for (TrackedChange c : TrackedChangeNodes.collect(delegate)) {
-        if (c.family() != TrackedChangeFamily.TEXT) {
+        if (c.family() != TrackedChangeFamily.TEXT && c.family() != TrackedChangeFamily.MOVE) {
           continue;
         }
         if (author != null && !author.equals(c.author())) {
@@ -243,8 +307,14 @@ public final class TrackedChanges {
       if (target == null) {
         return count;
       }
-      applyOne(target, accept);
-      count++;
+      if (target.family() == TrackedChangeFamily.MOVE) {
+        // move 成对操作:两端算作 1 条(配对缺端时仍按单端处理并计数 1)
+        applyMove(target, accept);
+        count++;
+      } else {
+        applyOne(target, accept);
+        count++;
+      }
     }
   }
 
@@ -266,7 +336,8 @@ public final class TrackedChanges {
     if (target == null) {
       throw new NoSuchElementException("找不到 id 为 " + id + " 的修订");
     }
-    if (target.family() != TrackedChangeFamily.TEXT) {
+    if (target.family() != TrackedChangeFamily.TEXT
+        && target.family() != TrackedChangeFamily.MOVE) {
       throw new UnsupportedFeatureException(
           "id 为 "
               + id
@@ -274,9 +345,13 @@ public final class TrackedChanges {
               + target.type()
               + "("
               + target.family()
-              + "),文本类 accept/reject 尚未支持;请使用 raw()");
+              + "),accept/reject 尚未支持;请使用 raw()");
     }
-    applyOne(target, accept);
+    if (target.family() == TrackedChangeFamily.MOVE) {
+      applyMove(target, accept);
+    } else {
+      applyOne(target, accept);
+    }
   }
 
   /** 对单条已校验为文本类的修订执行底层 accept / reject。 */
@@ -286,6 +361,84 @@ public final class TrackedChanges {
     } else {
       TrackedChangeNodes.rejectText(change.raw());
     }
+  }
+
+  /**
+   * 对一条 move 修订做配对 accept / reject:先找配对端,再对两端同时执行(各算 moveFrom/moveTo 的 accept/reject 语义)。
+   *
+   * <p>配对依据 (author, date, text) 三元组(OOXML 无显式配对指针,见 research/ooxml-forms.md §配对方案):
+   *
+   * <ul>
+   *   <li>accept move:moveFrom 删除生效(移除)、moveTo 插入生效(保留文本)。
+   *   <li>reject move:moveFrom 删除撤销(恢复文本)、moveTo 插入撤销(移除)。
+   * </ul>
+   *
+   * <p>两端底层 mechanics 与文本类 ins/del 同型(moveTo 同 ins、moveFrom 同 del),复用 {@link
+   * TrackedChangeNodes#acceptText} / {@link #rejectText}。
+   *
+   * @param change 命中的 move 修订(moveFrom 或 moveTo)
+   * @param accept {@code true} 应用,{@code false} 撤销
+   * @throws NoSuchElementException 若配对端缺失(文档损坏或非 Word 产生的孤立 move)
+   */
+  private void applyMove(TrackedChange change, boolean accept) {
+    Objects.requireNonNull(change, "change");
+    // 在当前文档里找配对端(同 author + date + text 的另一 type)。
+    TrackedChange counterpart = findMoveCounterpart(change);
+    if (counterpart == null) {
+      throw new NoSuchElementException(
+          "id 为 " + change.id() + " 的 move 修订找不到配对端(author+text 无匹配),文档可能损坏;请使用 raw()");
+    }
+    // 对两端同时执行。顺序:先处理 from 端(移除/恢复源文本),再处理 to 端(保留/移除目标文本)。
+    TrackedChange from = change.type() == TrackedChangeType.MOVE_FROM ? change : counterpart;
+    TrackedChange to = change.type() == TrackedChangeType.MOVE_TO ? change : counterpart;
+    if (accept) {
+      TrackedChangeNodes.acceptText(from.raw());
+      TrackedChangeNodes.acceptText(to.raw());
+    } else {
+      TrackedChangeNodes.rejectText(from.raw());
+      TrackedChangeNodes.rejectText(to.raw());
+    }
+  }
+
+  /**
+   * 在当前文档里查找一条 move 修订的配对端(同 author + date + text、且 type 相反)。
+   *
+   * <p>配对启发式见 research/ooxml-forms.md。文档内 (author, date, text) 三元组通常唯一;若多端匹配,取文档顺序第一个。
+   *
+   * @return 配对端;无匹配返回 {@code null}(调用方据此抛异常,不静默降级)
+   */
+  private TrackedChange findMoveCounterpart(TrackedChange change) {
+    TrackedChangeType wantType =
+        change.type() == TrackedChangeType.MOVE_FROM
+            ? TrackedChangeType.MOVE_TO
+            : TrackedChangeType.MOVE_FROM;
+    String author = change.author();
+    String text = moveText(change);
+    // 配对主依据:author + text(最稳定)。date 仅作弱约束——不同实现写入 date 的精度不同
+    // (Word 批量同毫秒,但其它工具可能跨秒),故 date 不参与硬过滤;只要 author+text 唯一即可定配对。
+    // 取文档顺序第一个匹配的 (author, text) 另一端。
+    for (TrackedChange c : TrackedChangeNodes.collect(delegate)) {
+      if (c.type() != wantType) {
+        continue;
+      }
+      if (!java.util.Objects.equals(author, c.author())) {
+        continue;
+      }
+      if (!java.util.Objects.equals(text, moveText(c))) {
+        continue;
+      }
+      return c;
+    }
+    return null;
+  }
+
+  /** 取一条 move 修订的文本(moveFrom 用 delText、moveTo 用 t,与 read 的 extractText 语义一致)。 */
+  private static String moveText(TrackedChange change) {
+    ChangeDetails d = change.details();
+    if (d instanceof TextChangeDetails) {
+      return ((TextChangeDetails) d).text();
+    }
+    return "";
   }
 
   /** 校验 author 参数:非 {@code null} 且非空白,否则抛 {@link IllegalArgumentException}。 */
