@@ -10,6 +10,11 @@ import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
 import com.non.docx.core.api.toc.TableOfContents;
 import com.non.docx.core.api.toc.TocEntry;
+import com.non.docx.core.api.track.CellChangeDetails;
+import com.non.docx.core.api.track.ChangeDetails;
+import com.non.docx.core.api.track.PropertyChangeDetails;
+import com.non.docx.core.api.track.TextChangeDetails;
+import com.non.docx.core.api.track.TrackedChange;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -796,6 +801,340 @@ public final class DocxAgentTools {
     }
     if (e.anchor() != null) {
       sb.append(" · 锚点 ").append(e.anchor());
+    }
+  }
+
+  // ==================== H. 修订(tracked changes) ====================
+  //
+  // OOXML 三层递进(整组共用):
+  //   OOXML —— 修订标记散落在 word/document.xml 正文各处:文本类 <w:ins>/<w:del>、移动类 <w:moveFrom>/<w:moveTo>、
+  //            属性类 rPrChange 等(嵌在 <w:rPr> 内)、单元格类 cellIns/cellDel(嵌在 <w:tcPr> 内)。开关在
+  //            settings.xml 的 <w:trackChanges/>。
+  //   POI   —— 没有 XWPFTrackedChanges 高层 API;nondocx 用 XmlCursor 按文档顺序遍历 CTBody,按本地名识别修订类型,
+  //            解析为领域视图。
+  //   nondocx —— 统一门面 doc.trackedChanges();每条修订有 stable id(进程内稳定),accept/reject 按 family 分专用方法。
+  //
+  // id 是寻址凭证:所有单条 accept/reject 工具都按 stable id 定位。Agent 必须先 list_tracked_changes 拿到 id,
+  // 再调对应 accept/reject(同 search_text 之于 replace_run_text)。
+
+  /** 读取文档是否开启修订记录({@code settings.xml} 的 {@code <w:trackChanges/>})。 */
+  @ToolDef(
+      name = "get_tracked_changes_enabled",
+      description = "返回文档是否开启了修订记录(Word 里勾选「修订」开关)。true=已开启")
+  public String getTrackedChangesEnabled(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    return "修订记录: " + (doc.trackedChanges().enabled() ? "已开启" : "未开启");
+  }
+
+  /**
+   * 按文档顺序枚举全部修订,每条一行(type/family/author/details 摘要/stable id)。
+   *
+   * <p><b>返回的 stable id 是后续 accept/reject 工具的寻址凭证</b>。一次调用拿全,不要逐个 get。
+   */
+  @ToolDef(
+      name = "list_tracked_changes",
+      description =
+          "按文档顺序枚举全部修订(tracked changes),每条返回 type/family/author/details 摘要与 stable id。"
+              + "accept/reject 前先用它拿到 id。四种 family:TEXT(ins/del)、MOVE(moveFrom/moveTo)、"
+              + "PROPERTY(rPrChange 等)、CELL(cellIns/cellDel/cellMerge)。")
+  public String listTrackedChanges(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    List<TrackedChange> list = doc.trackedChanges().list();
+    if (list.isEmpty()) {
+      return "无修订";
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append("共 ").append(list.size()).append(" 条修订:\n");
+    for (int i = 0; i < list.size(); i++) {
+      sb.append('[').append(i).append("] ").append(describeRevision(list.get(i)));
+      if (i < list.size() - 1) {
+        sb.append('\n');
+      }
+    }
+    return sb.toString();
+  }
+
+  /** 按稳定 id 取单条修订详情。未命中返回错误串(不要靠它枚举,枚举用 list_tracked_changes)。 */
+  @ToolDef(
+      name = "get_tracked_change",
+      description = "按 stable id 取单条修订的详情(列表里看到的 id)。枚举请用 list_tracked_changes")
+  public String getTrackedChange(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "id", description = "list_tracked_changes 返回的 stable id") String id) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      return describeRevision(doc.trackedChanges().get(id));
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
+   * 应用(accept)单条文本/移动类修订:插入生效、删除生效;移动类两端联动配对。
+   *
+   * <p>仅作用于 TEXT(ins/del)与 MOVE(moveFrom/moveTo)family;属性类用 {@code accept_property_change},单元格类用
+   * {@code accept_cell_change}。命中其它 family 会返回错误串。
+   */
+  @ToolDef(
+      name = "accept_text_or_move_revision",
+      description =
+          "应用(accept)单条文本/移动类修订(id 来自 list_tracked_changes)。"
+              + "ins/插入保留、del/删除生效;move 两端联动配对。"
+              + "属性类/单元格类请改用对应专用工具。")
+  public String acceptTextOrMoveRevision(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "id", description = "stable id") String id) {
+    return applySingleRevision(docId, id, /* accept= */ true, /* family= */ "text_or_move");
+  }
+
+  /** 撤销(reject)单条文本/移动类修订:插入丢弃、删除恢复;移动类两端联动。 */
+  @ToolDef(
+      name = "reject_text_or_move_revision",
+      description =
+          "撤销(reject)单条文本/移动类修订(id 来自 list_tracked_changes)。"
+              + "ins/插入丢弃、del/删除恢复;move 两端联动。属性类/单元格类请改用对应专用工具。")
+  public String rejectTextOrMoveRevision(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "id", description = "stable id") String id) {
+    return applySingleRevision(docId, id, /* accept= */ false, /* family= */ "text_or_move");
+  }
+
+  /**
+   * 应用(accept)全部文本/移动类修订,返回处理条数。
+   *
+   * <p><b>仅作用于 TEXT+MOVE</b>:属性类(rPrChange 等)与单元格类(cellIns/cellDel/cellMerge)<b>不受影响</b>,不会批量删单元格。
+   */
+  @ToolDef(
+      name = "accept_all_text_revisions",
+      description = "应用(accept)全部文本/移动类修订,返回处理条数。仅作用于文本(ins/del)与移动类;" + "属性类与单元格类不受影响(不会批量删单元格)。")
+  public String acceptAllTextRevisions(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      int n = doc.trackedChanges().acceptAll();
+      return "已应用 " + n + " 条文本/移动类修订";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /** 撤销(reject)全部文本/移动类修订,返回处理条数。仅作用于 TEXT+MOVE,不动 property/cell。 */
+  @ToolDef(
+      name = "reject_all_text_revisions",
+      description = "撤销(reject)全部文本/移动类修订,返回处理条数。仅作用于文本与移动类;属性类与单元格类不受影响。")
+  public String rejectAllTextRevisions(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      int n = doc.trackedChanges().rejectAll();
+      return "已撤销 " + n + " 条文本/移动类修订";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
+   * 应用(accept)指定作者的全部文本/移动类修订。作者大小写敏感精确匹配。
+   *
+   * <p>仅作用于 TEXT+MOVE;property/cell 不受影响。
+   */
+  @ToolDef(
+      name = "accept_text_revisions_by_author",
+      description = "应用(accept)指定 author 的全部文本/移动类修订(大小写敏感精确匹配),返回处理条数。" + "仅文本与移动类;属性类与单元格类不受影响。")
+  public String acceptTextRevisionsByAuthor(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "author", description = "修订作者(大小写敏感精确匹配)") String author) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      int n = doc.trackedChanges().acceptByAuthor(author);
+      return "已应用作者「" + author + "」的 " + n + " 条文本/移动类修订";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /** 撤销(reject)指定作者的全部文本/移动类修订。仅作用于 TEXT+MOVE。 */
+  @ToolDef(
+      name = "reject_text_revisions_by_author",
+      description = "撤销(reject)指定 author 的全部文本/移动类修订(大小写敏感精确匹配),返回处理条数。" + "仅文本与移动类;属性类与单元格类不受影响。")
+  public String rejectTextRevisionsByAuthor(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "author", description = "修订作者(大小写敏感精确匹配)") String author) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      int n = doc.trackedChanges().rejectByAuthor(author);
+      return "已撤销作者「" + author + "」的 " + n + " 条文本/移动类修订";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
+   * 应用(accept)单条属性类修订(rPrChange 等):保留新(当前)属性树,移除 *PrChange 标记。
+   *
+   * <p>仅作用于 PROPERTY family;文本/移动类用 {@code accept_text_or_move_revision},单元格类用 {@code
+   * accept_cell_change}。
+   */
+  @ToolDef(
+      name = "accept_property_change",
+      description =
+          "应用(accept)单条属性类修订(rPrChange:id 来自 list_tracked_changes)。"
+              + "保留新属性树、移除 *PrChange 标记。仅属性类;文本/单元格类请用对应工具。")
+  public String acceptPropertyChange(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "id", description = "stable id") String id) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      doc.trackedChanges().acceptProperty(id);
+      return "已应用属性类修订 " + id;
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /** 撤销(reject)单条属性类修订:用旧(pristine)属性树覆盖新树,移除 *PrChange 标记。仅 PROPERTY family。 */
+  @ToolDef(
+      name = "reject_property_change",
+      description =
+          "撤销(reject)单条属性类修订(rPrChange:id 来自 list_tracked_changes)。"
+              + "用旧属性树覆盖新树、移除 *PrChange 标记。仅属性类。")
+  public String rejectPropertyChange(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "id", description = "stable id") String id) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      doc.trackedChanges().rejectProperty(id);
+      return "已撤销属性类修订 " + id;
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
+   * 应用(accept)单条单元格结构类修订:作用于<b>整个 {@code <w:tc>} 单元格</b>(不是标记本身)。
+   *
+   * <p>语义:cellIns accept=保留单元格、删标记;cellDel accept=<b>移除整个单元格</b>。
+   *
+   * <p><b>cellMerge 不支持</b>(其 CT 类型在 POI 精简 schema 下缺失),命中 cellMerge 的 id 会返回错误串。仅 CELL family。
+   */
+  @ToolDef(
+      name = "accept_cell_change",
+      description =
+          "应用(accept)单条单元格结构类修订(cellIns/cellDel:id 来自 list_tracked_changes)。"
+              + "作用于整个单元格:cellIns=保留单元格、cellDel=移除整个单元格。"
+              + "cellMerge 的 accept 不支持(会返回错误串)。仅单元格类。")
+  public String acceptCellChange(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "id", description = "stable id") String id) {
+    return applyCellRevision(docId, id, /* accept= */ true);
+  }
+
+  /**
+   * 撤销(reject)单条单元格结构类修订:作用于整个 {@code <w:tc>}。
+   *
+   * <p>语义:cellIns reject=<b>移除整个单元格</b>(插入被撤销);cellDel reject=保留单元格、删标记。cellMerge 不支持。
+   */
+  @ToolDef(
+      name = "reject_cell_change",
+      description =
+          "撤销(reject)单条单元格结构类修订(cellIns/cellDel:id 来自 list_tracked_changes)。"
+              + "作用于整个单元格:cellIns=移除整个单元格、cellDel=保留单元格。cellMerge 不支持。仅单元格类。")
+  public String rejectCellChange(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "id", description = "stable id") String id) {
+    return applyCellRevision(docId, id, /* accept= */ false);
+  }
+
+  /** 把一条修订渲染为一行中文摘要(type/family/author/details/id)。 */
+  private static String describeRevision(TrackedChange change) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("type=").append(change.type());
+    sb.append(", family=").append(change.family());
+    sb.append(", author=\"").append(change.author()).append("\"");
+    appendDetails(sb, change.details());
+    sb.append(", id=").append(change.id());
+    return sb.toString();
+  }
+
+  /** 按 details 子类型把 payload 摘要拼进描述。 */
+  private static void appendDetails(StringBuilder sb, ChangeDetails details) {
+    if (details instanceof TextChangeDetails) {
+      sb.append(", text=\"").append(((TextChangeDetails) details).text()).append("\"");
+    } else if (details instanceof PropertyChangeDetails) {
+      PropertyChangeDetails p = (PropertyChangeDetails) details;
+      sb.append(", property=")
+          .append(p.kind())
+          .append("(新 ")
+          .append(p.newSummary())
+          .append("/旧 ")
+          .append(p.oldSummary())
+          .append(")");
+    } else if (details instanceof CellChangeDetails) {
+      sb.append(", cell=").append(((CellChangeDetails) details).kind());
+    }
+  }
+
+  /** 单条文本/移动类 accept/reject 的共享实现(走门面 accept(id)/reject(id),自动处理 move 配对)。 */
+  private String applySingleRevision(String docId, String id, boolean accept, String family) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      if (accept) {
+        doc.trackedChanges().accept(id);
+      } else {
+        doc.trackedChanges().reject(id);
+      }
+      return "已" + (accept ? "应用" : "撤销") + " " + family + " 修订 " + id;
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /** 单条单元格类 accept/reject 的共享实现。 */
+  private String applyCellRevision(String docId, String id, boolean accept) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      if (accept) {
+        doc.trackedChanges().acceptCell(id);
+      } else {
+        doc.trackedChanges().rejectCell(id);
+      }
+      return "已" + (accept ? "应用" : "撤销") + "单元格类修订 " + id;
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
     }
   }
 
