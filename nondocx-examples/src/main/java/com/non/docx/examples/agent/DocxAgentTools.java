@@ -5,6 +5,7 @@ import com.non.chain.tool.ToolParam;
 import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
 import com.non.docx.core.api.InlineElement;
+import com.non.docx.core.api.table.Cell;
 import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
@@ -1136,6 +1137,252 @@ public final class DocxAgentTools {
     } catch (RuntimeException e) {
       return "错误:" + rootMessage(e);
     }
+  }
+
+  // ==================== I. 修订创作(tracked changes authoring) ====================
+  //
+  // 与 H 组(读 + accept/reject)正交。四类创作能力(见 poi-bridge.md N17):
+  //   带格式插入、rPrChange、cellIns/cellDel、move。
+  // 全部沿用「显式 tracked 方法」:author 必传,date/w:id 自动分配,与 <w:trackChanges/> 开关正交。
+  // 创作出的修订随后可被 H 组工具(list/accept/reject)读回与处理。
+
+  /** 在指定段落末尾插入一条 tracked 插入修订(带可选内联样式)。 */
+  @ToolDef(
+      name = "insert_tracked_run",
+      description =
+          "在段落末尾插入一条被追踪的插入修订(<w:ins>)。可选带内联样式(bold/italic/underline/font/size/color)。"
+              + "author 必填。创作出的修订可被 list_tracked_changes 读回、accept_text_or_move_revision 处理。")
+  public String insertTrackedRun(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "paragraph_index", description = "目标段落索引(0 起,正文段落)") int paragraphIndex,
+      @ToolParam(name = "author", description = "修订作者") String author,
+      @ToolParam(name = "text", description = "插入的文本") String text,
+      @ToolParam(name = "bold", description = "是否粗体(可选,默认 false)", required = false) boolean bold,
+      @ToolParam(name = "italic", description = "是否斜体(可选,默认 false)", required = false)
+          boolean italic,
+      @ToolParam(name = "color", description = "颜色十六进制如 FF0000(可选)", required = false)
+          String color) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    List<Paragraph> paragraphs = doc.paragraphs();
+    if (outOfBounds(paragraphIndex, paragraphs.size())) {
+      return indexError("段落索引", paragraphIndex, paragraphs.size());
+    }
+    try {
+      Run r = paragraphs.get(paragraphIndex).addInsertion(author, text);
+      if (bold) {
+        r.bold();
+      }
+      if (italic) {
+        r.italic();
+      }
+      if (color != null && !color.isBlank()) {
+        r.color(color);
+      }
+      return "已在段落 " + paragraphIndex + " 插入 tracked run(文本=\"" + text + "\")";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
+   * 把一个 run 的内联样式变更记为 tracked rPrChange(属性修订)。
+   *
+   * <p>Agent 友好包装:一步到位。内部先快照改前样式、再应用目标样式、再 commitStyleAsTracked(底层两步式, 见 poi-bridge.md
+   * N17)。未提供的样式参数(false/null)表示该属性「不显式设置」。
+   */
+  @ToolDef(
+      name = "mark_style_change_tracked",
+      description =
+          "把一个 run 的样式变更记为被追踪的属性修订(rPrChange)。"
+              + "内部:快照改前样式→应用目标样式→commitStyleAsTracked。reject 会回到旧样式。仅改你显式提供的样式参数。")
+  public String markStyleChangeTracked(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "paragraph_index", description = "段落索引(0 起)") int paragraphIndex,
+      @ToolParam(name = "run_index", description = "run 索引(0 起)") int runIndex,
+      @ToolParam(name = "author", description = "修订作者") String author,
+      @ToolParam(name = "bold", description = "目标是否粗体(可选)", required = false) boolean bold,
+      @ToolParam(name = "italic", description = "目标是否斜体(可选)", required = false) boolean italic,
+      @ToolParam(name = "color", description = "目标颜色十六进制(可选)", required = false) String color) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    List<Paragraph> paragraphs = doc.paragraphs();
+    if (outOfBounds(paragraphIndex, paragraphs.size())) {
+      return indexError("段落索引", paragraphIndex, paragraphs.size());
+    }
+    var runs = paragraphs.get(paragraphIndex).runs();
+    if (outOfBounds(runIndex, runs.size())) {
+      return indexError("run 索引", runIndex, runs.size());
+    }
+    try {
+      Run r = runs.get(runIndex);
+      com.non.docx.core.api.style.RunStyle before = r.style(); // 快照改前样式
+      if (bold) {
+        r.bold();
+      }
+      if (italic) {
+        r.italic();
+      }
+      if (color != null && !color.isBlank()) {
+        r.color(color);
+      }
+      r.commitStyleAsTracked(author, before);
+      return "已把段落 " + paragraphIndex + " run " + runIndex + " 的样式变更记为 rPrChange";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /** 把一个表格单元格标记为被插入(tracked cellIns)。 */
+  @ToolDef(
+      name = "mark_cell_inserted",
+      description =
+          "把表格单元格标记为被插入(tracked cellIns:这个单元格本身是被新增的)。" + "作用于整个单元格:accept=保留、reject=移除。author 必填。")
+  public String markCellInserted(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex,
+      @ToolParam(name = "row_index", description = "行索引(0 起)") int rowIndex,
+      @ToolParam(name = "cell_index", description = "单元格索引(0 起)") int cellIndex,
+      @ToolParam(name = "author", description = "修订作者") String author) {
+    Cell cell = resolveCell(docId, tableIndex, rowIndex, cellIndex);
+    if (cell == null) {
+      return cellResolveError(docId, tableIndex, rowIndex, cellIndex);
+    }
+    try {
+      cell.markInserted(author);
+      return "已把单元格 table["
+          + tableIndex
+          + "].row["
+          + rowIndex
+          + "].cell["
+          + cellIndex
+          + "] 标记为 cellIns";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /** 把一个表格单元格标记为被删除(tracked cellDel)。 */
+  @ToolDef(
+      name = "mark_cell_deleted",
+      description =
+          "把表格单元格标记为被删除(tracked cellDel:这个单元格本身是被删除的)。" + "作用于整个单元格:accept=移除、reject=保留。author 必填。")
+  public String markCellDeleted(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex,
+      @ToolParam(name = "row_index", description = "行索引(0 起)") int rowIndex,
+      @ToolParam(name = "cell_index", description = "单元格索引(0 起)") int cellIndex,
+      @ToolParam(name = "author", description = "修订作者") String author) {
+    Cell cell = resolveCell(docId, tableIndex, rowIndex, cellIndex);
+    if (cell == null) {
+      return cellResolveError(docId, tableIndex, rowIndex, cellIndex);
+    }
+    try {
+      cell.markDeleted(author);
+      return "已把单元格 table["
+          + tableIndex
+          + "].row["
+          + rowIndex
+          + "].cell["
+          + cellIndex
+          + "] 标记为 cellDel";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
+   * 把源段的一个 run 移动到目标段(tracked move 修订,产出配对的 moveFrom/moveTo)。
+   *
+   * <p>接受方是目标段(与 addInsertion 同类型)。移动后可被 list_tracked_changes 读回为 MOVE_FROM + MOVE_TO。
+   */
+  @ToolDef(
+      name = "move_run_tracked",
+      description =
+          "把源段(source_paragraph_index)的第 run_index 个 run 移动到目标段(target_paragraph_index),"
+              + "产出配对的 tracked move 修订(moveFrom + moveTo)。author 必填。"
+              + "可被 list 读回为 MOVE_FROM/MOVE_TO、accept/reject 联动处理。")
+  public String moveRunTracked(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "source_paragraph_index", description = "源段索引(0 起)")
+          int sourceParagraphIndex,
+      @ToolParam(name = "run_index", description = "源段中要移动的 run 索引(0 起)") int runIndex,
+      @ToolParam(name = "target_paragraph_index", description = "目标段索引(0 起)")
+          int targetParagraphIndex,
+      @ToolParam(name = "author", description = "修订作者") String author) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    List<Paragraph> paragraphs = doc.paragraphs();
+    if (outOfBounds(sourceParagraphIndex, paragraphs.size())) {
+      return indexError("源段索引", sourceParagraphIndex, paragraphs.size());
+    }
+    if (outOfBounds(targetParagraphIndex, paragraphs.size())) {
+      return indexError("目标段索引", targetParagraphIndex, paragraphs.size());
+    }
+    var sourceRuns = paragraphs.get(sourceParagraphIndex).runs();
+    if (outOfBounds(runIndex, sourceRuns.size())) {
+      return indexError("run 索引", runIndex, sourceRuns.size());
+    }
+    try {
+      Run moving = sourceRuns.get(runIndex);
+      paragraphs
+          .get(targetParagraphIndex)
+          .moveRunsFrom(author, paragraphs.get(sourceParagraphIndex), List.of(moving));
+      return "已把段 "
+          + sourceParagraphIndex
+          + " run "
+          + runIndex
+          + " 移到段 "
+          + targetParagraphIndex
+          + "(moveFrom + moveTo 配对)";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /** 解析表格单元格;越界返回 null(供 mark_cell_* 用)。 */
+  private Cell resolveCell(String docId, int tableIndex, int rowIndex, int cellIndex) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return null;
+    }
+    var tables = doc.tables();
+    if (outOfBounds(tableIndex, tables.size())) {
+      return null;
+    }
+    var rows = tables.get(tableIndex).rows();
+    if (outOfBounds(rowIndex, rows.size())) {
+      return null;
+    }
+    var cells = rows.get(rowIndex).cells();
+    if (outOfBounds(cellIndex, cells.size())) {
+      return null;
+    }
+    return cells.get(cellIndex);
+  }
+
+  /** resolveCell 失败时的中文错误串。 */
+  private String cellResolveError(String docId, int tableIndex, int rowIndex, int cellIndex) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    var tables = doc.tables();
+    if (outOfBounds(tableIndex, tables.size())) {
+      return indexError("表格索引", tableIndex, tables.size());
+    }
+    var rows = tables.get(tableIndex).rows();
+    if (outOfBounds(rowIndex, rows.size())) {
+      return indexError("行索引", rowIndex, rows.size());
+    }
+    var cells = rows.get(rowIndex).cells();
+    return indexError("单元格索引", cellIndex, cells.size());
   }
 
   // ==================== 内部辅助 ====================

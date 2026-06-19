@@ -91,6 +91,55 @@ class DocxAgentToolsTrackedChangesTest {
     assertThat(tools.acceptCellChange("doc-999", "x")).contains("不存在");
   }
 
+  // ---------- I 组:创作工具冒烟 ----------
+
+  @Test
+  void shouldInsertTrackedRunWithStyle(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("ins.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("段首");
+      doc.save(file);
+    }
+    DocxAgentTools tools = new DocxAgentTools();
+    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    String result = tools.insertTrackedRun(docId, 0, "甲", "插入文字", true, false, "FF0000");
+    assertThat(result).contains("已").contains("插入文字");
+    // 读回应有一条 INS
+    assertThat(tools.listTrackedChanges(docId)).contains("INS");
+  }
+
+  @Test
+  void shouldMarkAndAcceptCellInserted(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("cell.docx");
+    try (Document doc = Docx.create()) {
+      doc.addTable().addRow().addCell().addParagraph().addRun("内容");
+      doc.save(file);
+    }
+    DocxAgentTools tools = new DocxAgentTools();
+    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    String result = tools.markCellInserted(docId, 0, 0, 0, "甲");
+    assertThat(result).contains("cellIns");
+    // 读回应有一条 CELL_INS
+    assertThat(tools.listTrackedChanges(docId)).contains("CELL_INS");
+  }
+
+  @Test
+  void shouldMoveRunTracked(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("move.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addRun("被移走的文字");
+      doc.addParagraph("目标段");
+      doc.save(file);
+    }
+    DocxAgentTools tools = new DocxAgentTools();
+    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    String result = tools.moveRunTracked(docId, 0, 0, 1, "甲");
+    assertThat(result).contains("moveFrom");
+    // 读回应有配对的 MOVE_FROM + MOVE_TO
+    String list = tools.listTrackedChanges(docId);
+    assertThat(list).contains("MOVE_FROM").contains("MOVE_TO");
+  }
+
   @Test
   void shouldRejectWrongFamily(@TempDir Path tmp) throws Exception {
     // 文本类 ins 用 accept_property_change 应返回错误串(family 不符)

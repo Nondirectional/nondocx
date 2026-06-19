@@ -410,6 +410,51 @@ cell 子任务补齐表格单元格结构修订:`cellIns`/`cellDel`(完整 read 
 
 **范围**: 覆盖 cellIns/cellDel(读 + accept/reject)与 cellMerge(只读)。**不**含:pPrChange/sectPrChange/tblPrChange/trPrChange(CT 类型全缺)、cellMerge 的 accept/reject、cell 类的显式创作。回归:`TrackedCellTypesTest` 12 用例(cellIns/cellDel/cellMerge 读回 + accept/reject × cellIns/cellDel + cellMerge accept/reject 抛异常 + 类型边界 + acceptAll 不误伤 + raw 抛 + 与单元格内文本类共存);全量 179 tests green、spotless clean。
 
+### N17 — Tracked changes 高级类型**创作侧**:rPrChange 的 CTRPrOriginal 架构防递归;move 靠 rangeStart 的 w:name 配对;nextRevisionId 必须用 wId() 不能用 raw()
+
+advanced-types/cell 补齐了高级修订类型的**读 + accept/reject** 后,本条补齐**创作侧**:四类(带格式插入、rPrChange、cellIns/cellDel、move)的显式创作 API。研究依据见 `tasks/.../authoring-advanced/research/authoring-forms.md`(一次性探针确认结构与闭环,删除探针)。
+
+**带格式插入(零改动)**:`Paragraph.addInsertion(author, text)` 已返回 `Run`,链式 `newRun.bold().color(...)` 设样式即可。`<w:ins>` 是包装元素,内 run 的 `<w:rPr>` 独立——样式后置无 OOXML 语义问题。
+
+**rPrChange 创作 —— CTRPrOriginal 架构层防递归(重要发现)**:`Run.commitStyleAsTracked(author, RunStyle previousStyle)` 两步式(先链式改样式、再传「改前快照」提交)。结构:
+```xml
+<w:rPr>                                    <!-- 新值(当前 rPr) -->
+  <w:b/>
+  <w:rPrChange w:id="1" w:author="甲">
+    <w:rPr><w:vanish/></w:rPr>             <!-- 旧值树(previousStyle 渲染) -->
+  </w:rPrChange>
+</w:rPr>
+```
+- `CTRPr.addNewRPrChange()` 建容器;`change.addNewRPr()` 返回 **`CTRPrOriginal`**(不是 `CTRPr`)。
+- **`CTRPrOriginal` 的 schema 天然不含 `rPrChange` 子元素**——旧值树不可能递归嵌套 rPrChange,**无需手动剔除防递归**。这是 design 期最大的不确定性的明确答案:架构已经防住。
+- 旧值树由 `RunStyle`(六样式:b/i/u/rFonts/sz/color)渲染进 `CTRPrOriginal`。注意 size 是磅值,OOXML `sz` 是半磅(`value * 2`);underline 用 `STUnderline.SINGLE`。
+
+**cellIns/cellDel 创作(最简)**:`Cell.markInserted(author)` / `Cell.markDeleted(author)`。结构是 N16 读侧的反向:`CTTcPr.addNewCellIns()`/`addNewCellDel()` 建裸属性节点(设 id/author/date),随后必然能被既有 read/accept-reject 处理(同结构)。cellMerge 不提供创作方法(CT 类型缺失,诚实排除)。
+
+**move 创作 —— 靠 rangeStart 的 w:name 配对,不是靠 moveFrom/moveTo 的 id**:`Paragraph.moveRunsFrom(author, sourceParagraph, runs)`(接受方是目标段,与 `addInsertion` 同类型)。结构(四件配对):
+```xml
+<!-- 源段 -->
+<w:moveFromRangeStart w:id="10" w:name="_move_5"/>
+<w:moveFrom w:id="2" w:author="甲"><w:r><w:delText>...</w:delText></w:r></w:moveFrom>
+<w:moveFromRangeEnd w:id="3"/>
+<!-- 目标段 -->
+<w:moveToRangeStart w:id="20" w:name="_move_5"/>      <!-- name 与源端相同 -->
+<w:moveTo w:id="5" w:author="甲"><w:r><w:t>...</w:t></w:r></w:moveTo>
+<w:moveToRangeEnd w:id="21"/>
+```
+- **`w:name` 只在 rangeStart 上,两端必须相同**——配对靠 name,不靠 moveFrom/moveTo 的 id。实现用 `_move_<baseId>`(baseId 来自 nextRevisionId,文档内唯一)防冲突。
+- 源端文本用 `delText`、目标端用 `t`(同 del/ins 规则,N12)。
+- 一次 move 需 6 个独立 `w:id`(rangeStart/End ×2 + moveFrom/moveTo)。
+- **moveXml 后源 CTR 句柄 XmlValueDisconnected**——目标端 run 的文本必须在 moveXml **之前**预捕获,不能移动后再读源 run 的 delText。
+
+**nextRevisionId 必须用 wId(),不能用 raw()(重要修复)**:创作需分配 `w:id` 时扫已有最大 id。原实现 `c.raw().getId()` 对属性/单元格类会抛 `UnsupportedFeatureException`(raw 仅文本/移动类)。新增 `TrackedChange.wId()`(public)在两个委托槽(`runDelegate`/`propertyDelegate`)取非空那个读 `CTMarkup.getId()`——所有 family 都继承 `CTMarkup`,共享 `getId()`。`nextRevisionId` 改用 `c.wId()`。**这是 N15 落地时被掩盖的 bug,高级类型创作首次暴露**。
+
+**accept/reject 后的 POI 缓存失效(测试/使用须知)**:accept/reject 重构树后,POI 的内存 `XWPFParagraph`/`XWPFRun` 包装器会 `XmlValueDisconnected`。验证 accept 后的结构,必须 save→reopen 重新读,不能信任 accept 前的内存 wrapper。
+
+**与 Rule 1 的关系(无偏离)**:四类创作方法的公共表面 POI-free(住在 `Paragraph`/`Run`/`Cell`);CT 脏活在 `internal/poi/TrackedChangeNodes`。author 必传,date/w:id 自动分配。与 `<w:trackChanges/>` 开关正交。
+
+**范围**: 覆盖四类创作(带格式插入/rPrChange/cellIns/cellDel/move)。**不**含:cellMerge 创作、pPrChange 等创作(CT 类型缺)、全局修订录制(显式 tracked 路线排除)。回归:`TrackedAuthoringAdvancedTest` 10 用例(带格式插入 round-trip + rPrChange 创作双向 + cellIns/cellDel 创作 accept/reject + move 配对读回 + move accept 联动 + 边界);全量 189 tests green、spotless clean。
+
 ---
 
 ## Out-of-Scope feature policy

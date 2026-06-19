@@ -329,6 +329,239 @@ public final class TrackedChangeNodes {
   }
 
   /**
+   * 把一个单元格标记为 tracked cellIns(单元格被插入)。
+   *
+   * <p>OOXML:在 {@code <w:tcPr>} 内写 {@code <w:cellIns w:id=.. w:author=.. w:date=../>}(裸属性,无
+   * run)。节点类型 {@code CTTrackChange}({@code CTTcPr.addNewCellIns()}),与 cell 读侧(N16)同委托。
+   *
+   * <p>{@code w:id} 经 {@link #nextRevisionId} 自动分配。创作出的修订随后能被 {@code collect} 读回、被 {@code
+   * acceptCell}/{@code rejectCell} 处理(作用于整个 {@code <w:tc>})。
+   *
+   * @param tc 单元格的底层 {@code CTTc}(不能为 {@code null})
+   * @param author 修订作者(不能为 {@code null})
+   * @param date 修订时间(不能为 {@code null})
+   */
+  public static void markCellIns(
+      XWPFDocument document,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc tc,
+      String author,
+      java.util.Calendar date) {
+    java.util.Objects.requireNonNull(document, "document");
+    java.util.Objects.requireNonNull(tc, "tc");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(date, "date");
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTcPr tcPr =
+        tc.isSetTcPr() ? tc.getTcPr() : tc.addNewTcPr();
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange cellIns =
+        tcPr.addNewCellIns();
+    cellIns.setId(nextRevisionId(document));
+    cellIns.setAuthor(author);
+    cellIns.setDate(date);
+  }
+
+  /**
+   * 把一个单元格标记为 tracked cellDel(单元格被删除)。
+   *
+   * <p>语义:标记此单元格本身是被删除的。accept 时移除整个 {@code <w:tc>},reject 时保留。其余同 {@link #markCellIns}。
+   *
+   * @param document 所属文档(用于分配 {@code w:id})
+   * @param tc 单元格的底层 {@code CTTc}(不能为 {@code null})
+   * @param author 修订作者(不能为 {@code null})
+   * @param date 修订时间(不能为 {@code null})
+   */
+  public static void markCellDel(
+      XWPFDocument document,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc tc,
+      String author,
+      java.util.Calendar date) {
+    java.util.Objects.requireNonNull(document, "document");
+    java.util.Objects.requireNonNull(tc, "tc");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(date, "date");
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTcPr tcPr =
+        tc.isSetTcPr() ? tc.getTcPr() : tc.addNewTcPr();
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange cellDel =
+        tcPr.addNewCellDel();
+    cellDel.setId(nextRevisionId(document));
+    cellDel.setAuthor(author);
+    cellDel.setDate(date);
+  }
+
+  /**
+   * 把一个 run 的内联样式变更记为 tracked rPrChange。
+   *
+   * <p>OOXML:在 run 的 {@code <w:rPr>} 内写 {@code <w:rPrChange w:id=.. w:author=.. w:date=..>},其内嵌一个
+   * {@code <w:rPr>} 存<b>旧值树</b>(pristine)。 当前 rPr 即「新值」(调用方已改完样式)。
+   *
+   * <p>探针验证(research/authoring-forms.md §1.2):{@code rPrChange.getRPr()} 返回 {@code CTRPrOriginal},其
+   * schema 天然不含 {@code rPrChange} 子元素——架构层防递归,无需手动剔除。
+   *
+   * @param document 所属文档(用于分配 {@code w:id})
+   * @param run 目标 run 的底层 {@code CTR}(不能为 {@code null})
+   * @param previousStyle 修改<b>前</b>的样式快照(由调用方在改样式前 {@code run.style()} 取得);写进 rPrChange 作为旧值树
+   * @param author 修订作者(不能为 {@code null})
+   * @param date 修订时间(不能为 {@code null})
+   */
+  public static void commitRPrChange(
+      XWPFDocument document,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR run,
+      com.non.docx.core.api.style.RunStyle previousStyle,
+      String author,
+      java.util.Calendar date) {
+    java.util.Objects.requireNonNull(document, "document");
+    java.util.Objects.requireNonNull(run, "run");
+    java.util.Objects.requireNonNull(previousStyle, "previousStyle");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(date, "date");
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr rPr =
+        run.isSetRPr() ? run.getRPr() : run.addNewRPr();
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPrChange change =
+        rPr.addNewRPrChange();
+    change.setId(nextRevisionId(document));
+    change.setAuthor(author);
+    change.setDate(date);
+    // 旧值树:把 previousStyle 渲染进 CTRPrOriginal(架构层不含 rPrChange,天然防递归)
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPrOriginal oldRPr =
+        change.addNewRPr();
+    if (previousStyle.isBold()) {
+      oldRPr.addNewB();
+    }
+    if (previousStyle.isItalic()) {
+      oldRPr.addNewI();
+    }
+    if (previousStyle.isUnderline()) {
+      oldRPr
+          .addNewU()
+          .setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STUnderline.SINGLE);
+    }
+    if (previousStyle.font() != null) {
+      oldRPr.addNewRFonts().setAscii(previousStyle.font());
+    }
+    if (previousStyle.size() != null) {
+      // POI 的 size 是磅值,OOXML sz 是半磅(half-points)
+      oldRPr.addNewSz().setVal(java.math.BigInteger.valueOf(previousStyle.size().longValue() * 2));
+    }
+    if (previousStyle.color() != null) {
+      oldRPr.addNewColor().setVal(previousStyle.color());
+    }
+  }
+
+  /**
+   * 把一组 run 从源段移动到目标段,产出配对的 tracked move 修订(moveFrom + moveTo,各自带 rangeStart/End)。
+   *
+   * <p><b>OOXML 结构</b>(探针验证见 research/authoring-forms.md §2):move 靠 {@code rangeStart} 的 {@code
+   * w:name} 配对(两端同名),不是靠 moveFrom/moveTo 的 id。源端 run 的文本用 {@code delText},目标端用 {@code t}(同 del/ins
+   * 规则)。
+   *
+   * <pre>{@code
+   * 源段:  <moveFromRangeStart name="N"/> <moveFrom><r><delText>...</delText></r></moveFrom> <moveFromRangeEnd/>
+   * 目标段:<moveToRangeStart name="N"/>   <moveTo><r><t>...</t></r></moveTo>             <moveToRangeEnd/>
+   * }</pre>
+   *
+   * <p>本方法把<b>整组 runs 包在一个 moveFrom/moveTo</b> 内(一个范围,而非每个 run 一对),贴近 Word「一次移动一段连续内容」的语义。源端 runs
+   * 被迁入 moveFrom(文本转 delText);目标端新建 moveTo(文本为 t)。配对 name 用 {@code _move_<baseId>} 保证文档内唯一。
+   *
+   * <p>需分配 6 个 {@code w:id}(rangeStart/End ×2 + moveFrom/moveTo),全走 {@link #nextRevisionId} 递增。
+   *
+   * @param document 所属文档(分配 {@code w:id})
+   * @param source 源段落的 {@code CTP}(不能为 {@code null})
+   * @param target 目标段落的 {@code CTP}(不能为 {@code null})
+   * @param runs 要移动的源 runs(不能为 {@code null} 或空;每个 run 的文本会被转 delText)
+   * @param author 修订作者(不能为 {@code null})
+   * @param date 修订时间(不能为 {@code null})
+   * @return 新插入到目标段的 run 列表(在 {@code moveTo} 内,按原文本顺序)
+   */
+  public static List<org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR> moveRuns(
+      XWPFDocument document,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP source,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP target,
+      List<org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR> runs,
+      String author,
+      java.util.Calendar date) {
+    java.util.Objects.requireNonNull(document, "document");
+    java.util.Objects.requireNonNull(source, "source");
+    java.util.Objects.requireNonNull(target, "target");
+    java.util.Objects.requireNonNull(runs, "runs");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(date, "date");
+    if (runs.isEmpty()) {
+      throw new IllegalArgumentException("runs 不能为空");
+    }
+    java.math.BigInteger baseId = nextRevisionId(document);
+    String moveName = "_move_" + baseId;
+
+    // 先预捕获每个源 run 的文本(按 run 分组),再开始移动——
+    // moveXml 后源 CTR 句柄会 XmlValueDisconnected,不能在移动后再读它的 delText。
+    List<List<String>> textsPerRun = new java.util.ArrayList<>();
+    for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR run : runs) {
+      List<String> texts = new java.util.ArrayList<>();
+      for (int i = 0; i < run.sizeOfTArray(); i++) {
+        texts.add(run.getTArray(i).getStringValue());
+      }
+      textsPerRun.add(texts);
+    }
+
+    // ---- 源段:moveFromRangeStart + moveFrom(迁入 runs,文本转 delText) + moveFromRangeEnd ----
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTMoveBookmark fromStart =
+        source.addNewMoveFromRangeStart();
+    fromStart.setId(baseId);
+    fromStart.setName(moveName);
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange moveFrom =
+        source.addNewMoveFrom();
+    moveFrom.setId(baseId.add(java.math.BigInteger.ONE));
+    moveFrom.setAuthor(author);
+    moveFrom.setDate(date);
+    // 把每个源 run 的 t 转成 delText,再迁入 moveFrom 内部末尾
+    XmlCursor fromCur = moveFrom.newCursor();
+    try {
+      fromCur.toEndToken();
+      for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR run : runs) {
+        for (int i = run.sizeOfTArray() - 1; i >= 0; i--) {
+          String s = run.getTArray(i).getStringValue();
+          run.removeT(i);
+          run.addNewDelText().setStringValue(s == null ? "" : s);
+        }
+        XmlCursor runCur = run.newCursor();
+        try {
+          runCur.moveXml(fromCur);
+        } finally {
+          runCur.dispose();
+        }
+      }
+    } finally {
+      fromCur.dispose();
+    }
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTMarkupRange fromEnd =
+        source.addNewMoveFromRangeEnd();
+    fromEnd.setId(baseId.add(java.math.BigInteger.valueOf(2)));
+
+    // ---- 目标段:moveToRangeStart + moveTo(新建 runs,文本为 t) + moveToRangeEnd ----
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTMoveBookmark toStart =
+        target.addNewMoveToRangeStart();
+    toStart.setId(baseId.add(java.math.BigInteger.valueOf(3)));
+    toStart.setName(moveName);
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange moveTo =
+        target.addNewMoveTo();
+    moveTo.setId(baseId.add(java.math.BigInteger.valueOf(4)));
+    moveTo.setAuthor(author);
+    moveTo.setDate(date);
+    // 目标端新建 run,文本用预捕获的原文(源 run 已 moveXml 断连,不能读)
+    List<org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR> moved =
+        new java.util.ArrayList<>();
+    for (List<String> texts : textsPerRun) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR newRun = moveTo.addNewR();
+      for (String t : texts) {
+        newRun.addNewT().setStringValue(t == null ? "" : t);
+      }
+      moved.add(newRun);
+    }
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTMarkupRange toEnd =
+        target.addNewMoveToRangeEnd();
+    toEnd.setId(baseId.add(java.math.BigInteger.valueOf(5)));
+    return moved;
+  }
+
+  /**
    * 计算文档下一个可用的修订 {@code w:id}(扫描已有 {@code ins}/{@code del} 等的 {@code w:id},取最大值 +1;无任何修订时返回 0)。
    *
    * <p>这是底层 OOXML 修订 id,与 read 子任务对外的 nondocx 稳定 id <b>不是</b>同一概念(见 design §5.3)。
@@ -340,7 +573,8 @@ public final class TrackedChangeNodes {
     java.util.Objects.requireNonNull(document, "document");
     long max = -1;
     for (TrackedChange c : collect(document)) {
-      java.math.BigInteger id = c.raw().getId();
+      // 用 wId() 而非 raw().getId()——raw() 对属性/单元格类会抛 UnsupportedFeatureException。
+      java.math.BigInteger id = c.wId();
       if (id != null) {
         long v = id.longValue();
         if (v > max) {

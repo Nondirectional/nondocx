@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "N12-N16 已落地的 tracked changes 全架构(开关/枚举/walker/accept-reject/双委托/property 方案 C/cell)。本子任务复用 nextRevisionId、TrackedChange 模型、read walker、accept/reject;实现后新增 N17 记录四类创作的 CT 达成性 + rPrChange 旧值树 + move 四件配对。"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "新创作方法的异常(author 空 / run 不属源段 / cellMerge 不支持)消息模板,遵循 Rule 1(POI 异常不泄漏)与 Rule 2(携带文档上下文)。"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "创作 API 的 POI-free 公共表面、不可变值对象(RunStyle)、活对象语义、三层教学注释,需遵守的质量契约。"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-authoring/design.md", "reason": "前序文本类 authoring 的设计基线:方法落点(authoring 住在内容所属类型)、返回值语义(insertion 返回新 Run、deletion 返回容器)、自动 date/w:id 模式。本子任务的四类创作直接延续其 API 风格与约定。"}
+{"file": ".trellis/tasks/06-19-06-18-tracked-changes-cell-types/research/cell-forms.md", "reason": "cellIns/cellDel 的真实 OOXML 形态(<w:tcPr><w:cellIns .../>)与 CTTcPr typed 可达性。本子任务的 cell 创作是 N16 读侧的反向:addNewCellIns()/addNewCellDel() 建出的节点必须能被既有 read/accept-reject 正确处理(闭环验证)。"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-advanced-types/research/ooxml-forms.md", "reason": "move 的真实 OOXML 配对结构(moveFrom/moveTo + rangeStart/End + name 配对、delText/t 规则)与 rPrChange 形态。本子任务的 move/rPrChange 创作直接依据此研究,且必须探针验证创作出的节点能被既有 read 配对读回。"}

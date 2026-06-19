@@ -244,6 +244,28 @@ public final class TrackedChange {
   }
 
   /**
+   * 返回底层 OOXML 修订标记的 {@code w:id}。
+   *
+   * <p>所有 family(文本/移动的 {@code CTRunTrackChange}、属性/单元格的 {@code CTTrackChange})都继承自 {@code
+   * CTMarkup},共享 {@code getId()}。本方法在两个委托槽中取非空的那个读 id,供 {@code
+   * internal/poi/TrackedChangeNodes.nextRevisionId} 扫描最大 {@code w:id} 时使用——它不能走 {@link #raw()} (raw
+   * 对属性/单元格类会抛 {@code UnsupportedFeatureException})。
+   *
+   * <p>注意:这是底层 OOXML id,与 {@link #id()}(nondocx 对外稳定 id)<b>不是</b>同一概念。
+   *
+   * @return 底层 {@code w:id};节点未设 id 时返回 {@code null}
+   */
+  public java.math.BigInteger wId() {
+    if (runDelegate != null) {
+      return runDelegate.getId();
+    }
+    if (propertyDelegate != null) {
+      return propertyDelegate.getId();
+    }
+    return null;
+  }
+
+  /**
    * 返回属性类 / 单元格类修订的底层 {@code CTTrackChange} 节点(包内接缝)。
    *
    * <p>对属性类({@link #family()} == {@link TrackedChangeFamily#PROPERTY PROPERTY},具体子类型 {@code

@@ -107,6 +107,57 @@ public final class Cell {
   }
 
   /**
+   * 把此单元格标记为<b>被插入</b>(tracked cellIns),即「这个单元格本身是被新增的」。
+   *
+   * <p><b>OOXML</b>:在单元格属性 {@code <w:tcPr>} 内写 {@code <w:cellIns w:id=.. w:author=..
+   * w:date=../>}。它是裸属性(无 run、无文本),标记单元格的<b>存亡</b>(表格结构修订),与单元格内文本的 ins/del 无关。
+   *
+   * <p><b>POI</b>:{@code CTTcPr.addNewCellIns()} 返回 {@code CTTrackChange}(与单元格修订读侧 N16 同委托)。nondocx
+   * 把节点创建下沉到 {@code internal/poi/TrackedChangeNodes}。
+   *
+   * <p><b>nondocx</b>:与 {@code Paragraph.addInsertion} 同属「显式 tracked 方法」——author 必传,date 与 {@code
+   * w:id} 自动分配。创作出的修订随后可被 {@code doc.trackedChanges().list()} 读回为 {@code CELL_INS},也能被 {@code
+   * acceptCell}/{@code rejectCell} 处理(作用于整个 {@code <w:tc>})。
+   *
+   * <p>与 {@code <w:trackChanges/>} 开关<b>正交</b>。
+   *
+   * @param author 修订作者(不能为 {@code null} 或空白)
+   * @return 此单元格(链式)
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白
+   */
+  public Cell markInserted(String author) {
+    requireAuthor(author);
+    com.non.docx.core.internal.poi.TrackedChangeNodes.markCellIns(
+        delegate.getXWPFDocument(), delegate.getCTTc(), author, java.util.Calendar.getInstance());
+    return this;
+  }
+
+  /**
+   * 把此单元格标记为<b>被删除</b>(tracked cellDel)。
+   *
+   * <p>语义:标记此单元格本身是被删除的(存亡修订)。accept 时移除整个 {@code <w:tc>},reject 时保留。其余同 {@link
+   * #markInserted(String)}。
+   *
+   * @param author 修订作者(不能为 {@code null} 或空白)
+   * @return 此单元格(链式)
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白
+   */
+  public Cell markDeleted(String author) {
+    requireAuthor(author);
+    com.non.docx.core.internal.poi.TrackedChangeNodes.markCellDel(
+        delegate.getXWPFDocument(), delegate.getCTTc(), author, java.util.Calendar.getInstance());
+    return this;
+  }
+
+  /** 校验 author 非空非空白(创作类方法共用)。 */
+  private static void requireAuthor(String author) {
+    Objects.requireNonNull(author, "author");
+    if (author.isBlank()) {
+      throw new IllegalArgumentException("author 不能为空白");
+    }
+  }
+
+  /**
    * 返回底层的 POI 单元格。
    *
    * <p>对返回对象的修改会立即影响文档。请谨慎使用。

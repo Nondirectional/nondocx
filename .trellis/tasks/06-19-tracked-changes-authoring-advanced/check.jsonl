@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "check 阶段核对:四类创作是否复用 nextRevisionId 与 TrackedChange 双委托、是否保持 holding-wrapper 语义、创作出的修订能否被既有 read/accept-reject 正确处理(闭环)、Review checklist 逐条(POI-free 公共表面/Holds single final delegate/无缓存读字段)。"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "check 阶段核对:author 空 / run 不属源段 / cellMerge 的异常是否抛 IllegalArgumentException 或 UnsupportedFeatureException(不静默降级)、POI/XmlBeans 异常在公共 API 被包成 Docx*Exception(raw 路径除外)。"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "check 阶段核对:RunStyle 不可变值对象、round-trip 相等性、活对象语义无字段快照、中文 Javadoc 与三层(OOXML/POI/nondocx)教学注释齐备。"}
+{"file": ".trellis/tasks/archive/2026-06/06-18-tracked-changes-advanced-types/research/ooxml-forms.md", "reason": "check 阶段对照:move 创作出的节点是否符合 research 的配对结构(name 配对、delText/t 规则)、rPrChange 的旧值树是否符合 accept 时整树替换的语义。"}

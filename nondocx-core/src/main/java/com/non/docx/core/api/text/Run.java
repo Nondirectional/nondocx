@@ -271,6 +271,53 @@ public final class Run implements InlineElement {
   }
 
   /**
+   * 把此 run 的内联样式变更记为 tracked rPrChange(属性修订)。
+   *
+   * <p><b>两步式用法</b>:
+   *
+   * <pre>{@code
+   * RunStyle before = run.style();   // 1. 先快照改前的样式
+   * run.bold().italic();             // 2. 链式改样式(此时 rPr 是新值)
+   * run.commitStyleAsTracked("甲", before);  // 3. 把「改前/改后」写成 rPrChange
+   * }</pre>
+   *
+   * <p><b>OOXML</b>:在 run 的 {@code <w:rPr>} 内写 {@code <w:rPrChange>},内嵌 {@code <w:rPr>}
+   * 存<b>旧值树</b>(= {@code previousStyle} 渲染)。当前 rPr 即新值。accept 时删标记(新值生效),reject 时用旧值树整树覆盖(回到修改前)。
+   *
+   * <p><b>POI</b>:{@code CTRPr.addNewRPrChange()} 建容器;旧值树渲染下沉到 {@code
+   * internal/poi/TrackedChangeNodes}。探针验证旧 rPr 类型是 {@code CTRPrOriginal},架构层防递归(不会嵌套 rPrChange)。
+   *
+   * <p><b>nondocx</b>:显式 tracked 方法,author 必传,date 与 {@code w:id} 自动分配。创作出的修订随后可被 {@code list()}
+   * 读回为 {@code RPR_CHANGE},被 {@code acceptProperty}/{@code rejectProperty} 处理。与 {@code
+   * <w:trackChanges/>} 开关正交。
+   *
+   * @param author 修订作者(不能为 {@code null} 或空白)
+   * @param previousStyle <b>修改前</b>的样式快照(在改样式前用 {@code run.style()} 取得;不能为 {@code
+   *     null})。若误传改后的快照,旧值树=新值,rPrChange 形同虚设
+   * @return 此 run(链式)
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白,或 {@code previousStyle} 为
+   *     {@code null}
+   */
+  public Run commitStyleAsTracked(String author, RunStyle previousStyle) {
+    Objects.requireNonNull(author, "author");
+    if (author.isBlank()) {
+      throw new IllegalArgumentException("author 不能为空白");
+    }
+    Objects.requireNonNull(previousStyle, "previousStyle");
+    org.apache.poi.xwpf.usermodel.XWPFParagraph parent = delegate.getParagraph();
+    if (parent == null) {
+      throw new java.util.NoSuchElementException("本 run 未挂在段落上,无法记录属性修订");
+    }
+    com.non.docx.core.internal.poi.TrackedChangeNodes.commitRPrChange(
+        parent.getDocument(),
+        delegate.getCTR(),
+        previousStyle,
+        author,
+        java.util.Calendar.getInstance());
+    return this;
+  }
+
+  /**
    * 返回底层的 POI 运行。
    *
    * <p>对返回对象的修改会立即影响文档。请谨慎使用。

@@ -36,10 +36,14 @@
 2. `06-18-tracked-changes-accept-text`
    - 文本类修订的 accept / reject：先聚焦 `w:ins` / `w:del` 与粒度（all / byAuthor / 单条）
 3. `06-18-tracked-changes-authoring`
-   - 创作侧显式 tracked API：插入 / 删除 / 替换
+   - 创作侧显式 tracked API：插入 / 删除 / 替换（**仅文本类**）
 4. `06-18-tracked-changes-advanced-types`
-   - 高级修订类型：move、属性变更、`cellIns` / `cellDel`
-5. `06-18-tracked-changes-docs-spec`
+   - 高级修订类型：move、属性变更、`cellIns` / `cellDel`（**仅读 + accept/reject**）
+5. `06-18-tracked-changes-cell-types`
+   - 单元格结构类 cellIns/cellDel 读 + accept/reject、cellMerge 只读（advanced-types 的拆分）
+6. `06-19-tracked-changes-authoring-advanced`
+   - **高级类型的创作侧**：带格式插入、rPrChange、cellIns/cellDel、move（补齐 authoring 从「文本类」到「四类」的扩展）
+7. `06-18-tracked-changes-docs-spec`
    - 文档、异常示例、spec 更新、最终收尾
 
 ## Requirements

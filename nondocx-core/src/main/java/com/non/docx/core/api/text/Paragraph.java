@@ -259,6 +259,60 @@ public final class Paragraph implements BodyElement {
     return this;
   }
 
+  /**
+   * 把一组 run 从<b>源段落</b>移动到<b>本段落</b>(作为 tracked move 修订),并返回新插入到本段落的 run 列表。
+   *
+   * <p>语义:这是「把源段的这些 run 剪切、粘贴到本段落」的修订版本——产出配对的 moveFrom(源端,文本转 delText)与 moveTo(本段/目标端,文本为 t),两者靠
+   * rangeStart 的 {@code w:name} 配对。该修订随后可被 {@code list()} 读回为 {@code MOVE_FROM} + {@code MOVE_TO}
+   * 两条,被 {@code accept}/{@code reject} 配对联动处理。
+   *
+   * <p>接受方是<b>本段落</b>(目标段),与 {@link #addInsertion(String, String)} 住在同一类型——「往本段落追加内容」的语义一致。
+   *
+   * <p><b>OOXML / POI / nondocx 三层。</b> move 不是单个 OOXML 元素,而是源端 moveFromRangeStart/End +
+   * moveFrom、目标端 moveToRangeStart/End + moveTo 的四件配对;POI 无高层 API,节点创建下沉到 {@code
+   * internal/poi/TrackedChangeNodes.moveRuns}(探针验证 name 配对与 delText/t
+   * 规则,research/authoring-forms.md §2)。与 {@code <w:trackChanges/>} 开关正交。
+   *
+   * @param author 修订作者(不能为 {@code null} 或空白)
+   * @param sourceParagraph 源段落(不能为 {@code null})
+   * @param runs 要移动的源 runs(不能为 {@code null} 或空;每个都必须属于 {@code sourceParagraph})
+   * @return 新插入到本段落(runTo 内)的 run 列表,按原文本顺序;可继续链式操作
+   * @throws IllegalArgumentException 如果 {@code author} 为空白,或 {@code runs} 为空,或有 run 不属于 {@code
+   *     sourceParagraph}
+   * @see com.non.docx.core.api.track.TrackedChanges
+   */
+  public List<Run> moveRunsFrom(String author, Paragraph sourceParagraph, List<Run> runs) {
+    requireAuthor(author);
+    Objects.requireNonNull(sourceParagraph, "sourceParagraph");
+    Objects.requireNonNull(runs, "runs");
+    if (runs.isEmpty()) {
+      throw new IllegalArgumentException("runs 不能为空");
+    }
+    // 校验所有 run 都属于 sourceParagraph
+    for (Run r : runs) {
+      if (!sourceParagraph.containsRun(r)) {
+        throw new IllegalArgumentException("存在不属于源段落的 run,无法移动");
+      }
+    }
+    XWPFDocument doc = delegate.getDocument();
+    java.util.Calendar now = java.util.Calendar.getInstance();
+    // 收集源 runs 的底层 CTR
+    List<org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR> srcCtrs =
+        new java.util.ArrayList<>();
+    for (Run r : runs) {
+      srcCtrs.add(r.raw().getCTR());
+    }
+    List<org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR> movedCtrs =
+        com.non.docx.core.internal.poi.TrackedChangeNodes.moveRuns(
+            doc, sourceParagraph.raw().getCTP(), delegate.getCTP(), srcCtrs, author, now);
+    // 把新建的 moveTo 内 run 包成活跃 Run
+    List<Run> moved = new java.util.ArrayList<>();
+    for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR ctr : movedCtrs) {
+      moved.add(new Run(new XWPFRun(ctr, delegate)));
+    }
+    return moved;
+  }
+
   /** 校验 author 参数:非 {@code null} 且非空白,否则抛 {@link IllegalArgumentException}。 */
   private static void requireAuthor(String author) {
     Objects.requireNonNull(author, "author");
