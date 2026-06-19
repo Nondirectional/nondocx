@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "backend 总体规则入口，约束 tracked changes 封装仍需遵守现有 API / POI bridge / 异常处理规范"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "tracked changes 设计必须遵守 holding-wrapper、raw()、POI 脏活下沉、读写边界等核心桥接约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "accept/reject 与高级类型处理中的异常需继续包装为 DocxException 体系"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "明确公共 API 与 internal/poi 的代码落点，避免 tracked changes 代码散落"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "约束公共 API 不泄漏 POI、测试与值对象设计保持一致"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "实现与评审过程中持续按 OOXML -> POI -> nondocx 三层递进解释"}

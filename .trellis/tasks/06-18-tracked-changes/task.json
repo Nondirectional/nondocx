@@ -1,0 +1,33 @@
+{
+  "id": "tracked-changes",
+  "name": "tracked-changes",
+  "title": "core 修订(tracked changes)封装",
+  "description": "将修订从 raw()-only 升级为一等公民:开关 + 枚举 + accept/reject(all/byAuthor/单条)的消费侧,以及显式 tracked 方法的创作侧。覆盖全修订类型(ins/del/move/属性变更/cellIns)。TrackedChange 为不可变值对象,accept/reject 纯自研 CT 手术。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "non",
+  "assignee": "non",
+  "createdAt": "2026-06-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-18-tracked-changes-read",
+    "06-18-tracked-changes-accept-text",
+    "06-18-tracked-changes-authoring",
+    "06-18-tracked-changes-advanced-types",
+    "06-18-tracked-changes-docs-spec",
+    "06-19-06-18-tracked-changes-cell-types"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
