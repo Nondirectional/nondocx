@@ -29,7 +29,8 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTText;
  * <p><b>职责。</b> 提供只读能力与文本类破坏性写能力:
  *
  * <ol>
- *   <li>{@link #isEnabled(XWPFDocument)} —— 读取 {@code settings.xml} 的 {@code <w:trackChanges/>} 开关。
+ *   <li>{@link #isEnabled(XWPFDocument)} / {@link #setEnabled(XWPFDocument, boolean)} —— 读写 {@code
+ *       settings.xml} 的 {@code <w:trackChanges/>} 开关。
  *   <li>{@link #collect(XWPFDocument)} —— 按文档顺序枚举正文里的修订节点,解析为 {@link TrackedChange} 领域视图。
  *   <li>{@link #acceptText(CTRunTrackChange)} / {@link #rejectText(CTRunTrackChange)} ——
  *       对文本类修订做破坏性应用或撤销。
@@ -91,6 +92,32 @@ public final class TrackedChangeNodes {
       // 读不到 settings(罕见,如 part 缺失或损坏)按「未开启」处理,保证只读语义永不抛异常。
       return false;
     }
+  }
+
+  /**
+   * 写入 {@code settings.xml} 的修订模式开关({@code <w:trackChanges/>})。
+   *
+   * <p><b>OOXML → POI 映射:</b>
+   *
+   * <ul>
+   *   <li><b>OOXML</b>:开关是 {@code word/settings.xml} 里一个<b>无属性空元素</b> {@code <w:trackChanges/>}。
+   *       元素存在即表示「修订模式 ON」,元素缺失即「OFF」。这与正文里散落的修订标记(<{@code w:ins}> / <{@code w:del}>
+   *       等)<b>完全独立</b>——开关只 影响后续在 Word 里手动改动是否被追踪,不影响已有修订的可见性或可接受性。
+   *   <li><b>POI</b>:{@code XWPFSettings.setTrackRevisions(boolean)} 是这个开关的标准入口。 其字节码语义(已校验):{@code
+   *       true} 时若未设置则 {@code addNewTrackRevisions()}(写入空元素),已设置则 no-op; {@code false} 时若已设置则
+   *       {@code unsetTrackRevisions()}(移除元素),未设置则 no-op。<b>故本方法天然幂等</b>——重复调相同值不会产生多余写。
+   *   <li><b>nondocx</b>:封装为 {@code TrackedChanges.enable()} / {@code disable()},与只读 {@link
+   *       #isEnabled} 对称,消除「有读无写」的不对称。
+   * </ul>
+   *
+   * <p><b>写副作用。</b> 本方法会修改 {@code settings.xml}:开启时新增 {@code <w:trackChanges/>} 元素,关闭时移除它。 与
+   * accept/reject 同属破坏性写。落盘前在内存生效,需 {@code Document.save()} 才持久化。
+   *
+   * @param document POI 文档(不能为 {@code null})
+   * @param enabled {@code true} 开启修订模式,{@code false} 关闭
+   */
+  public static void setEnabled(XWPFDocument document, boolean enabled) {
+    document.getSettings().setTrackRevisions(enabled);
   }
 
   /**

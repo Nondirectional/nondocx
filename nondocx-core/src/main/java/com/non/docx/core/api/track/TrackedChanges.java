@@ -19,6 +19,7 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
  *
  * <ul>
  *   <li>{@link #enabled()} —— 读取文档是否开启修订记录({@code settings.xml} 的 {@code <w:trackChanges/>})。
+ *   <li>{@link #enable()} / {@link #disable()} —— 写入修订模式开关({@code <w:trackChanges/>} 的增删)。
  *   <li>{@link #list()} —— 按文档顺序枚举全部修订(第一版稳定覆盖文本类,高级类型由 {@code advanced-types} 子任务补齐)。
  *   <li>{@link #get(String)} —— 按 {@link TrackedChange#id() 稳定 id} 获取单条修订(进程内稳定)。
  * </ul>
@@ -37,8 +38,12 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
  *       TrackedChange} 等干净类型。
  * </ul>
  *
- * <p><b>读写边界。</b> 只读方法不修改文档;accept/reject 是破坏性写,会改动 {@code document.xml} 的修订标记树。开关写入({@code
- * <w:trackChanges/>} 的增删)与创作侧(authoring)均不属于本门面。
+ * <p><b>读写边界。</b> 只读方法不修改文档;{@link #enable()}/{@link #disable()} 与 accept/reject 是破坏性写,会改动 {@code
+ * settings.xml} / {@code document.xml} 的修订相关结构。开关写入(增删 {@code <w:trackChanges/>})与本门面其余破坏性写同属一类。
+ *
+ * <p><b>开关与修订标记解耦。</b> {@code <w:trackChanges/>} 只控制<b>后续</b>在 Word 里手动改动是否被追踪, 与文档里已有的修订标记(<{@code
+ * w:ins}>/<{@code w:del}> 等)是否可见、可接受<b>无关</b>。本门面的 authoring 能力({@link
+ * com.non.docx.core.api.text.Run#addInsertion} 等)直接产出修订标记,不依赖开关状态。
  *
  * <p><b>活对象语义(无字段快照)。</b> 本门面持有单个 {@code final XWPFDocument} 委托;{@code list()} 与 {@code get(id)}
  * 每次调用都<b>当场重算</b>,不缓存修订列表——因此文档改动(包括 accept/reject 之后)会实时反映,守住「无字段快照」精神(与 {@code
@@ -72,12 +77,41 @@ public final class TrackedChanges {
   /**
    * 返回文档是否开启修订记录。
    *
-   * <p>读取 {@code settings.xml} 的 {@code <w:trackChanges/>}:存在该元素即视为开启,缺失即视为未开启。 不产生任何写副作用,不负责开关写入。
+   * <p>读取 {@code settings.xml} 的 {@code <w:trackChanges/>}:存在该元素即视为开启,缺失即视为未开启。 不产生任何写副作用;需要写开关时用
+   * {@link #enable()} / {@link #disable()}。
    *
    * @return {@code true} 表示文档开启了修订记录;{@code false} 表示未开启或开关缺失
    */
   public boolean enabled() {
     return TrackedChangeNodes.isEnabled(delegate);
+  }
+
+  /**
+   * 开启修订模式(写入 {@code <w:trackChanges/>})。
+   *
+   * <p><b>语义与适用场景。</b> 这会令 {@code settings.xml} 声明「文档处于修订模式」。主要价值在<b>接力编辑</b>:Agent
+   * 产出带修订的文档交还给人后,人继续在 Word 里手动改动时会被自动追踪。对 Agent 自身用 {@code addInsertion}
+   * 等创作出的修订标记<b>无影响</b>(开关与标记解耦, 见类 Javadoc)。
+   *
+   * <p><b>破坏性写、幂等。</b> 会修改 {@code settings.xml};若已开启则 no-op。落盘前在内存生效,需 {@code Document.save()} 持久化。
+   *
+   * @see #enabled()
+   * @see #disable()
+   */
+  public void enable() {
+    TrackedChangeNodes.setEnabled(delegate, true);
+  }
+
+  /**
+   * 关闭修订模式(移除 {@code <w:trackChanges/>})。
+   *
+   * <p><b>破坏性写、幂等。</b> 会修改 {@code settings.xml};若已关闭则 no-op。
+   *
+   * @see #enabled()
+   * @see #enable()
+   */
+  public void disable() {
+    TrackedChangeNodes.setEnabled(delegate, false);
   }
 
   /**

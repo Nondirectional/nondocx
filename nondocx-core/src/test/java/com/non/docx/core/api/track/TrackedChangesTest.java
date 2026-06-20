@@ -57,6 +57,87 @@ class TrackedChangesTest {
     }
   }
 
+  // ---------- 开关写入 enable / disable ----------
+
+  /**
+   * enable() 在一个未开启修订的文档上写入开关:enabled() 立刻变 true,且 save → reopen 后仍为 true(落盘持久)。
+   *
+   * <p>OOXML: 无 {@code <w:trackChanges/>} → enable 后新增该空元素到 {@code settings.xml}。
+   */
+  @Test
+  void enableTurnsSwitchOnAndPersists(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("enable.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      poi.createParagraph().createRun().setText("初始未开启修订");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThat(doc.trackedChanges().enabled()).isFalse();
+      doc.trackedChanges().enable();
+      // 活对象语义:写入后 enabled() 立刻反映
+      assertThat(doc.trackedChanges().enabled()).isTrue();
+      doc.save(file);
+    }
+    // save → reopen 后开关持久
+    try (Document reopened = Docx.open(file)) {
+      assertThat(reopened.trackedChanges().enabled()).isTrue();
+    }
+  }
+
+  /**
+   * disable() 在一个已开启修订的文档上移除开关:enabled() 立刻变 false,且 save → reopen 后仍为 false。
+   *
+   * <p>OOXML: 有 {@code <w:trackChanges/>} → disable 后该元素被 unset。
+   */
+  @Test
+  void disableTurnsSwitchOffAndPersists(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("disable.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      poi.getSettings().setTrackRevisions(true);
+      poi.createParagraph().createRun().setText("初始已开启修订");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThat(doc.trackedChanges().enabled()).isTrue();
+      doc.trackedChanges().disable();
+      assertThat(doc.trackedChanges().enabled()).isFalse();
+      doc.save(file);
+    }
+    try (Document reopened = Docx.open(file)) {
+      assertThat(reopened.trackedChanges().enabled()).isFalse();
+    }
+  }
+
+  /**
+   * enable/disable 幂等:重复调同值不应报错、不应改变状态(POI setTrackRevisions 的字节码已保证 addNew/unset 前先 isSet)。
+   *
+   * <p>这里只断言业务可见行为(不抛异常、状态不变),不验证落盘 XML 结构是否产生多余元素。
+   */
+  @Test
+  void enableAndDisableAreIdempotent(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("idempotent.docx");
+    try (XWPFDocument poi = new XWPFDocument()) {
+      poi.createParagraph().createRun().setText("幂等测试");
+      try (var out = java.nio.file.Files.newOutputStream(file)) {
+        poi.write(out);
+      }
+    }
+    try (Document doc = Docx.open(file)) {
+      // 连续 enable 两次:状态恒 true,不抛
+      doc.trackedChanges().enable();
+      doc.trackedChanges().enable();
+      assertThat(doc.trackedChanges().enabled()).isTrue();
+      // 连续 disable 两次:状态恒 false,不抛
+      doc.trackedChanges().disable();
+      doc.trackedChanges().disable();
+      assertThat(doc.trackedChanges().enabled()).isFalse();
+    }
+  }
+
   @Test
   void listIsEmptyWhenNoRevisions(@TempDir Path tmp) throws Exception {
     Path file = tmp.resolve("no-revisions.docx");
