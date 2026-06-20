@@ -832,6 +832,38 @@ public final class DocxAgentTools {
   }
 
   /**
+   * 写入修订模式开关({@code settings.xml} 的 {@code <w:trackChanges/>})。
+   *
+   * <p><b>何时用。</b> 文档要交还给人<b>接力编辑</b>、且希望人在 Word 里的后续手动改动也被自动追踪时,把开关打开。 对 Agent 自己用 {@code
+   * insert_tracked_run} 等创作的修订<b>无影响</b>(开关只管后续手动改动是否被追踪;已有修订的可见性/可接受性与开关无关)。
+   *
+   * <p>幂等:重复设为同值不会产生多余写。
+   */
+  @ToolDef(
+      name = "set_tracked_changes_enabled",
+      description =
+          "开启或关闭修订模式开关(enabled=true 写入 <w:trackChanges/>,=false 移除)。"
+              + "用于文档交还人接力编辑时让后续手动改动也被追踪;对 Agent 已创作的修订无影响。幂等。")
+  public String setTrackedChangesEnabled(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "enabled", description = "true=开启修订模式,false=关闭") boolean enabled) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    try {
+      if (enabled) {
+        doc.trackedChanges().enable();
+      } else {
+        doc.trackedChanges().disable();
+      }
+      return "修订记录: " + (doc.trackedChanges().enabled() ? "已开启" : "已关闭") + "(改完需 save_docx 落盘)";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
    * 按文档顺序枚举全部修订,每条一行(type/family/author/details 摘要/stable id)。
    *
    * <p><b>返回的 stable id 是后续 accept/reject 工具的寻址凭证</b>。一次调用拿全,不要逐个 get。
@@ -1182,6 +1214,98 @@ public final class DocxAgentTools {
         r.color(color);
       }
       return "已在段落 " + paragraphIndex + " 插入 tracked run(文本=\"" + text + "\")";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
+   * 把一个已有 run 标记为被删除(tracked del),run 迁入 {@code <w:del>},其文本转为 {@code <w:delText>}。
+   *
+   * <p>核心语义:这不是立即删除——文字仍在文档里,只是被标为「待删除的修订」。accept 后才真正消失,reject 则恢复成普通正文。
+   */
+  @ToolDef(
+      name = "delete_run_tracked",
+      description =
+          "把正文某段某 run 标记为被删除(tracked del:文字转为 <w:delText>、划上删除线标记)。"
+              + "不是立即删除,accept 后才真正消失。author 必填。与直接 replace_run_text 的区别:这是留痕的删除。")
+  public String deleteRunTracked(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "paragraph_index", description = "段落索引(0 起)") int paragraphIndex,
+      @ToolParam(name = "run_index", description = "要标记删除的 run 索引(0 起)") int runIndex,
+      @ToolParam(name = "author", description = "修订作者") String author) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    List<Paragraph> paragraphs = doc.paragraphs();
+    if (outOfBounds(paragraphIndex, paragraphs.size())) {
+      return indexError("段落索引", paragraphIndex, paragraphs.size());
+    }
+    var runs = paragraphs.get(paragraphIndex).runs();
+    if (outOfBounds(runIndex, runs.size())) {
+      return indexError("run 索引", runIndex, runs.size());
+    }
+    try {
+      Run target = runs.get(runIndex);
+      // 先快照文本:addDeletion 会把 run 迁入 <w:del>、其 <w:t> 转为 <w:delText>,
+      // 迁移后原 Run wrapper 已不可靠(读 text() 会 NPE),故必须先取。
+      String text = target.text();
+      paragraphs.get(paragraphIndex).addDeletion(author, target);
+      return "已把段落 "
+          + paragraphIndex
+          + " run "
+          + runIndex
+          + " 标记为 tracked del(文本=\""
+          + text
+          + "\")";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
+   * 以 tracked 方式替换一个 run 的文本(删旧 + 插新两条配对修订)。
+   *
+   * <p>OOXML 没有「替换」元素——替换就是紧挨着的 {@code <w:del>}(旧文本)+{@code <w:ins>}(新文本)。新 run 复制旧 run 的样式,
+   * 贴近「改字但保留格式」的直觉。
+   */
+  @ToolDef(
+      name = "replace_run_tracked",
+      description =
+          "以修订方式替换正文某段某 run 的文本(tracked:删旧 + 插新两条配对修订)。"
+              + "新文本复制原 run 样式。author 必填。与 replace_run_text 的区别:这是留痕的替换。")
+  public String replaceRunTracked(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "paragraph_index", description = "段落索引(0 起)") int paragraphIndex,
+      @ToolParam(name = "run_index", description = "要替换的 run 索引(0 起)") int runIndex,
+      @ToolParam(name = "author", description = "修订作者") String author,
+      @ToolParam(name = "new_text", description = "替换后的新文本") String newText) {
+    Document doc = sessions.get(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    List<Paragraph> paragraphs = doc.paragraphs();
+    if (outOfBounds(paragraphIndex, paragraphs.size())) {
+      return indexError("段落索引", paragraphIndex, paragraphs.size());
+    }
+    var runs = paragraphs.get(paragraphIndex).runs();
+    if (outOfBounds(runIndex, runs.size())) {
+      return indexError("run 索引", runIndex, runs.size());
+    }
+    try {
+      Run target = runs.get(runIndex);
+      String oldText = target.text();
+      target.replaceTracked(author, newText);
+      return "已把段落 "
+          + paragraphIndex
+          + " run "
+          + runIndex
+          + " 的文本以修订方式替换:\""
+          + oldText
+          + "\" → \""
+          + newText
+          + "\"(del + ins 配对)";
     } catch (RuntimeException e) {
       return "错误:" + rootMessage(e);
     }

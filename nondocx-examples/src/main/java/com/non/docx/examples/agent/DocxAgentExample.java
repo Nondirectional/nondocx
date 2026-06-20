@@ -65,6 +65,8 @@ public final class DocxAgentExample {
           + "适用于用户表达「以修订标记改」「带修订标记」「供审阅」「批注式修改」"
           + "「列出/接受/拒绝修订」等意图，或文档要求留痕的协作场景。\n"
           + "【修订模式怎么工作】修改时用 insert_tracked_run（插入带可选样式的修订 run）、"
+          + "delete_run_tracked（把一个 run 标为删除）、"
+          + "replace_run_tracked（以删旧+插新替换文本，保留原样式）、"
           + "mark_style_change_tracked（把样式变更记为 rPrChange）、"
           + "mark_cell_inserted / mark_cell_deleted（标记单元格存亡）、"
           + "move_run_tracked（把一个 run 移到另一段）；"
@@ -74,8 +76,14 @@ public final class DocxAgentExample {
           + "（或批量 accept_all_text_revisions 等，仅作用于文本/移动类），"
           + "属性类用 accept_property_change / reject_property_change，"
           + "单元格类用 accept_cell_change / reject_cell_change。"
-          + "注意 cellMerge 的 accept/reject 不支持（会返回错误串）。"
-          + "get_tracked_changes_enabled 可查文档是否开启了修订开关。\n"
+          + "注意 cellMerge 的 accept/reject 不支持（会返回错误串）。\n"
+          // —— 修订开关 settings.xml 的 <w:trackChanges/>：与人接力编辑时才有意义 ——
+          + "【修订开关与你的修订标记是两件事】get_tracked_changes_enabled 查文档是否开启了修订开关，"
+          + "set_tracked_changes_enabled 可以开/关它。但请注意：开关只影响『人在 Word 里后续手动改动是否被自动追踪』，"
+          + "对你用 insert_tracked_run 等 *_tracked 工具创作的修订标记『无影响』——"
+          + "那些修订无论开关开不开都会真实写入并被 Word 识别。"
+          + "所以多数修订场景你『不需要』动开关；只有当任务明确要求『文档交还人后、人的手动改动也要被追踪』"
+          + "（即开启 Word 的『修订』按钮语义）时，才用 set_tracked_changes_enabled(true)。\n"
           + "用简洁中文汇报。";
 
   public static void main(String[] args) throws Exception {
@@ -86,9 +94,10 @@ public final class DocxAgentExample {
     Agent agent =
         Agent.builder(llm, registry)
             .systemPrompt(SYSTEM_PROMPT)
-            // 两段流程（先读后改）合计工具调用可能十余次，留足迭代空间，
-            // 否则细粒度工具会把 maxIterations 用在 read 上、来不及收尾汇报。
-            .maxIterations(20)
+            // 不限制迭代次数：让 Agent 自行跑完所有工具调用直至自然收尾。
+            // Agent 的循环在「迭代数 >= maxIterations」时停止，Integer.MAX_VALUE 实际等同于不设上限
+            // （不会真跑到 21 亿次；Agent 完成任务后自然结束）。
+            .maxIterations(Integer.MAX_VALUE)
             .callback(loggingCallback())
             .build();
 

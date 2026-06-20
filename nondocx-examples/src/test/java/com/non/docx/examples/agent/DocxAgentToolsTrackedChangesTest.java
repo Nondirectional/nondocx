@@ -91,7 +91,62 @@ class DocxAgentToolsTrackedChangesTest {
     assertThat(tools.acceptCellChange("doc-999", "x")).contains("不存在");
   }
 
+  /** set_tracked_changes_enabled:开/关往返 + 读回一致 + docId 不存在返回错误串。 */
+  @Test
+  void shouldToggleTrackedChangesSwitch(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("switch.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("空文档");
+      doc.save(file);
+    }
+    DocxAgentTools tools = new DocxAgentTools();
+    String docId = tools.openDocx(file.toAbsolutePath().toString());
+
+    // 初始未开启
+    assertThat(tools.getTrackedChangesEnabled(docId)).contains("未开启");
+    // 开启:返回串标「已开启」,读回一致
+    assertThat(tools.setTrackedChangesEnabled(docId, true)).contains("已开启");
+    assertThat(tools.getTrackedChangesEnabled(docId)).contains("已开启");
+    // 关闭:返回串标「已关闭」,读回一致
+    assertThat(tools.setTrackedChangesEnabled(docId, false)).contains("已关闭");
+    assertThat(tools.getTrackedChangesEnabled(docId)).contains("未开启");
+
+    // docId 不存在返回错误串
+    assertThat(tools.setTrackedChangesEnabled("doc-999", true)).contains("不存在");
+  }
+
   // ---------- I 组:创作工具冒烟 ----------
+
+  @Test
+  void shouldDeleteRunTracked(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("del.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addRun("要删的文字");
+      doc.save(file);
+    }
+    DocxAgentTools tools = new DocxAgentTools();
+    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    String result = tools.deleteRunTracked(docId, 0, 0, "甲");
+    assertThat(result).contains("tracked del").contains("要删的文字");
+    // 读回应有一条 DEL
+    assertThat(tools.listTrackedChanges(docId)).contains("DEL");
+  }
+
+  @Test
+  void shouldReplaceRunTracked(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("replace.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addRun("旧文字");
+      doc.save(file);
+    }
+    DocxAgentTools tools = new DocxAgentTools();
+    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    String result = tools.replaceRunTracked(docId, 0, 0, "甲", "新文字");
+    assertThat(result).contains("旧文字").contains("新文字").contains("del + ins");
+    // 读回:一条 DEL(旧)+ 一条 INS(新)
+    String list = tools.listTrackedChanges(docId);
+    assertThat(list).contains("DEL").contains("INS");
+  }
 
   @Test
   void shouldInsertTrackedRunWithStyle(@TempDir Path tmp) throws Exception {
