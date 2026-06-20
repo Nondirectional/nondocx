@@ -43,10 +43,10 @@ public final class DocxAgentExample {
   /** 样例输入文档在 classpath 中的位置（由 {@code SampleDocGenerator} 生成并入库）。 */
   private static final String SAMPLE_RESOURCE = "/document/sample-agent-input.docx";
 
-  /** 约束 Agent 只用 docx 工具、路径由用户消息给定、遇错误串可重试。 */
+  /** 约束 Agent 只用 docx 工具、路径由用户消息给定、遇错误串可重试；并指导「直接编辑」与「修订模式」两套工作方式。 */
   private static final String SYSTEM_PROMPT =
       "你是一个 docx 文档编辑助手。你只能通过提供的 docx 工具操作文档："
-          + "先 open_docx 拿到 docId，再用 read_* 查看结构、用 replace_*/update_* 修改内容，"
+          + "先 open_docx 拿到 docId，再用 read_* 查看结构、按需修改内容，"
           + "最后 save_docx 落盘、close_docx 释放。"
           + "不要编造文件路径——所有路径都在用户消息里给出。"
           + "所有索引从 0 开始。若工具返回「错误：...」字符串，说明索引越界或句柄失效，"
@@ -56,7 +56,26 @@ public final class DocxAgentExample {
           + "需要按文本内容定位位置（如「把『项目进度』改成…」）时，"
           + "优先用 search_text 一次性拿到坐标，再用 replace_run_text/replace_table_cell_run_text 修改，"
           + "不要逐个 read_paragraph 盲读。页眉页脚里的文本也能被 search_text 命中，"
-          + "需要其结构细节时用 read_header/read_footer。"
+          + "需要其结构细节时用 read_header/read_footer。\n"
+          // —— 两套工作方式：直接编辑 vs 修订模式 ——
+          + "你有两套工作方式，按用户意图选择：\n"
+          + "（A）直接编辑：用 replace_run_text / replace_table_cell_run_text / update_* 修改，"
+          + "改动立即生效、不留痕迹。适用于用户要「直接改好」的场景。\n"
+          + "（B）修订模式（tracked changes）：改动以修订标记形式写入，便于他人审阅后再定稿。"
+          + "适用于用户表达「以修订标记改」「带修订标记」「供审阅」「批注式修改」"
+          + "「列出/接受/拒绝修订」等意图，或文档要求留痕的协作场景。\n"
+          + "【修订模式怎么工作】修改时用 insert_tracked_run（插入带可选样式的修订 run）、"
+          + "mark_style_change_tracked（把样式变更记为 rPrChange）、"
+          + "mark_cell_inserted / mark_cell_deleted（标记单元格存亡）、"
+          + "move_run_tracked（把一个 run 移到另一段）；"
+          + "查看/处理已有修订时：list_tracked_changes 一次性列出全部修订（每条带 type/author 与"
+          + "寻址用的 stable id），再按 family 选对应工具——"
+          + "文本/移动类用 accept_text_or_move_revision / reject_text_or_move_revision"
+          + "（或批量 accept_all_text_revisions 等，仅作用于文本/移动类），"
+          + "属性类用 accept_property_change / reject_property_change，"
+          + "单元格类用 accept_cell_change / reject_cell_change。"
+          + "注意 cellMerge 的 accept/reject 不支持（会返回错误串）。"
+          + "get_tracked_changes_enabled 可查文档是否开启了修订开关。\n"
           + "用简洁中文汇报。";
 
   public static void main(String[] args) throws Exception {
@@ -108,8 +127,29 @@ public final class DocxAgentExample {
     ChatResult editResult = agent.run(editQuery);
     System.out.println("[汇报] " + editResult.content());
 
+    // ===== 第三段：修订模式（tracked changes）=====
     System.out.println();
-    System.out.println("输出文档: " + output.toAbsolutePath());
+    System.out.println("========================================");
+    System.out.println("第三段：以修订模式（tracked changes）修改并审阅");
+    System.out.println("========================================");
+    Path revisionOutput = ExamplePaths.outputDir().resolve("agent-revised.docx");
+    String revisionQuery =
+        "打开文档 "
+            + input.toAbsolutePath()
+            + "，以「修订模式」（带修订标记）做以下修改后保存为 "
+            + revisionOutput.toAbsolutePath()
+            + "：\n"
+            + "1) 在正文第 0 段末尾用 insert_tracked_run 插入一条修订 run，文本「（请审阅）」，"
+            + "作者署名「Agent」，加粗；\n"
+            + "2) 用 list_tracked_changes 列出当前所有修订，挑出刚插入的那条，"
+            + "用 accept_text_or_move_revision 应用它（让插入生效）；\n"
+            + "3) 完成后 save_docx 落盘、close_docx。用简洁中文汇报修改与审阅结果。";
+    ChatResult revisionResult = agent.run(revisionQuery);
+    System.out.println("[汇报] " + revisionResult.content());
+
+    System.out.println();
+    System.out.println("输出文档(直接编辑): " + output.toAbsolutePath());
+    System.out.println("输出文档(修订模式): " + revisionOutput.toAbsolutePath());
   }
 
   /**
