@@ -101,7 +101,9 @@ public final class InteractiveDocxAgentExample {
     Agent agent =
         Agent.builder(llm, registry)
             .systemPrompt(SYSTEM_PROMPT)
-            .maxIterations(20)
+            // 不限制迭代次数：让 Agent 自行跑完所有工具调用直至自然收尾。
+            // Agent 的循环在「迭代数 >= maxIterations」时停止，Integer.MAX_VALUE 实际等同于不设上限。
+            .maxIterations(Integer.MAX_VALUE)
             // ★ 多轮记忆：开启后每轮 user/assistant/tool 消息自动入栈，
             //   下一轮 run 会把历史一起发给 LLM，于是「刚才那个文档」能被理解。
             //   不配 memory 的话每次 run 都是「失忆」的单轮对话。
