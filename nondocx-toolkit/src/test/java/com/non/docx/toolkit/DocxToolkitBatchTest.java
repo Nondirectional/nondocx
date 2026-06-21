@@ -1,4 +1,4 @@
-package com.non.docx.examples.agent;
+package com.non.docx.toolkit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * 冒烟测试 DocxAgentTools 第一梯队批量改造(v2):把单次工具升级成支持单次/多次的通用版。
+ * 冒烟测试 {@link DocxToolkit} 第一梯队批量改造(v2):把单次工具升级成支持单次/多次的通用版。
  *
  * <p>不重复测 core 读写正确性(那由 core 单元测试背书);这里只验证<b>工具层的批量行为</b>:
  *
@@ -23,10 +23,13 @@ import org.junit.jupiter.api.io.TempDir;
  *   <li>健壮性:LLM 误传单值标量(而非数组)时仍能工作(coerceList 兜底)。
  * </ul>
  *
- * <p>工具方法签名已改为接收 {@code List};这里直接构造 {@code ArrayList<LinkedHashMap>} 调用,
- * 与 nonchain 运行时 Jackson 还原出的结构一致——因此测试结果等价于 Agent 经框架调用。
+ * <p>工具方法签名接收 {@code List};这里直接构造 {@code ArrayList<LinkedHashMap>} 调用, 与 nonchain 运行时 Jackson
+ * 还原出的结构一致——因此测试结果等价于 Agent 经框架调用。
+ *
+ * <p>本测试经 {@link DocxToolkit} 门面驱动,验证拆分后六个工具类<b>共享同一份会话状态</b>: {@code tk.session.openDocx} 打开的文档,在
+ * {@code tk.body}/{@code tk.trackedChangeQuery} 等其它工具里也能按 docId 取回。
  */
-class DocxAgentToolsBatchTest {
+class DocxToolkitBatchTest {
 
   @Test
   void shouldReadMultipleParagraphsWithOutOfBoundsMarked(@TempDir Path tmp) throws Exception {
@@ -36,11 +39,11 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph("第二段");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 批量读三段,其中索引 5 越界——不应中断,越界条目要被标注。
-    String result = tools.readParagraph(docId, List.of(0, 1, 5));
+    String result = tk.body.readParagraph(docId, List.of(0, 1, 5));
     assertThat(result).contains("段落 0").contains("第一段");
     assertThat(result).contains("段落 1").contains("第二段");
     assertThat(result).contains("段落 5").contains("越界").contains("共 2");
@@ -54,14 +57,14 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph().addRun("原文 B");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 三条编辑:前两条合法(段 0/段 1),第三条段索引 99 越界。
     Map<String, Object> e0 = edit(0, 0, "新 A");
     Map<String, Object> e1 = edit(1, 0, "新 B");
     Map<String, Object> e2 = edit(99, 0, "不应写入");
-    String result = tools.replaceRunText(docId, List.of(e0, e1, e2));
+    String result = tk.body.replaceRunText(docId, List.of(e0, e1, e2));
 
     assertThat(result).contains("[0]").contains("新 A").contains("✓");
     assertThat(result).contains("[1]").contains("新 B").contains("✓");
@@ -69,8 +72,8 @@ class DocxAgentToolsBatchTest {
     assertThat(result).contains("成功 2 条,失败 1 条");
 
     // 成功的两条应真写入:重新读回应是新文本。
-    assertThat(tools.readParagraph(docId, List.of(0))).contains("新 A");
-    assertThat(tools.readParagraph(docId, List.of(1))).contains("新 B");
+    assertThat(tk.body.readParagraph(docId, List.of(0))).contains("新 A");
+    assertThat(tk.body.readParagraph(docId, List.of(1))).contains("新 B");
   }
 
   @Test
@@ -80,18 +83,18 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph().addRun("保留");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 缺 text 字段 → 应被记为错误而非 NPE。
     Map<String, Object> bad = new LinkedHashMap<>();
     bad.put("paragraph_index", 0);
     bad.put("run_index", 0);
-    String result = tools.replaceRunText(docId, List.of(bad));
+    String result = tk.body.replaceRunText(docId, List.of(bad));
     assertThat(result).contains("错误").contains("text");
     assertThat(result).contains("成功 0 条,失败 1 条");
     // 原文未被破坏
-    assertThat(tools.readParagraph(docId, List.of(0))).contains("保留");
+    assertThat(tk.body.readParagraph(docId, List.of(0))).contains("保留");
   }
 
   @Test
@@ -104,17 +107,17 @@ class DocxAgentToolsBatchTest {
       row.addCell().addParagraph().addRun("待改右");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     Map<String, Object> left = cellEdit(0, 0, 0, 0, 0, "左已改");
     Map<String, Object> right = cellEdit(0, 0, 1, 0, 0, "右已改");
-    String result = tools.replaceTableCellRunText(docId, List.of(left, right));
+    String result = tk.table.replaceTableCellRunText(docId, List.of(left, right));
     assertThat(result).contains("左已改").contains("右已改").contains("成功 2 条,失败 0 条");
 
     // 读回应验证写入:用 read_table_cell 确认单元格文本。
-    assertThat(tools.readTableCell(docId, List.of(cellCoord(0, 0, 0)))).contains("左已改");
-    assertThat(tools.readTableCell(docId, List.of(cellCoord(0, 0, 1)))).contains("右已改");
+    assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 0)))).contains("左已改");
+    assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 1)))).contains("右已改");
   }
 
   @Test
@@ -124,13 +127,13 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph("原有");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
-    String result = tools.appendParagraph(docId, List.of("追加一", "追加二"));
+    String result = tk.body.appendParagraph(docId, List.of("追加一", "追加二"));
     assertThat(result).contains("已追加 2 段").contains("追加一").contains("追加二");
     // 文档现在应有 3 段:原有 + 两条追加。
-    assertThat(tools.getParagraphCount(docId)).contains("段落数: 3");
+    assertThat(tk.session.getParagraphCount(docId)).contains("段落数: 3");
   }
 
   @Test
@@ -142,20 +145,21 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph().addInsertion("甲", "第二处插入");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 从 list 里取一个真实 id,再混入一个不存在的 id。
-    String list = tools.listTrackedChanges(docId);
+    String list = tk.trackedChangeQuery.listTrackedChanges(docId);
     String realId = extractId(list, "ins:");
     assertThat(realId).isNotBlank();
 
-    String result = tools.acceptTextOrMoveRevision(docId, List.of(realId, "ins:not-exist"));
+    String result =
+        tk.trackedChangeQuery.acceptTextOrMoveRevision(docId, List.of(realId, "ins:not-exist"));
     assertThat(result).contains(realId).contains("已应用");
     assertThat(result).contains("ins:not-exist").contains("错误");
     assertThat(result).contains("成功 1 条,失败 1 条");
     // accept 一条后,应只剩 1 条(另一条 id 不存在,文档未变)。
-    assertThat(tools.listTrackedChanges(docId)).contains("共 1 条修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 1 条修订");
   }
 
   @Test
@@ -167,10 +171,10 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph("唯一段");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     // 单元素数组即"单次调用"语义。
-    String result = tools.readParagraph(docId, List.of(0));
+    String result = tk.body.readParagraph(docId, List.of(0));
     assertThat(result).contains("段落 0").contains("唯一段");
   }
 
@@ -181,22 +185,23 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph("x");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     // 空数组:返回提示而非 NPE。
-    assertThat(tools.readParagraph(docId, List.of())).contains("为空");
-    assertThat(tools.replaceRunText(docId, List.of())).contains("为空");
-    assertThat(tools.appendParagraph(docId, List.of())).contains("为空");
-    assertThat(tools.acceptTextOrMoveRevision(docId, List.of())).contains("为空");
+    assertThat(tk.body.readParagraph(docId, List.of())).contains("为空");
+    assertThat(tk.body.replaceRunText(docId, List.of())).contains("为空");
+    assertThat(tk.body.appendParagraph(docId, List.of())).contains("为空");
+    assertThat(tk.trackedChangeQuery.acceptTextOrMoveRevision(docId, List.of())).contains("为空");
   }
 
   @Test
   void shouldReturnErrorForUnknownDocId() {
-    DocxAgentTools tools = new DocxAgentTools();
-    assertThat(tools.readParagraph("doc-999", List.of(0))).contains("不存在");
-    assertThat(tools.replaceRunText("doc-999", List.of())).contains("不存在");
-    assertThat(tools.appendParagraph("doc-999", List.of("x"))).contains("不存在");
-    assertThat(tools.acceptTextOrMoveRevision("doc-999", List.of("ins:1"))).contains("不存在");
+    DocxToolkit tk = new DocxToolkit();
+    assertThat(tk.body.readParagraph("doc-999", List.of(0))).contains("不存在");
+    assertThat(tk.body.replaceRunText("doc-999", List.of())).contains("不存在");
+    assertThat(tk.body.appendParagraph("doc-999", List.of("x"))).contains("不存在");
+    assertThat(tk.trackedChangeQuery.acceptTextOrMoveRevision("doc-999", List.of("ins:1")))
+        .contains("不存在");
   }
 
   // ============ 第二梯队批量测试 ============
@@ -210,12 +215,11 @@ class DocxAgentToolsBatchTest {
       row.addCell().addParagraph().addRun("右");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 读两个合法 cell + 一个越界 cell(0,0,99)——不中断,越界条目标注。
-    String result =
-        tools.readTableCell(docId, List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 99)));
+    String result = tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 99)));
     assertThat(result).contains("左");
     assertThat(result).contains("越界");
   }
@@ -232,13 +236,14 @@ class DocxAgentToolsBatchTest {
       p.addRun("C");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     String result =
-        tools.deleteRunTracked(docId, "甲", List.of(runEdit(0, 0), runEdit(0, 2)));
+        tk.trackedChangeAuthoring.deleteRunTracked(
+            docId, "甲", List.of(runEdit(0, 0), runEdit(0, 2)));
     assertThat(result).contains("A").contains("C").contains("成功 2 条,失败 0 条");
     // 读回应有两条 DEL。
-    assertThat(tools.listTrackedChanges(docId)).contains("共 2 条修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
   }
 
   @Test
@@ -249,12 +254,14 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph().addRun("唯一");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String result = tools.deleteRunTracked(docId, "甲", List.of(runEdit(0, 0), runEdit(0, 0)));
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String result =
+        tk.trackedChangeAuthoring.deleteRunTracked(
+            docId, "甲", List.of(runEdit(0, 0), runEdit(0, 0)));
     assertThat(result).contains("跳过");
     assertThat(result).contains("成功 1 条,失败 1 条");
-    assertThat(tools.listTrackedChanges(docId)).contains("共 1 条修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 1 条修订");
   }
 
   @Test
@@ -267,17 +274,17 @@ class DocxAgentToolsBatchTest {
       p.addRun("旧C");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     Map<String, Object> e0 = runEdit(0, 0);
     e0.put("new_text", "新A");
     Map<String, Object> e2 = runEdit(0, 2);
     e2.put("new_text", "新C");
-    String result = tools.replaceRunTracked(docId, "甲", List.of(e0, e2));
+    String result = tk.trackedChangeAuthoring.replaceRunTracked(docId, "甲", List.of(e0, e2));
     assertThat(result).contains("旧A").contains("新A").contains("旧C").contains("新C");
     assertThat(result).contains("成功 2 条,失败 0 条");
     // 两次替换各产出 del+ins,共 4 条修订。
-    assertThat(tools.listTrackedChanges(docId)).contains("共 4 条修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 4 条修订");
   }
 
   @Test
@@ -288,8 +295,8 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph("段二");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     Map<String, Object> e0 = new LinkedHashMap<>();
     e0.put("paragraph_index", 0);
     e0.put("text", "(批注一)");
@@ -297,9 +304,9 @@ class DocxAgentToolsBatchTest {
     e1.put("paragraph_index", 1);
     e1.put("text", "(批注二)");
     e1.put("bold", true);
-    String result = tools.insertTrackedRun(docId, "甲", List.of(e0, e1));
+    String result = tk.trackedChangeAuthoring.insertTrackedRun(docId, "甲", List.of(e0, e1));
     assertThat(result).contains("(批注一)").contains("(批注二)").contains("成功 2 条,失败 0 条");
-    assertThat(tools.listTrackedChanges(docId)).contains("共 2 条修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
   }
 
   @Test
@@ -312,18 +319,20 @@ class DocxAgentToolsBatchTest {
       row.addCell().addParagraph().addRun("丙");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 批量标记两个单元格为 cellIns。
     String ins =
-        tools.markCellInserted(docId, "甲", List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 1)));
+        tk.trackedChangeAuthoring.markCellInserted(
+            docId, "甲", List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 1)));
     assertThat(ins).contains("cellIns").contains("成功 2 条,失败 0 条");
-    assertThat(tools.listTrackedChanges(docId)).contains("共 2 条修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
 
     // 批量标记一个单元格为 cellDel(另一条越界,应记错误不中断)。
     String del =
-        tools.markCellDeleted(docId, "甲", List.of(cellCoord(0, 0, 2), cellCoord(0, 0, 99)));
+        tk.trackedChangeAuthoring.markCellDeleted(
+            docId, "甲", List.of(cellCoord(0, 0, 2), cellCoord(0, 0, 99)));
     assertThat(del).contains("cellDel");
     assertThat(del).contains("成功 1 条,失败 1 条");
   }
@@ -339,12 +348,11 @@ class DocxAgentToolsBatchTest {
       p.addRun("乙");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 读 run0 + run1 + 一个越界 run5——不中断,越界标注。
-    String result =
-        tools.readRun(docId, List.of(runEdit(0, 0), runEdit(0, 1), runEdit(0, 5)));
+    String result = tk.body.readRun(docId, List.of(runEdit(0, 0), runEdit(0, 1), runEdit(0, 5)));
     assertThat(result).contains("甲").contains("乙").contains("越界");
   }
 
@@ -356,23 +364,24 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph().addRun("原文");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 先用 mark_style_change_tracked 造一条属性修订。
-    tools.markStyleChangeTracked(docId, 0, 0, "甲", true, false, null);
-    String list = tools.listTrackedChanges(docId);
+    tk.trackedChangeAuthoring.markStyleChangeTracked(docId, 0, 0, "甲", true, false, null);
+    String list = tk.trackedChangeQuery.listTrackedChanges(docId);
     assertThat(list).contains("RPR_CHANGE");
     String propId = extractId(list, "rpr_change:");
     assertThat(propId).isNotBlank();
 
     // 批量 accept:真实 id + 不存在的 id。
-    String result = tools.acceptPropertyChange(docId, List.of(propId, "rpr_change:not-exist"));
+    String result =
+        tk.trackedChangeQuery.acceptPropertyChange(docId, List.of(propId, "rpr_change:not-exist"));
     assertThat(result).contains(propId).contains("已应用");
     assertThat(result).contains("not-exist").contains("错误");
     assertThat(result).contains("成功 1 条,失败 1 条");
     // accept 后属性修订消失。
-    assertThat(tools.listTrackedChanges(docId)).contains("无修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("无修订");
   }
 
   @Test
@@ -389,21 +398,22 @@ class DocxAgentToolsBatchTest {
       tc1.addParagraph().addRun("乙");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     // 用 mark_cell_inserted 造两条 cellIns。
-    tools.markCellInserted(docId, "甲", List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 1)));
+    tk.trackedChangeAuthoring.markCellInserted(
+        docId, "甲", List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 1)));
 
-    String list = tools.listTrackedChanges(docId);
+    String list = tk.trackedChangeQuery.listTrackedChanges(docId);
     assertThat(list).contains("共 2 条修订");
     // 抽出两个 cellIns id。
     String id0 = extractId(list, "cell_ins:");
     String id1 = extractId(list, "cell_ins:", 2);
 
     // 批量 accept 两条。
-    String result = tools.acceptCellChange(docId, List.of(id0, id1));
+    String result = tk.trackedChangeQuery.acceptCellChange(docId, List.of(id0, id1));
     assertThat(result).contains("成功 2 条,失败 0 条");
-    assertThat(tools.listTrackedChanges(docId)).contains("无修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("无修订");
   }
 
   @Test
@@ -413,13 +423,13 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph().addHyperlink("旧文本", "http://old.example.com");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 只改文本:URL 应保持不变。
-    String result = tools.updateHyperlink(docId, 0, 0, "新文本", null);
+    String result = tk.body.updateHyperlink(docId, 0, 0, "新文本", null);
     assertThat(result).contains("新文本");
-    String readBack = tools.readHyperlink(docId, 0, 0);
+    String readBack = tk.body.readHyperlink(docId, 0, 0);
     assertThat(readBack).contains("新文本").contains("http://old.example.com");
   }
 
@@ -430,16 +440,16 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph().addHyperlink("旧文本", "http://old.example.com");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 只改 URL:文本应保持不变。
-    tools.updateHyperlink(docId, 0, 0, null, "https://new.example.com/x");
+    tk.body.updateHyperlink(docId, 0, 0, null, "https://new.example.com/x");
     // URL 改动需 save 落盘后 reopen 才能稳定读回(POI 关系缓存在内存即时读回仍是旧值,
     // 这是 core 既有行为,非本次改造引入)。文本用内存读回即可。
-    assertThat(tools.readHyperlink(docId, 0, 0)).contains("旧文本");
+    assertThat(tk.body.readHyperlink(docId, 0, 0)).contains("旧文本");
     Path out = tmp.resolve("link-url-out.docx");
-    tools.saveDocx(docId, out.toAbsolutePath().toString());
+    tk.session.saveDocx(docId, out.toAbsolutePath().toString());
     try (Document doc2 = Docx.open(out)) {
       String url = firstHyperlinkUrl(doc2);
       String text = firstHyperlinkText(doc2);
@@ -455,15 +465,15 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph().addHyperlink("旧文本", "http://old.example.com");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 一次改齐文本和 URL——这正是合并工具的核心价值(旧版要调两次)。
-    String result = tools.updateHyperlink(docId, 0, 0, "新文本", "https://new.example.com/x");
+    String result = tk.body.updateHyperlink(docId, 0, 0, "新文本", "https://new.example.com/x");
     assertThat(result).contains("新文本").contains("https://new.example.com/x");
     // save + reopen 验证两者都落盘成功。
     Path out = tmp.resolve("link-both-out.docx");
-    tools.saveDocx(docId, out.toAbsolutePath().toString());
+    tk.session.saveDocx(docId, out.toAbsolutePath().toString());
     try (Document doc2 = Docx.open(out)) {
       assertThat(firstHyperlinkUrl(doc2)).isEqualTo("https://new.example.com/x");
       assertThat(firstHyperlinkText(doc2)).isEqualTo("新文本");
@@ -477,12 +487,12 @@ class DocxAgentToolsBatchTest {
       doc.addParagraph().addHyperlink("旧文本", "http://old.example.com");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 两个都不传 → 报错,文档不变。
-    assertThat(tools.updateHyperlink(docId, 0, 0, null, null)).contains("至少传一个");
-    assertThat(tools.readHyperlink(docId, 0, 0)).contains("旧文本");
+    assertThat(tk.body.updateHyperlink(docId, 0, 0, null, null)).contains("至少传一个");
+    assertThat(tk.body.readHyperlink(docId, 0, 0)).contains("旧文本");
   }
 
   // ---------- 构造对象数组元素的辅助 ----------

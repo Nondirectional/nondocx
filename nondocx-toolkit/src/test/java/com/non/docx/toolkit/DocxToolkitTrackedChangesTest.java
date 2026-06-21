@@ -1,4 +1,4 @@
-package com.non.docx.examples.agent;
+package com.non.docx.toolkit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,12 +21,15 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTcPr;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrackChange;
 
 /**
- * 冒烟测试 DocxAgentTools 新增的 tracked changes 工具(H 组),不发 LLM、直接调工具方法验证返回串。
+ * 冒烟测试 {@link DocxToolkit} 的 tracked changes 工具(H 组读取/处理 + I 组创作), 不发 LLM、直接调工具方法验证返回串。
  *
  * <p>不重复测 core 的 accept/reject 正确性(那由 core 的 12 个单元测试背书);这里只验证工具层的包装:返回串格式、 docId 不存在的错误串、list 拿到
  * stable id 后 accept/reject 的衔接、cellMerge 被诚实拒绝。
+ *
+ * <p>本测试跨 {@link TrackedChangeQueryTools}(读/处理)与 {@link TrackedChangeAuthoringTools}(创作)两个工具类, 经
+ * {@link DocxToolkit} 门面驱动——验证拆分后两组共享同一份会话状态(创作出的修订能被读取组按 docId 读回)。
  */
-class DocxAgentToolsTrackedChangesTest {
+class DocxToolkitTrackedChangesTest {
 
   private static final String W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -44,15 +47,15 @@ class DocxAgentToolsTrackedChangesTest {
       doc.save(file);
     }
 
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     assertThat(docId).startsWith("doc-");
 
     // enabled:文档未显式开开关 → 未开启
-    assertThat(tools.getTrackedChangesEnabled(docId)).contains("未开启");
+    assertThat(tk.trackedChangeQuery.getTrackedChangesEnabled(docId)).contains("未开启");
 
     // list:三条 cell 修订,每条带 stable id
-    String list = tools.listTrackedChanges(docId);
+    String list = tk.trackedChangeQuery.listTrackedChanges(docId);
     assertThat(list).contains("共 3 条修订");
     assertThat(list).contains("CELL_INS").contains("CELL_DEL").contains("CELL_MERGE");
     // 抽出 cellIns 的 id(形如 cell_ins:...:1)
@@ -60,9 +63,9 @@ class DocxAgentToolsTrackedChangesTest {
     assertThat(cellInsId).isNotBlank();
 
     // accept cellIns:工具返回"已应用",再 list 只剩 2 条
-    String acceptResult = tools.acceptCellChange(docId, List.of(cellInsId));
+    String acceptResult = tk.trackedChangeQuery.acceptCellChange(docId, List.of(cellInsId));
     assertThat(acceptResult).contains("已应用");
-    assertThat(tools.listTrackedChanges(docId)).contains("共 2 条修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
   }
 
   @Test
@@ -74,24 +77,24 @@ class DocxAgentToolsTrackedChangesTest {
       addCellMerge(tc, "3", "丙");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String id = extractId(tools.listTrackedChanges(docId), "cell_merge:");
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String id = extractId(tk.trackedChangeQuery.listTrackedChanges(docId), "cell_merge:");
 
     // cellMerge 的 accept 应返回含错误的明细串(而非抛异常),整批失败 1 条
-    String result = tools.acceptCellChange(docId, List.of(id));
+    String result = tk.trackedChangeQuery.acceptCellChange(docId, List.of(id));
     assertThat(result).contains("错误");
     assertThat(result).contains("失败 1 条");
     // 文档未变,cellMerge 仍在
-    assertThat(tools.listTrackedChanges(docId)).contains("共 1 条修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 1 条修订");
   }
 
   @Test
   void shouldReturnErrorForUnknownDocId() {
-    DocxAgentTools tools = new DocxAgentTools();
-    assertThat(tools.getTrackedChangesEnabled("doc-999")).contains("不存在");
-    assertThat(tools.listTrackedChanges("doc-999")).contains("不存在");
-    assertThat(tools.acceptCellChange("doc-999", List.of("x"))).contains("不存在");
+    DocxToolkit tk = new DocxToolkit();
+    assertThat(tk.trackedChangeQuery.getTrackedChangesEnabled("doc-999")).contains("不存在");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges("doc-999")).contains("不存在");
+    assertThat(tk.trackedChangeQuery.acceptCellChange("doc-999", List.of("x"))).contains("不存在");
   }
 
   /** set_tracked_changes_enabled:开/关往返 + 读回一致 + docId 不存在返回错误串。 */
@@ -102,20 +105,20 @@ class DocxAgentToolsTrackedChangesTest {
       doc.addParagraph("空文档");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     // 初始未开启
-    assertThat(tools.getTrackedChangesEnabled(docId)).contains("未开启");
+    assertThat(tk.trackedChangeQuery.getTrackedChangesEnabled(docId)).contains("未开启");
     // 开启:返回串标「已开启」,读回一致
-    assertThat(tools.setTrackedChangesEnabled(docId, true)).contains("已开启");
-    assertThat(tools.getTrackedChangesEnabled(docId)).contains("已开启");
+    assertThat(tk.trackedChangeQuery.setTrackedChangesEnabled(docId, true)).contains("已开启");
+    assertThat(tk.trackedChangeQuery.getTrackedChangesEnabled(docId)).contains("已开启");
     // 关闭:返回串标「已关闭」,读回一致
-    assertThat(tools.setTrackedChangesEnabled(docId, false)).contains("已关闭");
-    assertThat(tools.getTrackedChangesEnabled(docId)).contains("未开启");
+    assertThat(tk.trackedChangeQuery.setTrackedChangesEnabled(docId, false)).contains("已关闭");
+    assertThat(tk.trackedChangeQuery.getTrackedChangesEnabled(docId)).contains("未开启");
 
     // docId 不存在返回错误串
-    assertThat(tools.setTrackedChangesEnabled("doc-999", true)).contains("不存在");
+    assertThat(tk.trackedChangeQuery.setTrackedChangesEnabled("doc-999", true)).contains("不存在");
   }
 
   // ---------- I 组:创作工具冒烟 ----------
@@ -127,12 +130,12 @@ class DocxAgentToolsTrackedChangesTest {
       doc.addParagraph().addRun("要删的文字");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String result = tools.deleteRunTracked(docId, "甲", List.of(runEdit(0, 0)));
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String result = tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(runEdit(0, 0)));
     assertThat(result).contains("tracked del").contains("要删的文字");
     // 读回应有一条 DEL
-    assertThat(tools.listTrackedChanges(docId)).contains("DEL");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("DEL");
   }
 
   @Test
@@ -142,14 +145,14 @@ class DocxAgentToolsTrackedChangesTest {
       doc.addParagraph().addRun("旧文字");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     Map<String, Object> edit = runEdit(0, 0);
     edit.put("new_text", "新文字");
-    String result = tools.replaceRunTracked(docId, "甲", List.of(edit));
+    String result = tk.trackedChangeAuthoring.replaceRunTracked(docId, "甲", List.of(edit));
     assertThat(result).contains("旧文字").contains("新文字").contains("del+ins");
     // 读回:一条 DEL(旧)+ 一条 INS(新)
-    String list = tools.listTrackedChanges(docId);
+    String list = tk.trackedChangeQuery.listTrackedChanges(docId);
     assertThat(list).contains("DEL").contains("INS");
   }
 
@@ -160,18 +163,18 @@ class DocxAgentToolsTrackedChangesTest {
       doc.addParagraph("段首");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     Map<String, Object> edit = new LinkedHashMap<>();
     edit.put("paragraph_index", 0);
     edit.put("text", "插入文字");
     edit.put("bold", true);
     edit.put("italic", false);
     edit.put("color", "FF0000");
-    String result = tools.insertTrackedRun(docId, "甲", List.of(edit));
+    String result = tk.trackedChangeAuthoring.insertTrackedRun(docId, "甲", List.of(edit));
     assertThat(result).contains("插入文字").contains("✓");
     // 读回应有一条 INS
-    assertThat(tools.listTrackedChanges(docId)).contains("INS");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("INS");
   }
 
   @Test
@@ -181,12 +184,13 @@ class DocxAgentToolsTrackedChangesTest {
       doc.addTable().addRow().addCell().addParagraph().addRun("内容");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String result = tools.markCellInserted(docId, "甲", List.of(cellCoord(0, 0, 0)));
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String result =
+        tk.trackedChangeAuthoring.markCellInserted(docId, "甲", List.of(cellCoord(0, 0, 0)));
     assertThat(result).contains("cellIns");
     // 读回应有一条 CELL_INS
-    assertThat(tools.listTrackedChanges(docId)).contains("CELL_INS");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("CELL_INS");
   }
 
   @Test
@@ -197,12 +201,12 @@ class DocxAgentToolsTrackedChangesTest {
       doc.addParagraph("目标段");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String result = tools.moveRunTracked(docId, 0, 0, 1, "甲");
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String result = tk.trackedChangeAuthoring.moveRunTracked(docId, 0, 0, 1, "甲");
     assertThat(result).contains("moveFrom");
     // 读回应有配对的 MOVE_FROM + MOVE_TO
-    String list = tools.listTrackedChanges(docId);
+    String list = tk.trackedChangeQuery.listTrackedChanges(docId);
     assertThat(list).contains("MOVE_FROM").contains("MOVE_TO");
   }
 
@@ -218,11 +222,13 @@ class DocxAgentToolsTrackedChangesTest {
       ins.addNewR().addNewT().setStringValue("X");
       doc.save(file);
     }
-    DocxAgentTools tools = new DocxAgentTools();
-    String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String id = extractId(tools.listTrackedChanges(docId), "ins:");
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String id = extractId(tk.trackedChangeQuery.listTrackedChanges(docId), "ins:");
     // family 不符 → 该条记错误不中断
-    assertThat(tools.acceptPropertyChange(docId, List.of(id))).contains("错误").contains("失败 1 条");
+    assertThat(tk.trackedChangeQuery.acceptPropertyChange(docId, List.of(id)))
+        .contains("错误")
+        .contains("失败 1 条");
   }
 
   /** 从 list 输出里抽取首个以 prefix 开头的 id(id 在「id=」之后)。 */

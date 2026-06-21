@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -11,26 +11,30 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>nondocx-examples</artifactId>
+    <artifactId>nondocx-toolkit</artifactId>
     <packaging>jar</packaging>
 
-    <name>nondocx-examples</name>
-    <description>可运行的使用示例，演示 nondocx-core 的完整能力。</description>
+    <name>nondocx-toolkit</name>
+    <description>
+        把 nondocx-core 的 docx 读写能力包装成一组细粒度 Agent 工具（@ToolDef），
+        交给 nonchain Agent 调用。与 nondocx-core 平级。
+    </description>
 
     <dependencies>
+        <!-- nondocx-core —— 工具的活对象模型来源（段落/run/表格/修订/页眉页脚链式 API） -->
         <dependency>
             <groupId>com.non</groupId>
             <artifactId>nondocx-core</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!-- nondocx-toolkit：把 docx 读写能力包装成一组 Agent 工具（@ToolDef），
-             本模块的 Agent 示例用它的 DocxToolkit 门面组装工具集。
-             chain（nonchain）经 toolkit 间接传递。 -->
+        <!-- nonchain Agent 框架 —— 提供 @ToolDef/@ToolParam 注解与 ToolRegistry，
+             工具方法靠它们被反射注册给 Agent。 -->
         <dependency>
             <groupId>com.non</groupId>
-            <artifactId>nondocx-toolkit</artifactId>
-            <version>${project.version}</version>
+            <artifactId>chain</artifactId>
         </dependency>
+
+        <!-- Test dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

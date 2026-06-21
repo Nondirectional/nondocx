@@ -9,6 +9,7 @@ import com.non.chain.provider.DashscopeLLM;
 import com.non.chain.provider.LLM;
 import com.non.chain.tool.ToolRegistry;
 import com.non.docx.examples.ExamplePaths;
+import com.non.docx.toolkit.DocxToolkit;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -24,8 +25,8 @@ import java.nio.file.StandardCopyOption;
  *   <li>nonchain 侧：如何用 {@link ToolRegistry#scan(Object)} 把一个实例类的 {@link
  *       com.non.chain.tool.ToolDef @ToolDef} 方法批量注册为工具， 再用 {@link Agent.Builder} 组装出 LLM + 工具循环的
  *       Agent。
- *   <li>nondocx 侧：{@link DocxAgentTools} 把 docx 的「段落 / run / 表格单元格 / 超链接 / 页眉页脚」 链式活对象模型逐段暴露给
- *       LLM，并提供 {@code search_text} 跨容器文本搜索， 让 Agent 在不碰 POI 的情况下完成读取与编辑。
+ *   <li>nondocx 侧：{@link DocxToolkit} 把 docx 的「段落 / run / 表格单元格 / 超链接 / 页眉页脚」 链式活对象模型逐段暴露给 LLM，并提供
+ *       {@code search_text} 跨容器文本搜索， 让 Agent 在不碰 POI 的情况下完成读取与编辑。
  * </ol>
  *
  * <p><b>运行前置</b>：环境变量 {@code DASHSCOPE_API_KEY}（阿里云灵积平台 API Key）。 未设置时本示例无法端到端运行（会启动失败），但模块本身可正常编译。
@@ -103,8 +104,9 @@ public final class DocxAgentExample {
 
   public static void main(String[] args) throws Exception {
     LLM llm = new DashscopeLLM("qwen3.7-plus").maxCompletionTokens(1024);
-    DocxAgentTools tools = new DocxAgentTools();
-    ToolRegistry registry = new ToolRegistry().scan(tools);
+    // DocxToolkit 门面构造全部六组工具并共享同一份文档会话；scanAll 把它们一次注册进 registry。
+    DocxToolkit toolkit = new DocxToolkit();
+    ToolRegistry registry = toolkit.scanAll(new ToolRegistry());
 
     Agent agent =
         Agent.builder(llm, registry)

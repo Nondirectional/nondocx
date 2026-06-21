@@ -10,6 +10,7 @@ import com.non.chain.provider.DashscopeLLM;
 import com.non.chain.provider.LLM;
 import com.non.chain.tool.ToolRegistry;
 import com.non.docx.examples.ExamplePaths;
+import com.non.docx.toolkit.DocxToolkit;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -105,8 +106,9 @@ public final class InteractiveDocxAgentExample {
     }
 
     LLM llm = new DashscopeLLM("qwen3.7-plus").maxCompletionTokens(1024);
-    DocxAgentTools tools = new DocxAgentTools();
-    ToolRegistry registry = new ToolRegistry().scan(tools);
+    // DocxToolkit 门面构造全部六组工具并共享同一份文档会话；scanAll 把它们一次注册进 registry。
+    DocxToolkit toolkit = new DocxToolkit();
+    ToolRegistry registry = toolkit.scanAll(new ToolRegistry());
 
     Agent agent =
         Agent.builder(llm, registry)

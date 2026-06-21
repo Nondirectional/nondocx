@@ -39,6 +39,9 @@
 
     <modules>
         <module>nondocx-core</module>
+        <!-- nondocx-toolkit — 把 docx 读写能力包装成一组 Agent 工具（@ToolDef），
+             依赖 core + nonchain，与 core 平级。examples 依赖它来演示 Agent 集成。 -->
+        <module>nondocx-toolkit</module>
         <module>nondocx-examples</module>
     </modules>
 
@@ -118,7 +121,8 @@
                 <scope>test</scope>
             </dependency>
 
-            <!-- nonchain Agent 框架（仅在 nondocx-examples 中使用，演示把 docx 能力交给 Agent） -->
+            <!-- nonchain Agent 框架：nondocx-toolkit 用它（@ToolDef/@ToolParam 注解 + ToolRegistry），
+                 examples 依赖 toolkit 间接拿到。 -->
             <dependency>
                 <groupId>com.non</groupId>
                 <artifactId>chain</artifactId>
