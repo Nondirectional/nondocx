@@ -74,6 +74,16 @@ public final class InteractiveDocxAgentExample {
           + "优先用 search_text 一次性拿到坐标，再用 replace_run_text/replace_table_cell_run_text 修改，"
           + "不要逐个 read_paragraph 盲读。页眉页脚里的文本也能被 search_text 命中，"
           + "需要其结构细节时用 read_header/read_footer。"
+          // —— 批量工具(v2)：核心工具支持一次操作多个目标 ——
+          + "【批量工具】read_paragraph（段落索引数组 paragraph_indexes）、"
+          + "read_run / read_table_cell（对象数组 runs/cells）、"
+          + "replace_run_text / replace_table_cell_run_text（对象数组 edits，含完整坐标与 text，"
+          + "部分失败不中断、返回每条明细）、append_paragraph（文本数组 texts）、"
+          + "insert_tracked_run / delete_run_tracked / replace_run_tracked / mark_cell_inserted / mark_cell_deleted"
+          + "（author 共享 + 对象数组 edits/cells）、"
+          + "accept/reject_text_or_move_revision、accept/reject_property_change、accept/reject_cell_change（id 数组 ids）、"
+          + "update_hyperlink（text 与 url 都可选，一次改齐）"
+          + "都支持一次操作多个目标，单次调用传长度 1 的数组即可；要同时改/读多处时优先用批量。"
           // 目录(TOC)读取引导:文档有目录时,read_toc 一次拿到「标题/层级/页码/锚点」,
           // 比逐段 read 拼结构高效得多;页码是文档缓存值,过期(dirty)时结果会标注。
           + "需要看文档的目录(章节结构 + 页码)时用 read_toc 一次拿到全部条目，"

@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import javax.xml.namespace.QName;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.xmlbeans.XmlCursor;
@@ -57,8 +60,8 @@ class DocxAgentToolsTrackedChangesTest {
     assertThat(cellInsId).isNotBlank();
 
     // accept cellIns:工具返回"已应用",再 list 只剩 2 条
-    String acceptResult = tools.acceptCellChange(docId, cellInsId);
-    assertThat(acceptResult).startsWith("已应用");
+    String acceptResult = tools.acceptCellChange(docId, List.of(cellInsId));
+    assertThat(acceptResult).contains("已应用");
     assertThat(tools.listTrackedChanges(docId)).contains("共 2 条修订");
   }
 
@@ -75,10 +78,10 @@ class DocxAgentToolsTrackedChangesTest {
     String docId = tools.openDocx(file.toAbsolutePath().toString());
     String id = extractId(tools.listTrackedChanges(docId), "cell_merge:");
 
-    // cellMerge 的 accept 应返回中文错误串(而非抛异常)
-    String result = tools.acceptCellChange(docId, id);
-    assertThat(result).startsWith("错误");
-    assertThat(result).contains("cellMerge");
+    // cellMerge 的 accept 应返回含错误的明细串(而非抛异常),整批失败 1 条
+    String result = tools.acceptCellChange(docId, List.of(id));
+    assertThat(result).contains("错误");
+    assertThat(result).contains("失败 1 条");
     // 文档未变,cellMerge 仍在
     assertThat(tools.listTrackedChanges(docId)).contains("共 1 条修订");
   }
@@ -88,7 +91,7 @@ class DocxAgentToolsTrackedChangesTest {
     DocxAgentTools tools = new DocxAgentTools();
     assertThat(tools.getTrackedChangesEnabled("doc-999")).contains("不存在");
     assertThat(tools.listTrackedChanges("doc-999")).contains("不存在");
-    assertThat(tools.acceptCellChange("doc-999", "x")).contains("不存在");
+    assertThat(tools.acceptCellChange("doc-999", List.of("x"))).contains("不存在");
   }
 
   /** set_tracked_changes_enabled:开/关往返 + 读回一致 + docId 不存在返回错误串。 */
@@ -126,7 +129,7 @@ class DocxAgentToolsTrackedChangesTest {
     }
     DocxAgentTools tools = new DocxAgentTools();
     String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String result = tools.deleteRunTracked(docId, 0, 0, "甲");
+    String result = tools.deleteRunTracked(docId, "甲", List.of(runEdit(0, 0)));
     assertThat(result).contains("tracked del").contains("要删的文字");
     // 读回应有一条 DEL
     assertThat(tools.listTrackedChanges(docId)).contains("DEL");
@@ -141,8 +144,10 @@ class DocxAgentToolsTrackedChangesTest {
     }
     DocxAgentTools tools = new DocxAgentTools();
     String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String result = tools.replaceRunTracked(docId, 0, 0, "甲", "新文字");
-    assertThat(result).contains("旧文字").contains("新文字").contains("del + ins");
+    Map<String, Object> edit = runEdit(0, 0);
+    edit.put("new_text", "新文字");
+    String result = tools.replaceRunTracked(docId, "甲", List.of(edit));
+    assertThat(result).contains("旧文字").contains("新文字").contains("del+ins");
     // 读回:一条 DEL(旧)+ 一条 INS(新)
     String list = tools.listTrackedChanges(docId);
     assertThat(list).contains("DEL").contains("INS");
@@ -157,8 +162,14 @@ class DocxAgentToolsTrackedChangesTest {
     }
     DocxAgentTools tools = new DocxAgentTools();
     String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String result = tools.insertTrackedRun(docId, 0, "甲", "插入文字", true, false, "FF0000");
-    assertThat(result).contains("已").contains("插入文字");
+    Map<String, Object> edit = new LinkedHashMap<>();
+    edit.put("paragraph_index", 0);
+    edit.put("text", "插入文字");
+    edit.put("bold", true);
+    edit.put("italic", false);
+    edit.put("color", "FF0000");
+    String result = tools.insertTrackedRun(docId, "甲", List.of(edit));
+    assertThat(result).contains("插入文字").contains("✓");
     // 读回应有一条 INS
     assertThat(tools.listTrackedChanges(docId)).contains("INS");
   }
@@ -172,7 +183,7 @@ class DocxAgentToolsTrackedChangesTest {
     }
     DocxAgentTools tools = new DocxAgentTools();
     String docId = tools.openDocx(file.toAbsolutePath().toString());
-    String result = tools.markCellInserted(docId, 0, 0, 0, "甲");
+    String result = tools.markCellInserted(docId, "甲", List.of(cellCoord(0, 0, 0)));
     assertThat(result).contains("cellIns");
     // 读回应有一条 CELL_INS
     assertThat(tools.listTrackedChanges(docId)).contains("CELL_INS");
@@ -210,7 +221,8 @@ class DocxAgentToolsTrackedChangesTest {
     DocxAgentTools tools = new DocxAgentTools();
     String docId = tools.openDocx(file.toAbsolutePath().toString());
     String id = extractId(tools.listTrackedChanges(docId), "ins:");
-    assertThat(tools.acceptPropertyChange(docId, id)).startsWith("错误");
+    // family 不符 → 该条记错误不中断
+    assertThat(tools.acceptPropertyChange(docId, List.of(id))).contains("错误").contains("失败 1 条");
   }
 
   /** 从 list 输出里抽取首个以 prefix 开头的 id(id 在「id=」之后)。 */
@@ -224,6 +236,23 @@ class DocxAgentToolsTrackedChangesTest {
       end = listOutput.length();
     }
     return listOutput.substring(i, end);
+  }
+
+  /** 构造 run 操作的 edit 对象(含 paragraph_index、run_index),供 delete/replace_run_tracked 用。 */
+  private static Map<String, Object> runEdit(int paragraphIndex, int runIndex) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("paragraph_index", paragraphIndex);
+    m.put("run_index", runIndex);
+    return m;
+  }
+
+  /** 构造单元格坐标对象(含 table_index、row_index、cell_index),供 mark_cell_* 用。 */
+  private static Map<String, Object> cellCoord(int tableIndex, int rowIndex, int cellIndex) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("table_index", tableIndex);
+    m.put("row_index", rowIndex);
+    m.put("cell_index", cellIndex);
+    return m;
   }
 
   private static void addCellIns(CTTc tc, String id, String author) {
