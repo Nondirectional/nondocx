@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-06-18
+- **Total Sessions**: 6
+- **Last Active**: 2026-06-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~215 | Active |
+| `journal-1.md` | ~516 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-06-21 | DocxAgentTools 工具批量改造(单次/多次调用) | `297fb80` | `feat/agent-tools-batch` |
 | 5 | 2026-06-18 | 给 Agent 加读取 TOC 能力(支持域与 SDT 两种形态) | `37ed527` | `main` |
 | 4 | 2026-06-18 | core 页眉页脚读写分离与 examples Agent 工具增强 | `b2642a8` | `main` |
 | 3 | 2026-06-17 | examples 中新增 nonchain Agent docx 示例 | `f258faf`, `6efa5ab`, `179222e`, `9210cce` | `main` |

@@ -481,3 +481,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 - advanced-types 归档
 - 回 planning 创建 `06-18-tracked-changes-cell-types` 子任务(cell)
 - 父任务接近完成:剩 cell + pPrChange/sectPr 等更高层属性类
+
+
+## Session 6: DocxAgentTools 工具批量改造(单次/多次调用)
+
+**Date**: 2026-06-21
+**Task**: DocxAgentTools 工具批量改造(单次/多次调用)
+**Branch**: `feat/agent-tools-batch`
+
+### Summary
+
+把 Agent 示例的 21 个 docx 工具从「单次调用」升级为「通用版」:方法签名改为接收 List,长度 1 即单次。分三梯队完成。第一梯队(read_paragraph/replace_run_text/replace_table_cell_run_text/append_paragraph/accept+reject_text_or_move_revision)建立批量约定:单字段→平行数组、多字段→对象数组、写类 collect-errors。第二梯队(read_table_cell/insert+delete+replace_run_tracked/mark_cell_inserted+deleted)探针推翻了「批量删除需逆序」的原假设——实测 addDeletion 后 runs() 计数不变(索引不漂移),真正问题是重复操作同一 run 会抛 XmlValueDisconnectedException,故改用按坐标去重。第三梯队(read_run/accept+reject_property_change/accept+reject_cell_change + 合并 update_hyperlink)探针验证 accept 后 id(路径坐标编码)不漂移,可安全逐条循环;并把三类 accept/reject 的循环抽成通用 applyRevisionsByIds(用 BiConsumer 接收方法引用)。合并 update_hyperlink_text/url 为 update_hyperlink(text/url 都可选)。发现 POI 超链接关系缓存的既有行为(URL 改动需 save+reopen 才能稳定读回)。测试:新增 DocxAgentToolsBatchTest(22 个)+ 现有测试调用点同步,全模块 34 个测试全绿。两个探针驱动的发现是最有价值的部分。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `297fb80` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
