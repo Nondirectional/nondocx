@@ -547,3 +547,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 借鉴 docx skill: toolkit 质量自检工具 + Row 分页 API
+
+**Date**: 2026-06-22
+**Task**: 借鉴 docx skill: toolkit 质量自检工具 + Row 分页 API
+**Branch**: `main`
+
+### Summary
+
+完成 docx-skill-adoption 父任务的第 2 个 P0 子任务 quality-check-tools。新增 toolkit 第 7 个工具类 QualityCheckTools（10 项版式/兼容性自检，内存为主执行模型）+ core Row.headerRow()/cantSplit() API（为表格分页检查提供能力）。关键决策：Q1 内存为主（会话不跟踪文件路径，磁盘方案成本高）；Q2 9 项内存可跑 + 新建 API 补 #4。10 项检查借鉴 docx skill postcheck.py 但走 nondocx 活对象 API，shading-solid 走 raw 兜底，引用子任务 1 spec 锚点。25 新测试 + 313 全量测试全绿。至此父任务两子任务全部完成。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `97754e8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

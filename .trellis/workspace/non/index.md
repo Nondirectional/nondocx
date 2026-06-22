@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-06-22
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~549 | Active |
+| `journal-1.md` | ~582 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-06-22 | 借鉴 docx skill: toolkit 质量自检工具 + Row 分页 API | `97754e8` | `main` |
 | 7 | 2026-06-22 | 借鉴 docx skill: WPS/Word 渲染兼容性 spec + core API | `8583824` | `main` |
 | 6 | 2026-06-21 | DocxAgentTools 工具批量改造(单次/多次调用) | `297fb80` | `feat/agent-tools-batch` |
 | 5 | 2026-06-18 | 给 Agent 加读取 TOC 能力(支持域与 SDT 两种形态) | `37ed527` | `main` |

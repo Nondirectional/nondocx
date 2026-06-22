@@ -58,10 +58,10 @@
 
 ## Task Map（父 / 子任务拆分）
 
-| # | 子任务 | 范围 | 主要产出 |
-|---|---|---|---|
-| 1 | `06-22-renderer-compatibility` | WPS/Word 兼容性 spec + core 写路径规避 | `spec/backend/renderer-compatibility.md` + core 默认值修正 |
-| 2 | `06-22-quality-check-tools` | toolkit 质量自检工具 | `QualityCheckTools.java` + `check_quality` 工具方法 |
+| # | 子任务 | 范围 | 主要产出 | 状态 |
+|---|---|---|---|---|
+| 1 | `06-22-renderer-compatibility` | WPS/Word 兼容性 spec + core 写路径规避 | `spec/backend/renderer-compatibility.md` + core 默认值修正 | ✅ 完成 2026-06-22（commit 8583824，已归档） |
+| 2 | `06-22-quality-check-tools` | toolkit 质量自检工具 | `QualityCheckTools.java` + `check_quality` 工具方法 | 待开始 |
 
 ## Acceptance Criteria（父任务集成验收）
 
