@@ -4,9 +4,13 @@ import com.non.docx.core.api.image.ImageType;
 import com.non.docx.core.api.section.Orientation;
 import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.style.HeadingLevel;
+import com.non.docx.core.api.style.ShadingPattern;
+import com.non.docx.core.api.style.VerticalAlign;
 import org.apache.poi.common.usermodel.PictureType;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STShd;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STVerticalJc;
 
 /**
  * 内部 API——恕不另行通知即可更改。
@@ -205,5 +209,98 @@ public final class Mappers {
       default:
         return null;
     }
+  }
+
+  /**
+   * 将 nondocx {@link ShadingPattern} 映射到 OOXML {@link STShd.Enum}。
+   *
+   * <p>nondocx 的 {@link ShadingPattern} 故意只暴露跨引擎安全的图案（{@link ShadingPattern#CLEAR}、 {@link
+   * ShadingPattern#NIL}），<b>不暴露 {@code SOLID}</b>（WPS 渲染为黑块，见 {@code
+   * renderer-compatibility.md#shading-solid}）。本方法也只产出这两种安全值。
+   *
+   * @param pattern nondocx 底纹图案（不能为 {@code null}）
+   * @return 对应的 OOXML 底纹图案枚举
+   * @throws IllegalArgumentException 如果 {@code pattern} 为 {@code null}
+   */
+  public static STShd.Enum toPoi(ShadingPattern pattern) {
+    if (pattern == null) {
+      throw new IllegalArgumentException("pattern must not be null");
+    }
+    switch (pattern) {
+      case CLEAR:
+        return STShd.CLEAR;
+      case NIL:
+        return STShd.NIL;
+      default:
+        throw new IllegalArgumentException("Unsupported shading pattern: " + pattern);
+    }
+  }
+
+  /**
+   * 将 OOXML {@link STShd.Enum} 映射回 nondocx {@link ShadingPattern}。
+   *
+   * <p>{@code null} 输入（意味着未设底纹）映射为 {@code null}。{@code SOLID} 及所有未在 nondocx 建模的图案 （各种条纹/百分比图案）归并为
+   * {@link ShadingPattern#NIL}，以确保实际文档永不加载失败——若需要保留原始图案 细节，请走 {@code raw()} 直接读 {@code CTShd}。
+   *
+   * @param pattern OOXML 底纹图案，如果未设置则为 {@code null}
+   * @return 对应的 nondocx 底纹图案，如果输入为 {@code null} 则返回 {@code null}
+   */
+  public static ShadingPattern fromPoi(STShd.Enum pattern) {
+    if (pattern == null) {
+      return null;
+    }
+    if (pattern == STShd.CLEAR) {
+      return ShadingPattern.CLEAR;
+    }
+    if (pattern == STShd.NIL) {
+      return ShadingPattern.NIL;
+    }
+    // SOLID 及所有未建模图案归并 NIL（跨引擎安全默认），raw() 可读原始值
+    return ShadingPattern.NIL;
+  }
+
+  /**
+   * 将 nondocx {@link VerticalAlign} 映射到 OOXML {@link STVerticalJc.Enum}。
+   *
+   * @param align nondocx 垂直对齐（不能为 {@code null}）
+   * @return 对应的 OOXML 垂直对齐枚举
+   * @throws IllegalArgumentException 如果 {@code align} 为 {@code null}
+   */
+  public static STVerticalJc.Enum toPoi(VerticalAlign align) {
+    if (align == null) {
+      throw new IllegalArgumentException("align must not be null");
+    }
+    switch (align) {
+      case TOP:
+        return STVerticalJc.TOP;
+      case CENTER:
+        return STVerticalJc.CENTER;
+      case BOTTOM:
+        return STVerticalJc.BOTTOM;
+      default:
+        throw new IllegalArgumentException("Unsupported vertical align: " + align);
+    }
+  }
+
+  /**
+   * 将 OOXML {@link STVerticalJc.Enum} 映射回 nondocx {@link VerticalAlign}。
+   *
+   * <p>{@code null} 输入（意味着未设垂直对齐）映射为 {@code null}；调用方在 {@code Cell} 级别应用 OOXML 的 默认行为（{@link
+   * VerticalAlign#TOP}）。
+   *
+   * @param align OOXML 垂直对齐，如果未设置则为 {@code null}
+   * @return 对应的 nondocx 垂直对齐，如果输入为 {@code null} 则返回 {@code null}
+   */
+  public static VerticalAlign fromPoi(STVerticalJc.Enum align) {
+    if (align == null) {
+      return null;
+    }
+    if (align == STVerticalJc.CENTER) {
+      return VerticalAlign.CENTER;
+    }
+    if (align == STVerticalJc.BOTTOM) {
+      return VerticalAlign.BOTTOM;
+    }
+    return VerticalAlign.TOP;
   }
 }

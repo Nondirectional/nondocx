@@ -1,6 +1,7 @@
 package com.non.docx.core.api.table;
 
 import com.non.docx.core.api.BodyElement;
+import com.non.docx.core.internal.poi.TableWidthNodes;
 import com.non.docx.core.internal.util.Objects;
 import java.util.AbstractList;
 import java.util.List;
@@ -114,6 +115,64 @@ public final class Table implements BodyElement {
     Row appended = addRow();
     config.accept(appended);
     return this;
+  }
+
+  /**
+   * 按<b>百分比</b>设置表格各列宽度,并返回 {@code this} 以支持链式调用。
+   *
+   * <p>这是 nondocx 的<b>主推列宽路径</b>——百分比(PCT)在 Microsoft Word 与 WPS 两个渲染引擎下行为一致。 同时写 {@code
+   * <w:tblGrid>} 内每个 {@code <w:gridCol>} 的 {@code w:w}(PCT 单位,即五十分之一百分比) 与 {@code <w:tblW
+   * w:type="pct">}(列百分比之和)。
+   *
+   * <p><b>OOXML</b>:PCT 的 {@code w:w} 以「五十分之一百分比」编码({@code w:w="5000"} = 100%)。 本方法把 {@code
+   * percents[i]}(0-100 的整数百分比)内部乘以 50 转换。
+   *
+   * <p><b>WPS/Word 兼容性</b>:纯 DXA 在 WPS 触发 tblGrid 错位 bug (见 {@code
+   * renderer-compatibility.md#table-width-dxa});百分比是跨引擎安全选择。若必须用绝对宽度,用 {@link
+   * #columnWidths(int[])}。
+   *
+   * <p>覆盖此表格上已有的列宽设置(后调覆盖前调)。{@code tblGrid} 的 {@code gridCol} 数量会被调整为 {@code
+   * percents.length}——不足则补、多余则删。
+   *
+   * @param percents 各列百分比(0-100 的整数;数组长度即列数;不能为 {@code null} 或空)
+   * @return 此表格(链式)
+   * @throws IllegalArgumentException 如果 {@code percents} 为 {@code null} 或空
+   */
+  public Table columnPercents(int[] percents) {
+    TableWidthNodes.applyColumnPercents(delegate.getCTTbl(), percents);
+    return this;
+  }
+
+  /**
+   * 按<b>twips(绝对宽度)</b>设置表格各列宽度,并返回 {@code this} 以支持链式调用。
+   *
+   * <p>这是 nondocx 的<b>显式 DXA 覆盖路径</b>——当需要精确的绝对宽度时使用。同时写 {@code <w:tblGrid>} 内每个 {@code
+   * <w:gridCol>} 的 {@code w:w}(twips)与 {@code <w:tblW w:type="dxa">}(列宽之和)。
+   *
+   * <p><b>WPS/Word 兼容性</b>:纯 DXA 在 WPS 的某些版本会触发 tblGrid 错位 bug (见 {@code
+   * renderer-compatibility.md#table-width-dxa})。跨引擎场景请优先使用 {@link #columnPercents(int[])}。
+   *
+   * <p>覆盖此表格上已有的列宽设置(后调覆盖前调)。{@code tblGrid} 的 {@code gridCol} 数量会被调整为 {@code dxa.length}。
+   *
+   * @param dxa 各列宽度(twips,1 twip = 1/20 点;数组长度即列数;不能为 {@code null} 或空)
+   * @return 此表格(链式)
+   * @throws IllegalArgumentException 如果 {@code dxa} 为 {@code null} 或空
+   */
+  public Table columnWidths(int[] dxa) {
+    TableWidthNodes.applyColumnWidths(delegate.getCTTbl(), dxa);
+    return this;
+  }
+
+  /**
+   * 返回各列宽度(twips)的列表。
+   *
+   * <p>每次访问都从委托重新读取。读取时 PCT 类型的列宽按 A4 可用宽度(9026 twips)近似换算回 twips; DXA 类型的列宽原样返回。若 {@code tblGrid}
+   * 未设则返回空列表。
+   *
+   * @return 各列 twips 宽度列表(可能为空,从不为 {@code null})
+   */
+  public List<Integer> columnWidths() {
+    return TableWidthNodes.readColumnWidths(delegate.getCTTbl());
   }
 
   /**

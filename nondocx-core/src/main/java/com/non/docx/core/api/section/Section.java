@@ -206,6 +206,34 @@ public final class Section {
     return marginOf(CTPageMar::getLeft);
   }
 
+  /**
+   * 清理此章节中<b>没有属性</b>的 {@code <w:pgNumType/>} 元素,并返回是否清理了。
+   *
+   * <p><b>OOXML</b>:{@code <w:pgNumType>} 的语义是「覆盖本节的起始页码 / 编号格式」。一个既无 {@code w:start} 也无 {@code
+   * w:fmt} 的<b>裸元素</b>等于「我要覆盖,但没说覆盖成什么」——Microsoft Word 容忍这种空声明, 但 <b>WPS</b>
+   * 严格解读为「覆盖为空值」,导致页码引擎混乱(从 0 开始、格式错乱)。 POI 5.2.5 的 {@code CTSectPr.addNewPgNumType()}
+   * 不设属性时确实会写出这种裸元素 (已实测验证)。
+   *
+   * <p><b>nondocx 不会在 {@code Document.save} 自动调用本方法</b>——守住 save 的纯序列化语义, 与 nondocx「活对象 +
+   * 显式操作」哲学一致。用户/Agent 在需要时显式调用, 或由 toolkit 的 {@code QualityCheckTools} 检出后建议调用。
+   *
+   * <p>详见 {@code renderer-compatibility.md#empty-pgnumtype}。
+   *
+   * @return 若清理了空 {@code <w:pgNumType/>} 则返回 {@code true};未设或有属性(保留)则返回 {@code false}
+   */
+  public boolean cleanEmptyPageNumbering() {
+    if (!delegate.isSetPgNumType()) {
+      return false;
+    }
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageNumber pn =
+        delegate.getPgNumType();
+    if (pn.isSetStart() || pn.isSetFmt()) {
+      return false; // 有属性,保留
+    }
+    delegate.unsetPgNumType();
+    return true;
+  }
+
   // ---------- 页眉/页脚 ----------
 
   /**

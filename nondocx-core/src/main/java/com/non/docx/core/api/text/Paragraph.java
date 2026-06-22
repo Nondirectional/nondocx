@@ -9,9 +9,11 @@ import com.non.docx.core.api.image.ImageType;
 import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.style.HeadingLevel;
 import com.non.docx.core.api.style.ListKind;
+import com.non.docx.core.api.style.Shading;
 import com.non.docx.core.internal.poi.Mappers;
 import com.non.docx.core.internal.poi.Numbering;
 import com.non.docx.core.internal.poi.Pictures;
+import com.non.docx.core.internal.poi.ShadingNodes;
 import com.non.docx.core.internal.util.Objects;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -488,6 +490,65 @@ public final class Paragraph implements BodyElement {
   }
 
   /**
+   * 给此段落设置<b>纯色背景填充</b>底纹,并返回 {@code this} 以支持链式调用。
+   *
+   * <p><b>OOXML</b>:在段落属性 {@code <w:pPr>} 内写 {@code <w:shd w:val="clear" w:fill="...">}。
+   *
+   * <p><b>WPS/Word 兼容性</b>:本方法<b>强制 {@code w:val="clear"}</b>(纯背景色填充,跨引擎安全), 不暴露 {@code SOLID}(WPS
+   * 渲染为黑块,见 {@code renderer-compatibility.md#shading-solid})。若需要其它图案, 使用 {@link
+   * #shading(Shading)};若确实需要 SOLID 语义,走 {@link #raw()} 直接操纵 {@code CTShd}。
+   *
+   * <p>等价于 {@code shading(Shading.of(fill))}。覆盖此段落上已有的底纹。
+   *
+   * @param fill 背景色(十六进制 RGB 字符串,如 {@code "F1F5F9"},不带 {@code #};不能为 {@code null})
+   * @return 此段落(链式)
+   * @throws IllegalArgumentException 如果 {@code fill} 为 {@code null}
+   */
+  public Paragraph shading(String fill) {
+    return shading(Shading.of(fill));
+  }
+
+  /**
+   * 给此段落设置指定的底纹,并返回 {@code this} 以支持链式调用。
+   *
+   * <p>覆盖此段落上已有的底纹。{@link Shading} 的 {@code ShadingPattern} 枚举已排除 {@code SOLID}, 故本方法永远不产出 WPS
+   * 黑块风险。
+   *
+   * @param shading 底纹值对象(不能为 {@code null})
+   * @return 此段落(链式)
+   * @throws IllegalArgumentException 如果 {@code shading} 为 {@code null}
+   */
+  public Paragraph shading(Shading shading) {
+    Objects.requireNonNull(shading, "shading");
+    ShadingNodes.applyToParagraph(delegate.getCTP(), shading);
+    return this;
+  }
+
+  /**
+   * 返回此段落的底纹。
+   *
+   * <p>每次访问都从委托重新读取。读取时 OOXML 中未在 nondocx 建模的图案(各种条纹/百分比/SOLID)归并为 {@code NIL};若需保留原始图案细节,走 {@link
+   * #raw()} 直接读 {@code CTShd}。
+   *
+   * @return 底纹值对象;若未设底纹则返回 {@code null}
+   */
+  public Shading shading() {
+    return ShadingNodes.readFromParagraph(delegate.getCTP());
+  }
+
+  /**
+   * 移除此段落的底纹,并返回 {@code this} 以支持链式调用。
+   *
+   * <p>若未设底纹则无操作。
+   *
+   * @return 此段落(链式)
+   */
+  public Paragraph removeShading() {
+    ShadingNodes.removeFromParagraph(delegate.getCTP());
+    return this;
+  }
+
+  /**
    * Sets the left and first-line indentation (in twips, 1/20 of a point) and returns {@code this}.
    *
    * @param leftTwips the left indentation in twips
@@ -624,7 +685,8 @@ public final class Paragraph implements BodyElement {
         && Double.doubleToLongBits(this.lineSpacing())
             == Double.doubleToLongBits(that.lineSpacing())
         && java.util.Objects.equals(this.listKind(), that.listKind())
-        && java.util.Objects.equals(this.listLevel(), that.listLevel());
+        && java.util.Objects.equals(this.listLevel(), that.listLevel())
+        && java.util.Objects.equals(this.shading(), that.shading());
   }
 
   @Override
@@ -637,7 +699,8 @@ public final class Paragraph implements BodyElement {
         indentationFirstLine(),
         lineSpacing(),
         listKind(),
-        listLevel());
+        listLevel(),
+        shading());
   }
 
   // ---------- internals ----------

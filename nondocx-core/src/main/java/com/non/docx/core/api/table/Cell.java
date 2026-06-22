@@ -1,6 +1,9 @@
 package com.non.docx.core.api.table;
 
+import com.non.docx.core.api.style.Shading;
+import com.non.docx.core.api.style.VerticalAlign;
 import com.non.docx.core.api.text.Paragraph;
+import com.non.docx.core.internal.poi.ShadingNodes;
 import com.non.docx.core.internal.util.Objects;
 import java.util.AbstractList;
 import java.util.List;
@@ -158,6 +161,95 @@ public final class Cell {
   }
 
   /**
+   * 给此单元格设置<b>纯色背景填充</b>底纹，并返回 {@code this} 以支持链式调用。
+   *
+   * <p><b>OOXML</b>:在单元格属性 {@code <w:tcPr>} 内写 {@code <w:shd w:val="clear" w:fill="...">}。
+   *
+   * <p><b>WPS/Word 兼容性</b>:本方法<b>强制 {@code w:val="clear"}</b>(纯背景色填充,跨引擎安全), 不暴露 {@code SOLID}(WPS
+   * 渲染为黑块,见 {@code renderer-compatibility.md#shading-solid})。若需要其它图案, 使用 {@link
+   * #shading(Shading)};若确实需要 SOLID 语义,走 {@link #raw()} 直接操纵 {@code CTShd}。
+   *
+   * <p>等价于 {@code shading(Shading.of(fill))}。覆盖此单元格上已有的底纹。
+   *
+   * @param fill 背景色(十六进制 RGB 字符串,如 {@code "F1F5F9"},不带 {@code #};不能为 {@code null})
+   * @return 此单元格(链式)
+   * @throws IllegalArgumentException 如果 {@code fill} 为 {@code null}
+   */
+  public Cell shading(String fill) {
+    return shading(Shading.of(fill));
+  }
+
+  /**
+   * 给此单元格设置指定的底纹,并返回 {@code this} 以支持链式调用。
+   *
+   * <p>覆盖此单元格上已有的底纹。{@link Shading} 的 {@code ShadingPattern} 枚举已排除 {@code SOLID}, 故本方法永远不产出 WPS
+   * 黑块风险。
+   *
+   * @param shading 底纹值对象(不能为 {@code null})
+   * @return 此单元格(链式)
+   * @throws IllegalArgumentException 如果 {@code shading} 为 {@code null}
+   */
+  public Cell shading(Shading shading) {
+    Objects.requireNonNull(shading, "shading");
+    ShadingNodes.applyToCell(delegate.getCTTc(), shading);
+    return this;
+  }
+
+  /**
+   * 返回此单元格的底纹。
+   *
+   * <p>每次访问都从委托重新读取。读取时 OOXML 中未在 nondocx 建模的图案(各种条纹/百分比/SOLID)归并为 {@code NIL};若需保留原始图案细节,走 {@link
+   * #raw()} 直接读 {@code CTShd}。
+   *
+   * @return 底纹值对象;若未设底纹则返回 {@code null}
+   */
+  public Shading shading() {
+    return ShadingNodes.readFromCell(delegate.getCTTc());
+  }
+
+  /**
+   * 移除此单元格的底纹,并返回 {@code this} 以支持链式调用。
+   *
+   * <p>若未设底纹则无操作。
+   *
+   * @return 此单元格(链式)
+   */
+  public Cell removeShading() {
+    ShadingNodes.removeFromCell(delegate.getCTTc());
+    return this;
+  }
+
+  /**
+   * 设置此单元格内容的垂直对齐方式,并返回 {@code this} 以支持链式调用。
+   *
+   * <p><b>OOXML</b>:在 {@code <w:tcPr>} 内写 {@code <w:vAlign w:val="top|center|bottom">}。
+   *
+   * <p><b>WPS/Word 兼容性</b>:当单元格设了 <b>固定(exact)行高</b>时,{@code CENTER} 与 {@code BOTTOM} 在 WPS
+   * 里可能不生效(见 {@code renderer-compatibility.md#exact-row-valign})。跨引擎要求严格的场景建议用 {@link
+   * VerticalAlign#TOP}(也是 OOXML 默认)。
+   *
+   * @param align 垂直对齐(不能为 {@code null})
+   * @return 此单元格(链式)
+   * @throws IllegalArgumentException 如果 {@code align} 为 {@code null}
+   */
+  public Cell verticalAlign(VerticalAlign align) {
+    Objects.requireNonNull(align, "align");
+    com.non.docx.core.internal.poi.CellNodes.applyVerticalAlign(delegate.getCTTc(), align);
+    return this;
+  }
+
+  /**
+   * 返回此单元格内容的垂直对齐方式。
+   *
+   * <p>每次访问都从委托重新读取。未设垂直对齐时返回 {@code null}(OOXML 的实际默认行为是 {@link VerticalAlign#TOP})。
+   *
+   * @return 垂直对齐;若未设则返回 {@code null}
+   */
+  public VerticalAlign verticalAlign() {
+    return com.non.docx.core.internal.poi.CellNodes.readVerticalAlign(delegate.getCTTc());
+  }
+
+  /**
    * 返回底层的 POI 单元格。
    *
    * <p>对返回对象的修改会立即影响文档。请谨慎使用。
@@ -179,11 +271,13 @@ public final class Cell {
       return false;
     }
     Cell that = (Cell) o;
-    return java.util.Objects.equals(this.paragraphs(), that.paragraphs());
+    return java.util.Objects.equals(this.paragraphs(), that.paragraphs())
+        && java.util.Objects.equals(this.shading(), that.shading())
+        && java.util.Objects.equals(this.verticalAlign(), that.verticalAlign());
   }
 
   @Override
   public int hashCode() {
-    return java.util.Objects.hash(paragraphs());
+    return java.util.Objects.hash(paragraphs(), shading(), verticalAlign());
   }
 }

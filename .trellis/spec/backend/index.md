@@ -28,6 +28,7 @@ quality.
 | [POI Bridge](./poi-bridge.md) | How `api/` types wrap `XWPF*` (holding wrapper, `raw()`, exception wrapping) | Done |
 | [Error Handling](./error-handling.md) | All-unchecked `DocxException` hierarchy, POI wrapping rules | Done |
 | [Quality Guidelines](./quality-guidelines.md) | No Lombok, content-equal semantics, testing, forbidden patterns | Done |
+| [Renderer Compatibility](./renderer-compatibility.md) | WPS/Word 双引擎兼容性陷阱清单（shading/列宽/pgNumType/...），每条带稳定锚点 | Done |
 
 Also relevant: [../guides/](../guides/) — general thinking guides (code reuse, cross-layer).
 
@@ -66,6 +67,9 @@ These are the load-bearing conventions; each links to its full treatment.
   → [Quality §1, Code Style](./quality-guidelines.md)
 |- **全中文对外** — README/Javadoc/注释/异常消息均为中文；Trellis
   task docs in Chinese. → [Quality §5](./quality-guidelines.md)
+- **WPS/Word 兼容性默认** — shading 强制 CLEAR（不暴露 SOLID）、列宽默认百分比、
+  空 pgNumType 走显式清理。新增涉及渲染输出的 API 前查
+  [Renderer Compatibility](./renderer-compatibility.md)。
 
 ---
 
@@ -74,6 +78,10 @@ These are the load-bearing conventions; each links to its full treatment.
 Deferred / out-of-MVP — do not spec prematurely:
 - **TOC** — **已落地为只读支持**（`api/toc/TableOfContents` + `TocEntry` + `Document.toc()`，见
   [poi-bridge.md N11](./poi-bridge.md)）。创建/刷新目录（需 Word 分页引擎）仍为 raw-only。
+- **WPS/Word 兼容性** — **已系统化**（见
+  [Renderer Compatibility](./renderer-compatibility.md)）。shading/列宽走 core 默认规避，
+  空 pgNumType 走显式清理，其余 tab/装饰线/characterSpacing/titlePage 为 user-guidance。
+  新增渲染相关 API 前必查此 spec。
 - Document metadata, footnotes/endnotes (PRD Out of Scope)
 - Tracked changes, fields, OLE, OMML math, watermarks, text boxes, shapes (raw-only via `raw()`)
 - JPMS `module-info.java` (pre-1.0)
