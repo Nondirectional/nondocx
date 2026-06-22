@@ -1,5 +1,6 @@
 package com.non.docx.core.internal.poi;
 
+import com.non.docx.core.api.header.HeaderFooterVariant;
 import com.non.docx.core.api.image.ImageType;
 import com.non.docx.core.api.section.Orientation;
 import com.non.docx.core.api.style.Alignment;
@@ -7,7 +8,9 @@ import com.non.docx.core.api.style.HeadingLevel;
 import com.non.docx.core.api.style.ShadingPattern;
 import com.non.docx.core.api.style.VerticalAlign;
 import org.apache.poi.common.usermodel.PictureType;
+import org.apache.poi.xwpf.model.XWPFHeaderFooterPolicy;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STHdrFtr;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STShd;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STVerticalJc;
@@ -302,5 +305,29 @@ public final class Mappers {
       return VerticalAlign.BOTTOM;
     }
     return VerticalAlign.TOP;
+  }
+
+  /**
+   * 将 nondocx {@link HeaderFooterVariant} 映射到 POI 的 {@link STHdrFtr.Enum}（即 {@code
+   * XWPFHeaderFooterPolicy.DEFAULT/FIRST/EVEN}）。
+   *
+   * @param variant nondocx 变体（不能为 {@code null}）
+   * @return 对应的 POI {@code STHdrFtr} 常量
+   * @throws IllegalArgumentException 如果 {@code variant} 为 {@code null}
+   */
+  public static STHdrFtr.Enum toPoi(HeaderFooterVariant variant) {
+    if (variant == null) {
+      throw new IllegalArgumentException("variant must not be null");
+    }
+    switch (variant) {
+      case DEFAULT:
+        return XWPFHeaderFooterPolicy.DEFAULT;
+      case FIRST:
+        return XWPFHeaderFooterPolicy.FIRST;
+      case EVEN:
+        return XWPFHeaderFooterPolicy.EVEN;
+      default:
+        throw new IllegalArgumentException("未知的变体: " + variant);
+    }
   }
 }

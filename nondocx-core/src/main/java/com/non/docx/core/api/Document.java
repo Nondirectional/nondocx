@@ -341,6 +341,36 @@ public final class Document implements AutoCloseable {
   }
 
   /**
+   * 以只读方式返回文档第一个章节（章节 0）的指定变体页眉；不存在时返回 {@code null}，绝不创建。
+   *
+   * <p>便捷委托 {@code section(0).header(variant)}。语义见 {@link
+   * com.non.docx.core.api.section.Section#header(com.non.docx.core.api.header.HeaderFooterVariant)}。
+   *
+   * @param variant 页眉变体（不能为 {@code null}）
+   * @return 第一个章节的指定变体页眉，不存在则返回 {@code null}
+   * @throws IllegalArgumentException 如果 {@code variant} 为 {@code null}
+   */
+  public com.non.docx.core.api.header.Header header(
+      com.non.docx.core.api.header.HeaderFooterVariant variant) {
+    return section(0).header(variant);
+  }
+
+  /**
+   * 显式确保第一个章节存在指定变体页眉（不存在则创建），返回它。便捷委托 {@code section(0).ensureHeader(variant)}。
+   *
+   * <p>创建时会补齐变体生效所需的 OOXML 开关（FIRST 补 {@code titlePg}、EVEN 补 {@code evenAndOddHeaders}）。
+   *
+   * @param variant 页眉变体（不能为 {@code null}）
+   * @return 第一个章节的指定变体页眉（从不返回 {@code null}）
+   * @throws com.non.docx.core.api.exception.DocxIOException 如果页眉部分无法创建或附加
+   * @throws IllegalArgumentException 如果 {@code variant} 为 {@code null}
+   */
+  public com.non.docx.core.api.header.Header ensureHeader(
+      com.non.docx.core.api.header.HeaderFooterVariant variant) {
+    return section(0).ensureHeader(variant);
+  }
+
+  /**
    * 以只读方式返回文档第一个章节（章节 0）的默认（奇数页）页脚；不存在时返回 {@code null}，绝不创建。
    *
    * <p>语义与 {@link #header()} 对称：只读遍历用本方法，写入用 {@link #ensureFooter()}。
@@ -359,6 +389,33 @@ public final class Document implements AutoCloseable {
    */
   public com.non.docx.core.api.header.Footer ensureFooter() {
     return section(0).ensureFooter();
+  }
+
+  /**
+   * 以只读方式返回文档第一个章节（章节 0）的指定变体页脚；不存在时返回 {@code null}，绝不创建。
+   *
+   * <p>便捷委托 {@code section(0).footer(variant)}。
+   *
+   * @param variant 页脚变体（不能为 {@code null}）
+   * @return 第一个章节的指定变体页脚，不存在则返回 {@code null}
+   * @throws IllegalArgumentException 如果 {@code variant} 为 {@code null}
+   */
+  public com.non.docx.core.api.header.Footer footer(
+      com.non.docx.core.api.header.HeaderFooterVariant variant) {
+    return section(0).footer(variant);
+  }
+
+  /**
+   * 显式确保第一个章节存在指定变体页脚（不存在则创建），返回它。便捷委托 {@code section(0).ensureFooter(variant)}。
+   *
+   * @param variant 页脚变体（不能为 {@code null}）
+   * @return 第一个章节的指定变体页脚（从不返回 {@code null}）
+   * @throws com.non.docx.core.api.exception.DocxIOException 如果页脚部分无法创建或附加
+   * @throws IllegalArgumentException 如果 {@code variant} 为 {@code null}
+   */
+  public com.non.docx.core.api.header.Footer ensureFooter(
+      com.non.docx.core.api.header.HeaderFooterVariant variant) {
+    return section(0).ensureFooter(variant);
   }
 
   // ---------- 目录（TOC，只读） ----------
@@ -429,15 +486,15 @@ public final class Document implements AutoCloseable {
    * <p><b>OOXML / POI / nondocx 三层。</b>
    *
    * <ul>
-   *   <li><b>OOXML</b>:批注正文存独立的 {@code word/comments.xml},每条 {@code <w:comment>};被评论的范围在
-   *       {@code word/document.xml} 正文里用 {@code <w:commentRangeStart>}/{@code <w:commentRangeEnd>} 包裹,
+   *   <li><b>OOXML</b>:批注正文存独立的 {@code word/comments.xml},每条 {@code <w:comment>};被评论的范围在 {@code
+   *       word/document.xml} 正文里用 {@code <w:commentRangeStart>}/{@code <w:commentRangeEnd>} 包裹,
    *       {@code <w:commentReference>} 引用,三者用同一 {@code w:id} 配对。
-   *   <li><b>POI</b>:有高级 API {@code XWPFDocument.getDocComments()}(无批注时返 {@code null})、
-   *       {@code getComments()} 枚举、{@code getCommentByID(id)} 按 id 查。但 {@code getComments()} 返回
-   *       {@code comments.xml} 部件顺序,不等于正文顺序。
+   *   <li><b>POI</b>:有高级 API {@code XWPFDocument.getDocComments()}(无批注时返 {@code null})、 {@code
+   *       getComments()} 枚举、{@code getCommentByID(id)} 按 id 查。但 {@code getComments()} 返回 {@code
+   *       comments.xml} 部件顺序,不等于正文顺序。
    *   <li><b>nondocx</b>:把「扫 document.xml 找锚点顺序 + 从 comments.xml 取正文」的脏活收进 {@code
-   *       internal/poi/CommentNodes},对外只暴露 {@link com.non.docx.core.api.comment.Comments} /
-   *       {@link com.non.docx.core.api.comment.Comment} 等 POI-free 类型。
+   *       internal/poi/CommentNodes},对外只暴露 {@link com.non.docx.core.api.comment.Comments} / {@link
+   *       com.non.docx.core.api.comment.Comment} 等 POI-free 类型。
    * </ul>
    *
    * <p><b>与 {@code toc()} 的区别。</b> {@code toc()} 在文档无 TOC 时返回 {@code null};而批注的「列表」总是有

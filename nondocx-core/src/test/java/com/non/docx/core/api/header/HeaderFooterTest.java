@@ -188,4 +188,121 @@ class HeaderFooterTest {
       assertThat(opened.header()).isNotEqualTo(opened.footer());
     }
   }
+
+  // ---------- 变体（首页 / 偶数页） ----------
+
+  @Test
+  void firstHeaderRoundTrips(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("first-header.docx");
+
+    Document original = Docx.create();
+    original.ensureHeader(HeaderFooterVariant.FIRST).addParagraph().addRun("封面页眉");
+    original.save(file);
+
+    try (Document opened = Docx.open(file)) {
+      Header first = opened.header(HeaderFooterVariant.FIRST);
+      assertThat(first).isNotNull();
+      assertThat(first.text()).contains("封面页眉");
+    }
+  }
+
+  @Test
+  void evenFooterRoundTrips(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("even-footer.docx");
+
+    Document original = Docx.create();
+    original.ensureFooter(HeaderFooterVariant.EVEN).addParagraph().addRun("even footer");
+    original.save(file);
+
+    try (Document opened = Docx.open(file)) {
+      Footer even = opened.footer(HeaderFooterVariant.EVEN);
+      assertThat(even).isNotNull();
+      assertThat(even.text()).contains("even footer");
+    }
+  }
+
+  @Test
+  void firstHeaderWritesTitlePgFlag() {
+    // POI 的 createHeader(FIRST) 不自动写 titlePg；nondocx 的 ensureHeader(FIRST) 必须补。
+    Document doc = Docx.create();
+    doc.ensureHeader(HeaderFooterVariant.FIRST);
+
+    assertThat(doc.section(0).raw().isSetTitlePg()).isTrue();
+  }
+
+  @Test
+  void evenHeaderWritesSettingsFlag() {
+    // POI 的 createHeader(EVEN) 不自动写 evenAndOddHeaders；nondocx 的 ensureHeader(EVEN) 必须补。
+    Document doc = Docx.create();
+    doc.ensureHeader(HeaderFooterVariant.EVEN);
+
+    assertThat(doc.raw().getSettings().getCTSettings().isSetEvenAndOddHeaders()).isTrue();
+  }
+
+  @Test
+  void threeVariantsCoexist(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("three.docx");
+
+    Document original = Docx.create();
+    original.ensureHeader().addParagraph().addRun("默认页眉");
+    original.ensureHeader(HeaderFooterVariant.FIRST).addParagraph().addRun("首页页眉");
+    original.ensureHeader(HeaderFooterVariant.EVEN).addParagraph().addRun("偶数页眉");
+    original.save(file);
+
+    try (Document opened = Docx.open(file)) {
+      assertThat(opened.header().text()).contains("默认页眉");
+      assertThat(opened.header(HeaderFooterVariant.FIRST).text()).contains("首页页眉");
+      assertThat(opened.header(HeaderFooterVariant.EVEN).text()).contains("偶数页眉");
+    }
+  }
+
+  @Test
+  void firstHeaderIsCreateOnce() {
+    // 重复 ensure 同一变体返回同一 part（内容追加而非新建）。
+    Document doc = Docx.create();
+    Header first = doc.ensureHeader(HeaderFooterVariant.FIRST);
+    first.addParagraph().addRun("第一段");
+
+    Header second = doc.ensureHeader(HeaderFooterVariant.FIRST);
+    second.addParagraph().addRun("第二段");
+
+    Header read = doc.header(HeaderFooterVariant.FIRST);
+    assertThat(read.paragraphs()).hasSize(2);
+    assertThat(read.text()).contains("第一段");
+    assertThat(read.text()).contains("第二段");
+  }
+
+  @Test
+  void noArgHeaderEqualsDefaultVariant() {
+    // 向后兼容：无参版本 == DEFAULT 变体。
+    Document doc = Docx.create();
+    doc.ensureHeader().addParagraph().addRun("同一内容");
+
+    assertThat(doc.header()).isEqualTo(doc.header(HeaderFooterVariant.DEFAULT));
+    assertThat(doc.header().text()).isEqualTo(doc.header(HeaderFooterVariant.DEFAULT).text());
+  }
+
+  @Test
+  void variantHeaderIsNullWhenAbsent() {
+    // 读写分离契约：未创建的变体 header(variant) 返回 null。
+    assertThat(Docx.create().header(HeaderFooterVariant.FIRST)).isNull();
+    assertThat(Docx.create().header(HeaderFooterVariant.EVEN)).isNull();
+    assertThat(Docx.create().footer(HeaderFooterVariant.FIRST)).isNull();
+    assertThat(Docx.create().footer(HeaderFooterVariant.EVEN)).isNull();
+  }
+
+  @Test
+  void sectionEqualsIncludesVariants(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("equals.docx");
+
+    Document original = Docx.create();
+    original.ensureHeader(HeaderFooterVariant.FIRST).addParagraph().addRun("首页");
+    original.ensureFooter(HeaderFooterVariant.EVEN).addParagraph().addRun("偶数");
+    original.save(file);
+
+    try (Document opened = Docx.open(file)) {
+      // 含变体的 section 在 round-trip 后内容相等（equals/hashCode 扩展生效）。
+      assertThat(opened.section(0)).isEqualTo(original.section(0));
+    }
+  }
 }

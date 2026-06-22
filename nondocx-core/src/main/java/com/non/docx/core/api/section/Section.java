@@ -3,6 +3,7 @@ package com.non.docx.core.api.section;
 import com.non.docx.core.api.exception.DocxIOException;
 import com.non.docx.core.api.header.Footer;
 import com.non.docx.core.api.header.Header;
+import com.non.docx.core.api.header.HeaderFooterVariant;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.internal.poi.Mappers;
 import com.non.docx.core.internal.util.Objects;
@@ -17,6 +18,7 @@ import org.apache.poi.xwpf.usermodel.XWPFHeader;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageSz;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSettings;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
 
 /**
@@ -239,26 +241,43 @@ public final class Section {
   /**
    * 以只读方式返回章节级别的默认（奇数页）页眉；不存在时返回 {@code null}，绝不创建。
    *
-   * <p><b>读写分离。</b> POI 本身就把”读”（{@code getDefaultHeader()}，不存在返回 null）与”写” （{@code
-   * createHeader()}，新建并附加 part）分成了两个方法。nondocx 早期把两者合并进 {@code header()}
-   * 一个方法、采用”访问即创建”语义，换取写入场景”取到就能用”的便利；但这会让只读场景 （搜索、遍历、{@code equals}）意外创建空页眉 part、污染文档。现在遵循 POI
-   * 的读写分离：
-   *
-   * <ul>
-   *   <li>{@code header()} —— 纯只读，不存在返回 {@code null}，永不动文档。
-   *   <li>{@link #ensureHeader()} —— 显式创建（不存在才建），用于写入场景。
-   * </ul>
-   *
-   * <p>页眉通过绑定到此章节 {@code CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析，因此返回的页眉属于 <em>此</em>
-   * 章节：在多章节文档中，每个 {@link Section} 携带自己的默认页眉。
+   * <p>等价于 {@code header(HeaderFooterVariant.DEFAULT)}。读写分离契约与 {@link #header(HeaderFooterVariant)}
+   * 相同，详见那里。
    *
    * @return 此章节的默认页眉，不存在则返回 {@code null}
    */
   public Header header() {
+    return header(HeaderFooterVariant.DEFAULT);
+  }
+
+  /**
+   * 以只读方式返回章节级别的指定变体页眉；不存在时返回 {@code null}，绝不创建。
+   *
+   * <p><b>读写分离。</b> POI 本身就把”读”（{@code getDefaultHeader/getFirstPageHeader/getEvenPageHeader}，不存在返回
+   * null）与”写”（{@code createHeader}，新建并附加 part）分成了两组方法。nondocx 遵循该分离：
+   *
+   * <ul>
+   *   <li>{@code header(variant)} —— 纯只读，不存在返回 {@code null}，永不动文档。
+   *   <li>{@link #ensureHeader(HeaderFooterVariant)} —— 显式创建（不存在才建），用于写入场景。
+   * </ul>
+   *
+   * <p><b>变体与开关。</b> {@link HeaderFooterVariant#FIRST} 需要 {@code <w:titlePg/>}、 {@link
+   * HeaderFooterVariant#EVEN} 需要 {@code <w:evenAndOddHeaders/>} 才会实际渲染。本方法（只读）<b>不</b>补开关 ——
+   * 开关是文档修改行为，属于 {@code ensure} 写路径；只读遍历永不改文档。
+   *
+   * <p>页眉通过绑定到此章节 {@code CTSectPr} 的章节级别 {@code XWPFHeaderFooterPolicy} 解析，因此返回的页眉属于 <em>此</em>
+   * 章节：在多章节文档中，每个 {@link Section} 携带自己的各变体页眉。
+   *
+   * @param variant 页眉变体（不能为 {@code null}）
+   * @return 此章节的指定变体页眉，不存在则返回 {@code null}
+   * @throws IllegalArgumentException 如果 {@code variant} 为 {@code null}
+   */
+  public Header header(HeaderFooterVariant variant) {
+    Objects.requireNonNull(variant, "variant");
     try {
       XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
-      XWPFHeader header = policy.getDefaultHeader();
-      return header == null ? null : new Header(header);
+      XWPFHeader existing = readHeader(policy, variant);
+      return existing == null ? null : new Header(existing);
     } catch (POIXMLException e) {
       // 解析失败（罕见，如 part 损坏）按”不存在”处理，保证只读语义永不抛异常、永不动文档。
       return null;
@@ -268,40 +287,87 @@ public final class Section {
   /**
    * 显式确保此章节存在一个默认页眉：不存在则创建并附加一个空的，已存在则原样返回。
    *
-   * <p>用于<b>写入</b>场景——需要拿到一个可 {@code addParagraph} 的页眉时调用本方法。 只读遍历/搜索请用 {@link
-   * #header()}（不会凭空创建）。创建时若该节尚未显式写入 {@code <w:pgSz>} / {@code <w:pgMar>}，nondocx 会补齐一个兼容性最小页面设置 （A4
-   * + 四边 1 英寸边距），以降低 WPS 等消费者对”裸 {@code <w:sectPr>}”的显示敏感性。
+   * <p>等价于 {@code ensureHeader(HeaderFooterVariant.DEFAULT)}。详见 {@link
+   * #ensureHeader(HeaderFooterVariant)}。
    *
    * @return 此章节的默认页眉（从不返回 {@code null}）
    * @throws DocxIOException 如果页眉部分无法创建或附加
    */
   public Header ensureHeader() {
-    Header existing = header();
+    return ensureHeader(HeaderFooterVariant.DEFAULT);
+  }
+
+  /**
+   * 显式确保此章节存在指定变体页眉：不存在则创建并附加一个空的，已存在则原样返回。
+   *
+   * <p>用于<b>写入</b>场景——需要拿到一个可 {@code addParagraph} 的页眉时调用本方法。只读遍历/搜索请用 {@link
+   * #header(HeaderFooterVariant)}（不会凭空创建）。
+   *
+   * <p><b>开关补齐（重要）。</b> POI 的 {@code createHeader(variant)} <b>不</b>自动写以下开关，故本方法在创建 FIRST/EVEN
+   * 变体时显式补齐（已存在则不重复写，幂等）：
+   *
+   * <ul>
+   *   <li>{@link HeaderFooterVariant#FIRST} —— 在此章节的 {@code <w:sectPr>} 写 {@code <w:titlePg/>}
+   *       （首页不同标志，per-section）。
+   *   <li>{@link HeaderFooterVariant#EVEN} —— 在 {@code word/settings.xml} 写 {@code
+   *       <w:evenAndOddHeaders/>} （奇偶页不同标志，文档级）。
+   *   <li>{@link HeaderFooterVariant#DEFAULT} —— 无开关。
+   * </ul>
+   *
+   * <p>不补开关的后果：part 创建了但渲染时被引擎忽略（Word/WPS 不显示首页/偶数页变体），属于「合法但无效」陷阱。
+   *
+   * <p>创建时若该节尚未显式写入 {@code <w:pgSz>} / {@code <w:pgMar>}，nondocx 也会补齐一个兼容性最小页面设置 （A4 + 四边 1
+   * 英寸边距），以降低 WPS 等消费者对”裸 {@code <w:sectPr>}”的显示敏感性。
+   *
+   * @param variant 页眉变体（不能为 {@code null}）
+   * @return 此章节的指定变体页眉（从不返回 {@code null}）
+   * @throws IllegalArgumentException 如果 {@code variant} 为 {@code null}
+   * @throws DocxIOException 如果页眉部分无法创建或附加
+   */
+  public Header ensureHeader(HeaderFooterVariant variant) {
+    Objects.requireNonNull(variant, "variant");
+    Header existing = header(variant);
     if (existing != null) {
       return existing;
     }
     try {
       ensureCompatiblePageSetupForHeaderFooterCreation();
+      ensureVariantFlags(variant);
       XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
-      XWPFHeader header = policy.createHeader(XWPFHeaderFooterPolicy.DEFAULT);
-      return new Header(header);
+      XWPFHeader created = policy.createHeader(Mappers.toPoi(variant));
+      return new Header(created);
     } catch (POIXMLException e) {
-      throw new DocxIOException("无法创建章节页眉", e);
+      throw new DocxIOException("无法创建章节" + variant + "页眉", e);
     }
   }
 
   /**
    * 以只读方式返回章节级别的默认（奇数页）页脚；不存在时返回 {@code null}，绝不创建。
    *
-   * <p>语义与 {@link #header()} 对称：纯只读、永不动文档。写入场景用 {@link #ensureFooter()}。
+   * <p>等价于 {@code footer(HeaderFooterVariant.DEFAULT)}。语义与 {@link #header()} 对称：纯只读、永不动文档。
    *
    * @return 此章节的默认页脚，不存在则返回 {@code null}
    */
   public Footer footer() {
+    return footer(HeaderFooterVariant.DEFAULT);
+  }
+
+  /**
+   * 以只读方式返回章节级别的指定变体页脚；不存在时返回 {@code null}，绝不创建。
+   *
+   * <p>语义与 {@link #header(HeaderFooterVariant)} 对称：纯只读、永不动文档。写入场景用 {@link
+   * #ensureFooter(HeaderFooterVariant)}。
+   *
+   * @param variant 页脚变体（不能为 {@code null}）
+   * @return 此章节的指定变体页脚，不存在则返回 {@code null}
+   * @throws IllegalArgumentException 如果 {@code variant} 为 {@code null}
+   */
+  public Footer footer(HeaderFooterVariant variant) {
+    Objects.requireNonNull(variant, "variant");
     try {
       XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
-      XWPFFooter footer = policy.getDefaultFooter();
-      return footer == null ? null : new Footer(footer);
+      XWPFFooter existing = readFooter(policy, variant);
+      return existing == null ? null : new Footer(existing);
     } catch (POIXMLException e) {
       return null;
     }
@@ -310,23 +376,42 @@ public final class Section {
   /**
    * 显式确保此章节存在一个默认页脚：不存在则创建并附加一个空的，已存在则原样返回。
    *
-   * <p>用于<b>写入</b>场景。只读遍历/搜索请用 {@link #footer()}。创建时的兼容性页面设置补齐 与 {@link #ensureHeader()} 一致。
+   * <p>等价于 {@code ensureFooter(HeaderFooterVariant.DEFAULT)}。详见 {@link
+   * #ensureFooter(HeaderFooterVariant)}。
    *
    * @return 此章节的默认页脚（从不返回 {@code null}）
    * @throws DocxIOException 如果页脚部分无法创建或附加
    */
   public Footer ensureFooter() {
-    Footer existing = footer();
+    return ensureFooter(HeaderFooterVariant.DEFAULT);
+  }
+
+  /**
+   * 显式确保此章节存在指定变体页脚：不存在则创建并附加一个空的，已存在则原样返回。
+   *
+   * <p>用于<b>写入</b>场景。只读遍历/搜索请用 {@code footer(variant)}。开关补齐与兼容性页面设置补齐 与 {@link
+   * #ensureHeader(HeaderFooterVariant)} 完全一致（FIRST 补 {@code titlePg}、EVEN 补 {@code
+   * evenAndOddHeaders}）。
+   *
+   * @param variant 页脚变体（不能为 {@code null}）
+   * @return 此章节的指定变体页脚（从不返回 {@code null}）
+   * @throws IllegalArgumentException 如果 {@code variant} 为 {@code null}
+   * @throws DocxIOException 如果页脚部分无法创建或附加
+   */
+  public Footer ensureFooter(HeaderFooterVariant variant) {
+    Objects.requireNonNull(variant, "variant");
+    Footer existing = footer(variant);
     if (existing != null) {
       return existing;
     }
     try {
       ensureCompatiblePageSetupForHeaderFooterCreation();
+      ensureVariantFlags(variant);
       XWPFHeaderFooterPolicy policy = new XWPFHeaderFooterPolicy(document, delegate);
-      XWPFFooter footer = policy.createFooter(XWPFHeaderFooterPolicy.DEFAULT);
-      return new Footer(footer);
+      XWPFFooter created = policy.createFooter(Mappers.toPoi(variant));
+      return new Footer(created);
     } catch (POIXMLException e) {
-      throw new DocxIOException("无法创建章节页脚", e);
+      throw new DocxIOException("无法创建章节" + variant + "页脚", e);
     }
   }
 
@@ -361,7 +446,11 @@ public final class Section {
         && this.marginBottom() == that.marginBottom()
         && this.marginLeft() == that.marginLeft()
         && java.util.Objects.equals(this.defaultHeaderParagraphs(), that.defaultHeaderParagraphs())
-        && java.util.Objects.equals(this.defaultFooterParagraphs(), that.defaultFooterParagraphs());
+        && java.util.Objects.equals(this.defaultFooterParagraphs(), that.defaultFooterParagraphs())
+        && java.util.Objects.equals(this.firstHeaderParagraphs(), that.firstHeaderParagraphs())
+        && java.util.Objects.equals(this.firstFooterParagraphs(), that.firstFooterParagraphs())
+        && java.util.Objects.equals(this.evenHeaderParagraphs(), that.evenHeaderParagraphs())
+        && java.util.Objects.equals(this.evenFooterParagraphs(), that.evenFooterParagraphs());
   }
 
   @Override
@@ -374,7 +463,11 @@ public final class Section {
         marginBottom(),
         marginLeft(),
         defaultHeaderParagraphs(),
-        defaultFooterParagraphs());
+        defaultFooterParagraphs(),
+        firstHeaderParagraphs(),
+        firstFooterParagraphs(),
+        evenHeaderParagraphs(),
+        evenFooterParagraphs());
   }
 
   @Override
@@ -443,6 +536,59 @@ public final class Section {
     }
   }
 
+  /**
+   * 按 {@code variant} 分派到 POI 的对应只读 getter（POI 没有 {@code getHeader(STHdrFtr)} 统一方法，只有 三个分别方法）。
+   *
+   * <p>三个 getter 都遵循「不存在返 null」语义，与读写分离契约一致。
+   */
+  private static XWPFHeader readHeader(XWPFHeaderFooterPolicy policy, HeaderFooterVariant variant) {
+    switch (variant) {
+      case DEFAULT:
+        return policy.getDefaultHeader();
+      case FIRST:
+        return policy.getFirstPageHeader();
+      case EVEN:
+        return policy.getEvenPageHeader();
+      default:
+        throw new IllegalArgumentException("未知的变体: " + variant);
+    }
+  }
+
+  /** 同 {@link #readHeader}，针对页脚。 */
+  private static XWPFFooter readFooter(XWPFHeaderFooterPolicy policy, HeaderFooterVariant variant) {
+    switch (variant) {
+      case DEFAULT:
+        return policy.getDefaultFooter();
+      case FIRST:
+        return policy.getFirstPageFooter();
+      case EVEN:
+        return policy.getEvenPageFooter();
+      default:
+        throw new IllegalArgumentException("未知的变体: " + variant);
+    }
+  }
+
+  /**
+   * 补齐 FIRST/EVEN 变体生效所需的 OOXML 开关（POI 的 {@code createHeader(variant)} 不自动写）。
+   *
+   * <p><b>FIRST</b> → 此章节 {@code <w:sectPr>} 的 {@code <w:titlePg/>}（首页不同，per-section）。 <br>
+   * <b>EVEN</b> → {@code word/settings.xml} 的 {@code <w:evenAndOddHeaders/>}（奇偶页不同，文档级）。 <br>
+   * <b>DEFAULT</b> → 无开关。
+   *
+   * <p>幂等：已存在则不重复写。{@code document.getSettings()} 保证返回非 null（POI 会懒创建 settings part）。
+   */
+  private void ensureVariantFlags(HeaderFooterVariant variant) {
+    if (variant == HeaderFooterVariant.FIRST && !delegate.isSetTitlePg()) {
+      delegate.addNewTitlePg();
+    }
+    if (variant == HeaderFooterVariant.EVEN) {
+      CTSettings settings = document.getSettings().getCTSettings();
+      if (!settings.isSetEvenAndOddHeaders()) {
+        settings.addNewEvenAndOddHeaders();
+      }
+    }
+  }
+
   // ---------- 页眉/页脚（只读，用于相等性） ----------
 
   /**
@@ -458,6 +604,30 @@ public final class Section {
   /** 同 {@link #defaultHeaderParagraphs()}，针对页脚。 */
   private List<Paragraph> defaultFooterParagraphs() {
     Footer footer = footer();
+    return footer == null ? Collections.emptyList() : footer.paragraphs();
+  }
+
+  /** 首页页眉段落（只读，null 归一化为空列表），供 {@code equals} / {@code hashCode}。 */
+  private List<Paragraph> firstHeaderParagraphs() {
+    Header header = header(HeaderFooterVariant.FIRST);
+    return header == null ? Collections.emptyList() : header.paragraphs();
+  }
+
+  /** 首页页脚段落（只读，null 归一化为空列表），供 {@code equals} / {@code hashCode}。 */
+  private List<Paragraph> firstFooterParagraphs() {
+    Footer footer = footer(HeaderFooterVariant.FIRST);
+    return footer == null ? Collections.emptyList() : footer.paragraphs();
+  }
+
+  /** 偶数页页眉段落（只读，null 归一化为空列表），供 {@code equals} / {@code hashCode}。 */
+  private List<Paragraph> evenHeaderParagraphs() {
+    Header header = header(HeaderFooterVariant.EVEN);
+    return header == null ? Collections.emptyList() : header.paragraphs();
+  }
+
+  /** 偶数页页脚段落（只读，null 归一化为空列表），供 {@code equals} / {@code hashCode}。 */
+  private List<Paragraph> evenFooterParagraphs() {
+    Footer footer = footer(HeaderFooterVariant.EVEN);
     return footer == null ? Collections.emptyList() : footer.paragraphs();
   }
 }
