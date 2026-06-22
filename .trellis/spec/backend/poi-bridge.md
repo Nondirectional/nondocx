@@ -481,6 +481,58 @@ private static void collectRangeStartIds(XmlCursor cur, ...) {
 
 **范围**: 只读 `list()`/`get(id)` + 五字段。**不**含:创作(authoring 子任务)、回复/线程、resolve 状态(`commentsExtended.xml`,子任务 3)、锚点位置解析。回归:`CommentsTest` 17 用例(无批注空列表 + 单条五字段 + date/initials 缺失 + **body 顺序≠部件顺序定向测试** + 孤儿降级 + 多段拼接 + get 命中/miss/null 参数 + 活视图 + **表格内批注** + 内容相等 + raw 同一性);全量 209 tests green。
 
+### N19 — Header/footer 变体:POI 的 createHeader(FIRST/EVEN) 不自动写开关;POI 无统一 getter 只有三个分别方法
+
+首页/偶数页页眉页脚变体扩展(`06-23-hf-variants-variants` 子任务)。POI 的 `XWPFHeaderFooterPolicy` 提供了 `DEFAULT`/`FIRST`/`EVEN` 三个 `STHdrFtr.Enum` 常量与对称的 `createHeader(variant)` / `getFirstPageHeader` / `getEvenPageHeader` 等 API,变体扩展的 POI 侧能力齐全,但有两个坑:
+
+**坑 1 — createHeader(FIRST/EVEN) 不自动写生效开关**:
+- **FIRST 变体**需要 per-section 的 `<w:sectPr>/<w:titlePg/>` 才会实际渲染首页不同。POI 的 `createHeader(FIRST)` **只建 part + reference,不写 `titlePg`**。
+- **EVEN 变体**需要文档级的 `word/settings.xml/<w:evenAndOddHeaders/>` 才会实际渲染奇偶页不同。POI 的 `createHeader(EVEN)` **同样不写这个开关**。
+- 不补开关的后果:part 创建了、reference 写了,但 Word/WPS 打开后**不显示**首页/偶数页变体(引擎按默认奇数页渲染),属于「合法 OOXML 但功能无效」陷阱。
+
+**坑 2 — POI 没有统一的 getHeader(STHdrFtr) 方法**:
+- 读取变体只有三个分别方法:`getDefaultHeader()` / `getFirstPageHeader()` / `getEvenPageHeader()`(注意是 `FirstPage`/`EvenPage`,不是 `First`/`Even`)。
+- 没有 `getHeader(STHdrFtr.Enum)` 这种按常量分派的统一入口,与 `createHeader(STHdrFtr.Enum)` 不对称。
+- nondocx 在 `Section` 内用私有 `readHeader`/`readFooter` switch 分派方法补这个缺口。
+
+**Rule(写策略)**: `Section.ensureHeader(variant)` / `ensureFooter(variant)` 在创建 part 前调用私有 `ensureVariantFlags(variant)`:
+- `FIRST` → 若 `!delegate.isSetTitlePg()` 则 `delegate.addNewTitlePg()`(per-section)。
+- `EVEN` → 若 `!settings.isSetEvenAndOddHeaders()` 则 `document.getSettings().getCTSettings().addNewEvenAndOddHeaders()`(文档级)。
+- `DEFAULT` → 无开关。
+幂等(`isSet` 守卫),只读路径 `header(variant)` **不**补开关(读写分离,N5)。
+
+**不用 POI 的 `XWPFSettings.setEvenAndOddHeadings(boolean)`**:虽然存在,但方法名拼写是 `Headings`(带 s)且语义模糊(这个标志实际控制的是页眉页脚的奇偶页区分,不只是 headings);直接操纵 `CTSettings.addNewEvenAndOddHeaders()` 与 OOXML 元素名精确对应,避免依赖 POI 便捷方法名的歧义。与 `trackChanges` 开关的处理方式一致(那里 `setTrackRevisions` 名字对得上才用便捷方法)。
+
+**与 Rule 1 的关系(无偏离)**: `Section` 持 `final XWPFDocument document` + `final CTSectPr delegate`(现有结构),CT 操纵(`addNewTitlePg`/`addNewEvenAndOddHeaders`)内联在 `Section` 私有方法 —— 与现有 `ensureCompatiblePageSetupForHeaderFooterCreation` 内联 `paperSize`/`margins` 同模式,不下沉 `internal/poi`。`STHdrFtr.Enum` 映射在 `Mappers.toPoi(HeaderFooterVariant)`(Rule 5)。
+
+**范围**: 覆盖 DEFAULT/FIRST/EVEN 三变体的读 + 写(create-once)。**不**含:「链接到上一节」的跨节继承、变体的修订层面 accept/reject。回归:`HeaderFooterTest` 22 用例(含 9 个变体用例)+ `HeaderFooterIntegrationTest` 2 用例(三能力线协同);全量 289 tests green、spotless clean。
+
+**WPS 兼容性**: `titlePg` 的首页抑制在 WPS 不可靠(见 `renderer-compatibility.md#title-page-suppress`),`HeaderFooterVariant.FIRST` 的 Javadoc 已引用该锚点。`evenAndOddHeaders` 在实现中未发现新跨引擎坑(探针 + round-trip 验证通过)。
+
+### N20 — XWPFHeader/XWPFFooter 实现 IBody,Header/Footer 的表格与图片复用 Document 的下沉路径
+
+页眉页脚内表格与图片便捷方法(`06-23-hf-variants-content` 子任务)。探针实测确认两个复用条件:
+
+**1. `XWPFHeaderFooter` 实现 `IBody`**(与 `XWPFDocument` 同接口),故 `createTable` / `createParagraph` / `getTables` / `getBodyElements` 路径可直接复用。图片走 `XWPFRun.addPicture`,该方法通过 `IRunBody.getPart()` 解析图片 part 关系 —— `XWPFHeader` 作为 `IRunBody` 有效,part 关系在 header 上下文里正确建立,save→reopen 后图片字节 round-trip 精确。**故 `Header.addParagraph().addImage(...)` 天然可用,无需 `internal/poi/HeaderPictures`**(探针 `HeaderContentProbeTest` 验证后已删除)。
+
+**2. `XWPFHeaderFooter.createTable(int rows, int cols)` 签名与 `XWPFDocument.createTable()` 不同**(重要):前者必须传行列数且预填 `rows×cols` 个单元格;后者无参、预填 1 行。`Header.addTable()` 用 `createTable(1, 1)` 创建后剥掉那一行(与 `Document.addTable` 的「剥掉 POI 预填」语义一致,N2 模式),得到真空表。
+
+**诚实边界**: `Header.equals`/`Footer.equals` **不**纳入表格(只比段落)。页眉里同时有段落和表格是罕见场景;若需对含表格的页眉做 round-trip 断言,用户单独比较 `header.tables()`。与 TOC 的 SDT 形态不参与 equals(N11)同型取舍。
+
+**与 Rule 1 的关系(无偏离)**: `Header`/`Footer` 持 `final XWPFHeader`/`XWPFFooter` delegate(现有结构),`addTable`/`tables` 标准写穿透 + 活跃视图(与 `Document.addTable`/`tables` 同型)。回归:`HeaderContentTest` 7 用例。
+
+### N21 — 简单域(simple field)写侧:POI 无高层 API,三段 run 结构,读侧走 raw
+
+页码与通用简单域 API(`06-23-hf-variants-field` 子任务)。POI 没有 `XWPFField`/`addSimpleField` 这类方法,域的三段结构需直接操纵 `CTR`(`addNewFldChar` + `addNewInstrText`)—— 与 `addPicture`/tracked-changes 的下沉路径同型。现有先例:`TocFields.java` 读域、`TableOfContentsTest.java:200-211` 写域,都是这个手法。`CTFldChar`/`STFldCharType`/`CTText`(instrText)在 lite schema 均可达。
+
+**OOXML 域结构**: 一个简单域由三个相邻 run 组成 —— `<w:fldChar begin>` / `<w:instrText>指令</w:instrText>` / `<w:fldChar end>`。域指令住在 `<w:instrText>`(**不是**普通可见文本 `<w:t>`)。域的**可见结果**(如 PAGE 域显示的页码数字)由 Word/WPS 打开时的渲染引擎计算,POI 与 nondocx 都不计算 —— 故只写指令结构。简单域不带 `separate` 缓存段,打开时由渲染引擎即时填充(完整域带 separate + 缓存可见结果,本次不支持)。
+
+**设计决策(入口在 Paragraph 而非 Run)**: `Paragraph.addSimpleField(instruction)` 产出标准 3-run(begin/instrText/end 各一个 run),返回承载 instrText 的中间 run(用户可对其链式设样式 —— 域可见结果的样式由此 run 决定)。入口不放 `Run` 的理由:Word 标准产出的简单域就是 3 个相邻 run(不是「单 run 三子元素」);创建新 inline 内容的入口是 `Paragraph`(同 `addHyperlink`/`addImage`);若放在 `Run` 上,要么违反 `Run` mutator 返回 `this` 的链式惯例,要么越权创建兄弟 run。便捷方法 `addPageNumberField()`/`addPageCountField()` 等价于 `addSimpleField("PAGE")`/`addSimpleField("NUMPAGES")`。
+
+**诚实边界(读侧走 raw)**: 域的 3 个 run 在 `Paragraph.inlineElements()` 里以**3 个空文本 Run** 暴露(因为指令是 `<w:instrText>` 不是 `<w:t>`,`text()` 返空串)。识别/解析已有域(读侧)**不在**本次范围,走 `raw().getCTR().getInstrTextArray()`。不引入 `Field` 公共类型 —— 读侧建模(含 separate 缓存值、嵌套域、PAGEREF 子域)是独立大子任务(参考 TOC 的 N11 规模),本次专注写入入口。与 TOC 的「写不了、只读」边界对称,这里是「写得出来、读走 raw」。
+
+**与 Rule 1 的关系(无偏离)**: `Paragraph.addSimpleField` 操作 `XWPFParagraph` 委托(标准写穿透,`createRun` + CTR 操纵),CT 操纵内联在 `Paragraph`(与 `Run.text()` 内联清空 `<w:t>` 的 N9 手法同型,不下沉 `internal/poi`)。回归:`SimpleFieldTest` 8 用例。
+
 ---
 
 ## Out-of-Scope feature policy
