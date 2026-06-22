@@ -1,5 +1,6 @@
 package com.non.docx.core.api.header;
 
+import com.non.docx.core.api.table.Table;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.internal.util.Objects;
 import java.util.AbstractList;
@@ -78,6 +79,49 @@ public final class Header {
    */
   public Paragraph addParagraph() {
     return new Paragraph(delegate.createParagraph());
+  }
+
+  /**
+   * 返回此页眉的表格的活跃视图，按阅读顺序排列。
+   *
+   * <p>每次访问时都会从委托重新读取视图，因此变更会实时反映。语义同 {@code Document.tables()}。
+   *
+   * @return 活跃、不可修改的表格列表
+   */
+  public List<Table> tables() {
+    return new AbstractList<Table>() {
+      @Override
+      public Table get(int index) {
+        return new Table(delegate.getTables().get(index));
+      }
+
+      @Override
+      public int size() {
+        return delegate.getTables().size();
+      }
+    };
+  }
+
+  /**
+   * 向此页眉追加一个新的空表格，并返回其活跃包装器。
+   *
+   * <p><b>OOXML。</b> 页眉与正文一样是块容器（{@code <w:hdr>} 内部结构同 {@code <w:body>}，可含段落与表格）。
+   *
+   * <p><b>POI。</b> {@code XWPFHeaderFooter.createTable(int rows, int cols)} 的签名与 {@code
+   * XWPFDocument.createTable()}（无参）<b>不同</b> —— 必须传行列数，且会预填 {@code rows×cols} 个单元格。
+   *
+   * <p><b>nondocx。</b> 与 {@code Document.addTable} 的「剥掉 POI 预填」语义一致 —— 本方法用 {@code createTable(1,
+   * 1)} 创建后剥掉那一行，得到真空表，符合 nondocx 的「addX = exactly one X」契约 （addParagraph / addRun / addTable
+   * 都只加一个，不留幽灵默认值）。
+   *
+   * @return 新追加的空表格
+   */
+  public Table addTable() {
+    org.apache.poi.xwpf.usermodel.XWPFTable created = delegate.createTable(1, 1);
+    while (created.getRows().size() > 0) {
+      created.removeRow(0);
+    }
+    return new Table(created);
   }
 
   /**
