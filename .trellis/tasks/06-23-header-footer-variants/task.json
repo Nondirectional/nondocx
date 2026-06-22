@@ -1,0 +1,31 @@
+{
+  "id": "header-footer-variants",
+  "name": "header-footer-variants",
+  "title": "core 页眉页脚编辑 API 补齐（首页/偶数页变体 + 图片/表格/页码域）",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "non",
+  "assignee": "non",
+  "createdAt": "2026-06-23",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-23-hf-variants-field",
+    "06-23-hf-variants-variants",
+    "06-23-hf-variants-content",
+    "06-23-hf-variants-docs-spec"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
