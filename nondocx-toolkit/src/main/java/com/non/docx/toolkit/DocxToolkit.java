@@ -54,11 +54,14 @@ public final class DocxToolkit {
   /** 修订创作工具组：insert / delete / replace / move / mark 样式与单元格。 */
   public final TrackedChangeAuthoringTools trackedChangeAuthoring;
 
-  /** 构造全部六组工具，共享同一份文档会话状态。 */
+  /** 文档质量自检工具组：版式/兼容性自检（空白页、行距、表格分页、图片溢出、SOLID 底纹等 10 项）。 */
+  public final QualityCheckTools qualityCheck;
+
+  /** 构造全部七组工具，共享同一份文档会话状态。 */
   public DocxToolkit() {
     // 先建会话源头：SessionTools 自建 sessions/seq。
     this.session = new SessionTools();
-    // 再把这份会话注入给其余五组，保证它们 open 出的文档互相可见。
+    // 再把这份会话注入给其余六组，保证它们 open 出的文档互相可见。
     this.body = new BodyTools(session.sharedSessions(), session.sharedSeq());
     this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
     this.headerFooterToc = new HeaderFooterTocTools(session.sharedSessions(), session.sharedSeq());
@@ -66,12 +69,13 @@ public final class DocxToolkit {
         new TrackedChangeQueryTools(session.sharedSessions(), session.sharedSeq());
     this.trackedChangeAuthoring =
         new TrackedChangeAuthoringTools(session.sharedSessions(), session.sharedSeq());
+    this.qualityCheck = new QualityCheckTools(session.sharedSessions(), session.sharedSeq());
   }
 
   /**
-   * 把全部六组工具注册进一个 {@link ToolRegistry}，返回该 registry（可链式继续配置）。
+   * 把全部七组工具注册进一个 {@link ToolRegistry}，返回该 registry（可链式继续配置）。
    *
-   * <p>{@code ToolRegistry.scan(Object)} 返回 {@code this}，故可链式 {@code .scan(a).scan(b)}。 这里把六个工具类逐一
+   * <p>{@code ToolRegistry.scan(Object)} 返回 {@code this}，故可链式 {@code .scan(a).scan(b)}。 这里把七个工具类逐一
    * scan 进同一个 registry，让 Agent 在一次会话里能调用任意一组的工具。
    *
    * @param registry 待注册的 registry（通常为 {@code new ToolRegistry()}）
@@ -84,6 +88,7 @@ public final class DocxToolkit {
         .scan(table)
         .scan(headerFooterToc)
         .scan(trackedChangeQuery)
-        .scan(trackedChangeAuthoring);
+        .scan(trackedChangeAuthoring)
+        .scan(qualityCheck);
   }
 }

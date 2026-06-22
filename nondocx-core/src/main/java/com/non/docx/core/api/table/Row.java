@@ -1,5 +1,6 @@
 package com.non.docx.core.api.table;
 
+import com.non.docx.core.internal.poi.RowNodes;
 import com.non.docx.core.internal.util.Objects;
 import java.util.AbstractList;
 import java.util.List;
@@ -132,6 +133,60 @@ public final class Row {
   }
 
   /**
+   * 标记或取消标记此行为<b>表头行</b>，并返回 {@code this} 以支持链式调用。
+   *
+   * <p><b>OOXML</b>：在行属性 {@code <w:trPr>} 内写 {@code <w:tblHeader w:val="true"/>}。表头行在表格跨页时
+   * 会在每一页顶部重复显示，是长表格可读性的关键。
+   *
+   * <p><b>WPS/Word 兼容性</b>：两个引擎对 {@code tblHeader} 的跨页重复行为一致。设为表头行是跨引擎安全的。
+   *
+   * @param on {@code true} 标记为表头行（新建或覆盖）；{@code false} 取消标记（移除已有元素）
+   * @return 此行（链式）
+   */
+  public Row headerRow(boolean on) {
+    RowNodes.applyHeaderRow(delegate.getCtRow(), on);
+    return this;
+  }
+
+  /**
+   * 返回此行是否标记为<b>表头行</b>。
+   *
+   * <p>每次访问都从委托重新读取。
+   *
+   * @return 若存在 {@code <w:tblHeader>} 则返回 {@code true}；否则 {@code false}
+   */
+  public boolean headerRow() {
+    return RowNodes.readHeaderRow(delegate.getCtRow());
+  }
+
+  /**
+   * 标记或取消标记此行<b>禁止跨页拆分</b>，并返回 {@code this} 以支持链式调用。
+   *
+   * <p><b>OOXML</b>：在行属性 {@code <w:trPr>} 内写 {@code <w:cantSplit w:val="true"/>}。设后此行内容
+   * 保持在同一页，不会被分页符拆到两页。
+   *
+   * <p><b>WPS/Word 兼容性</b>：两个引擎对 {@code cantSplit} 的行为一致。
+   *
+   * @param on {@code true} 禁止跨页拆分（新建或覆盖）；{@code false} 允许拆分（移除已有元素）
+   * @return 此行（链式）
+   */
+  public Row cantSplit(boolean on) {
+    RowNodes.applyCantSplit(delegate.getCtRow(), on);
+    return this;
+  }
+
+  /**
+   * 返回此行是否标记为<b>禁止跨页拆分</b>。
+   *
+   * <p>每次访问都从委托重新读取。
+   *
+   * @return 若存在 {@code <w:cantSplit>} 则返回 {@code true}；否则 {@code false}
+   */
+  public boolean cantSplit() {
+    return RowNodes.readCantSplit(delegate.getCtRow());
+  }
+
+  /**
    * 返回底层的 POI 行。
    *
    * <p>对返回对象的修改会立即影响文档。请谨慎使用。
@@ -153,11 +208,13 @@ public final class Row {
       return false;
     }
     Row that = (Row) o;
-    return java.util.Objects.equals(this.cells(), that.cells());
+    return java.util.Objects.equals(this.cells(), that.cells())
+        && this.headerRow() == that.headerRow()
+        && this.cantSplit() == that.cantSplit();
   }
 
   @Override
   public int hashCode() {
-    return java.util.Objects.hash(cells());
+    return java.util.Objects.hash(cells(), headerRow(), cantSplit());
   }
 }

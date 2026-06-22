@@ -45,9 +45,9 @@ agent.run("把 /tmp/a.docx 第一段第一个 run 的文本改成 'Hello'");
 
 ---
 
-## 3. 六组工具 + 一个门面
+## 3. 七组工具 + 一个门面
 
-工具按功能域分成**六个类**，由 `DocxToolkit` 门面统一装配：
+工具按功能域分成**七个类**，由 `DocxToolkit` 门面统一装配：
 
 | 字段 | 类型 | 职责 |
 |---|---|---|
@@ -57,24 +57,25 @@ agent.run("把 /tmp/a.docx 第一段第一个 run 的文本改成 'Hello'");
 | `headerFooterToc` | `HeaderFooterTocTools` | 页眉页脚 + 目录（只读） |
 | `trackedChangeQuery` | `TrackedChangeQueryTools` | 修订查询 / accept / reject |
 | `trackedChangeAuthoring` | `TrackedChangeAuthoringTools` | 修订创作：insert/delete/replace/move/mark |
+| `qualityCheck` | `QualityCheckTools` | 版式/兼容性自检（10 项检查，报告不修复） |
 
 ### 为什么需要门面（会话状态共享）
 
-六个工具类必须**共享同一份** `sessions`/`seq`：
+七个工具类必须**共享同一份** `sessions`/`seq`：
 
 > Agent 在一轮对话里 `open_docx`（SessionTools）打开的文档，紧接着 `read_paragraph`（BodyTools）、`list_tracked_changes`（TrackedChangeQueryTools）都要能按 `docId` 取回。
 
-门面负责把 `SessionTools` 自建的会话状态**注入**给其它五个类：
+门面负责把 `SessionTools` 自建的会话状态**注入**给其它六个类：
 
 ```java
 // DocxToolkit 构造函数内部
 this.session = new SessionTools();                          // 自建 sessions/seq
 this.body = new BodyTools(session.sharedSessions(), session.sharedSeq());   // 注入
 this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
-// ... 其余三类同样注入
+// ... 其余五类同样注入
 ```
 
-`scanAll(registry)` 把六个类逐一 scan 进同一个 registry，让 Agent 一次会话能调任意一组工具。
+`scanAll(registry)` 把七个类逐一 scan 进同一个 registry，让 Agent 一次会话能调任意一组工具。
 
 > **线程模型**：为单 Agent 实例设计，内部状态未做并发保护，**不要跨 Agent 共享**同一个 `DocxToolkit`。
 
@@ -147,6 +148,50 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 | `mark_style_change_tracked` | rPrChange 创作（bold/italic/color） | 单条 |
 | `mark_cell_inserted` / `mark_cell_deleted` | cell 存亡 | ✅ `cells` |
 | `move_run_tracked` | 移动 run | 单条 |
+
+### QualityCheckTools（文档质量自检）
+
+对内存中的文档跑版式/兼容性自检，返回 ❌/⚠️/✅ 报告。让 Agent 写完文档后能自查「版式有没有问题」，而不必肉眼排查或反复打开 Word/WPS 验证。
+
+| 工具 | 作用 |
+|---|---|
+| `check_quality` | 跑版式/兼容性自检，返回结构化报告（可选 `checks` 数组过滤） |
+
+**10 项内置检查**（借鉴 docx skill 的 `postcheck.py`，但走 nondocx 内存活对象 API 而非解包读 XML）：
+
+| 检查项 | 报警条件 | 级别 |
+|---|---|---|
+| `blank-pages` | 连续 ≥3 个空段（可能产生空白页） | ⚠️ |
+| `line-spacing` | 正文存在 ≥2 种行距 | ⚠️ |
+| `table-pagination` | 多行表格首行未设 `headerRow` 或数据行未设 `cantSplit` | ⚠️ |
+| `image-overflow` | 图片宽度超过页面可用区 | ❌ |
+| `font-fallback` | 使用了白名单外的罕见字体（目标系统可能缺失） | ⚠️ |
+| `cjk-indent` | CJK 正文段落无首行缩进 | ⚠️ |
+| `heading-levels` | 标题层级跳级（如 H1→H3） | ⚠️ |
+| `shading-solid` | 误用 SOLID 底纹（WPS 渲染为黑块，见 [renderer-compatibility.md](../.trellis/spec/backend/renderer-compatibility.md#shading-solid) `#shading-solid`） | ❌ |
+| `toc` | 有标题无 TOC 域，或有 TOC 域但无 Heading 标题 | ⚠️ |
+| `cleanliness` | 占位符（TODO/待填写）/ Markdown 残留（`**bold**`/`[link](url)`） | ⚠️ |
+
+**只报告不修复**——检查发现问题后，Agent 调用其它工具方法修复（如 `table.row(0).headerRow(true)` 修表格分页、`section.cleanEmptyPageNumbering()` 清空页码元素）。
+
+**调用示例**：
+
+```json
+check_quality({
+  "doc_id": "d1",
+  "checks": ["shading-solid", "table-pagination"]  // 可选；空则全量
+})
+```
+
+返回示例：
+
+```
+📋 文档质量自检报告: d1
+  ❌ [shading-solid] 误用 SOLID 底纹（WPS 显示黑块）：单元格（表格1,行2,列1）。见 renderer-compatibility.md#shading-solid
+  ⚠️ [table-pagination] 表格 1 首行未设 headerRow（跨页时表头不重复）
+  ───
+  通过 0/2 | ❌ 1 errors | ⚠️ 1 warnings
+```
 
 ---
 
