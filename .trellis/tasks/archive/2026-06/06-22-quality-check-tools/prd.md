@@ -40,33 +40,60 @@
 - [ ] 在 `DocxToolkit` 门面注入第七个字段 `qualityCheck`，与现有六个工具类共享同一份 `sessions`/`seq`。
 - [ ] 暴露 `@ToolDef` 工具方法 `check_quality`，签名遵循 toolkit 现有约定（`doc_id` 句柄 + 字符串报告返回）。
 
-### R2. 检查执行模型
+### R2. 检查执行模型（Q1 决议 2026-06-22：内存为主）
 
+- [x] **Q1 决议**：**A. 内存为主**——主体走内存 `Document` 活对象 API（复用 nondocx 投资，含子任务 1 刚加的 `cell.shading()`）。会话不跟踪文件路径，磁盘方案需 save 临时文件，成本高且不复用 API。
 - [ ] **输入**：`doc_id`（必填）+ 可选 `checks` 数组（指定跑哪些检查，空则跑全量）。
-- [ ] **检查对象**：**磁盘上已 save 的 .docx 文件**（解包读 XML），而非内存 Document 对象——这样能查 XML 级问题，且语义对齐 postcheck.py。design 需收敛父任务 Q1。
-- [ ] **输出**：结构化字符串报告，每条含 `✅/⚠️/❌` 图标 + 检查名 + 严重级别 + 具体问题描述 + （若适用）规则锚点引用。Agent 能据此定位修复。
-- [ ] **不抛异常**：检查发现的问题全部以报告条目返回；只有「doc_id 不存在」「文件无法解包」这类硬错误才返回错误字符串（遵循 toolkit 现有 `docNotFound` 约定）。
+- [ ] **检查对象**：内存中的 `Document` 活对象（经 `document(docId)` 取回），遍历 `doc.paragraphs()` / `doc.tables()` / `doc.sections()` 等。
+- [ ] **输出**：结构化字符串报告，每条含 `✅/⚠️/❌` 图标 + 检查名 + 严重级别 + 具体问题描述 + （若适用）规则锚点引用。格式对齐 toolkit 现有报告（`StringBuilder` + 中文 + 换行分隔）。
+- [ ] **不抛异常**：检查发现的问题全部以报告条目返回；只有「doc_id 不存在」这类硬错误才返回 `docNotFound(docId)` 错误串。
 
-### R3. 检查项实现
+### R3. 检查项实现（Q2 决议 2026-06-22：9 项内存可跑 + 新建 API 补表格分页）
 
-- [ ] 至少实现上表 ✅ 标注的检查项（约 12 项），覆盖 postcheck.py 的主体。
-- [ ] ⚠️ 项（封面分节、报告内容质量）作为**可选/降级**实现：封面相关在 nondocx 无封面建模，跳过并注明；内容质量属语义判断，实现简化版或标注「需 LLM 自行判断」。
-- [ ] 每个检查项是独立方法，便于单测与后续增补。
-- [ ] 兼容性类检查（如 ShadingType）**引用**子任务 1 spec 的锚点，报告里给出 `见 renderer-compatibility.md#shading-solid`。
+> Q2 决议 **B**：纳入 9 项内存可跑的检查 + 顺带给 core 新建表格分页控制 API（`Row.headerRow()` / `Row.cantSplit()`）来支持 #4。
 
-### R4. 不引入新依赖
+**纳入 MVP 的检查项（10 项）**：
 
-- [ ] 解包读 XML 用 JDK 自带 `java.util.zip` + `javax.xml`（或复用 core 已有的 `internal/util/Streams` / XML 工具），**不**引入新第三方依赖。
-- [ ] 若 core 已有相关解析能力（如 `internal/poi/` 的某某），优先复用而非重写。
+| # | 检查 | 走的 API | 严重级别 |
+|---|---|---|---|
+| 1 | 空白页（连续空段、双分页） | `doc.paragraphs()` 遍历 | ⚠️ |
+| 2 | 行距一致性 | `paragraph.lineSpacing()` | ⚠️ |
+| 4 | 表格分页控制（表头 `tblHeader` + 数据行 `cantSplit`） | **新建 `Row.headerRow()`/`Row.cantSplit()` API** | ⚠️ |
+| 5 | 图片溢出 | `image.width()` + `section.paperSize()/margins()` | ❌ |
+| 6 | 字体回退（罕见字体） | `run.style().font()` | ⚠️ |
+| 7 | CJK 首行缩进 | `paragraph.indentationFirstLine()` | ⚠️ |
+| 8 | 标题层级连续性 | `paragraph.heading()` | ⚠️ |
+| 11 | ShadingType 误用（SOLID） | `cell.shading()` + raw 兜底 | ❌ |
+| 12 | TOC 质量（域存在 + 标题用 Heading） | `doc.toc()` + `paragraph.heading()` | ⚠️ |
+| 14 | 文档清洁度（占位符/Markdown 残留） | 遍历文本正则匹配 | ⚠️ |
+
+**排除的检查项（本任务不做）**：
+
+- #3 表格边距（cell padding）：nondocx 无 cell margin API，本任务不新建（避免 scope 膨胀），标为「待新 API」。
+- #13 图片宽高比：`Image.width()/height()` 是存储尺寸，无原图尺寸 API，需读图片二进制（磁盘方案）。本任务排除。
+- #9 编号连续性：编号是 POI 计算的，nondocx 无编号展开 API。排除。
+- #10 封面分节 / #15 报告内容质量：语义性/cover 属 raw，排除。
+
+### R4. 新建 core API（表格分页控制）
+
+- [ ] 新增 `Row.headerRow(boolean)` / `Row.headerRow()` / `Row.cantSplit(boolean)` / `Row.cantSplit()`，对应 OOXML `<w:trPr>/<w:tblHeader>` 与 `<w:cantSplit>`。
+- [ ] POI 访问路径（已实测 typed 可达）：`CTRow.getTrPr()/addNewTrPr()` → `CTTrPr` 继承 `CTTrPrBase` 的 `addNewTblHeader()/isSetCantSplit()/unsetCantSplit()` 等。
+- [ ] 契约对齐 shading API：POI-free 签名、链式 mutator、internal/poi 桥接收容 CT 脏活。
+- [ ] `Row.equals` 扩展含 headerRow/cantSplit（content-equal 契约）。
+
+### R5. 不引入新依赖
+
+- [ ] 全部走 nondocx core API + JDK，**不**引入新第三方依赖，**不**解包读 XML。
 
 ## Acceptance Criteria
 
 - [ ] AC1 `QualityCheckTools` 落地，`check_quality` 工具方法可被 Agent 调用，返回结构化报告字符串。
 - [ ] AC2 `DocxToolkit` 门面注入第七个工具类，`scanAll` 注册成功，现有六个工具类无回归。
-- [ ] AC3 ≥ 12 项检查实现，每项有单元测试：构造违规文档 → 断言报告含对应 ❌/⚠️ 条目；构造合规文档 → 断言全 ✅。
-- [ ] AC4 兼容性检查项的报告条目能引用 `renderer-compatibility.md` 锚点（依赖子任务 1 交付）。
-- [ ] AC5 `docs/07-toolkit.md` 补充 `QualityCheckTools` 章节，工具清单表加一行。
-- [ ] AC6 现有 toolkit 测试全绿。
+- [ ] AC3 R3 表格列出的 **10 项检查**全部实现，每项有单元测试：构造违规文档 → 断言报告含对应 ❌/⚠️ 条目；构造合规文档 → 断言全 ✅。
+- [ ] AC4 R4 新建的 `Row.headerRow()`/`Row.cantSplit()` API 落地，有 round-trip + cross-reference 测试。
+- [ ] AC5 兼容性检查项的报告条目引用 `renderer-compatibility.md` 锚点（如 `见 #shading-solid`、`见 #empty-pgnumtype`）。
+- [ ] AC6 `docs/07-toolkit.md` 补充 `QualityCheckTools` 章节，工具清单表加一行。
+- [ ] AC7 现有 core + toolkit 测试全绿。
 
 ## 范围边界（不做）
 
