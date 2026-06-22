@@ -514,3 +514,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 借鉴 docx skill: WPS/Word 渲染兼容性 spec + core API
+
+**Date**: 2026-06-22
+**Task**: 借鉴 docx skill: WPS/Word 渲染兼容性 spec + core API
+**Branch**: `main`
+
+### Summary
+
+探索 zcode docx skill，对比 nondocx 后创建 docx-skill-adoption 父任务 + 2 P0 子任务。完成子任务 1 renderer-compatibility：新增 renderer-compatibility.md spec（9 条规则四段式+锚点）+ 连带新建 Cell/Paragraph.shading、Cell.verticalAlign、Table.columnPercents/columnWidths、Section.cleanEmptyPageNumbering API。实现期关键发现：XmlBeans 接口继承链让 typed accessor 在父接口（CTTcPrBase/CTPPrBase），XmlCursor 非必需；getFill() 返回 byte[] 须用 xgetFill().getStringValue()。45 新测试+288 全量测试全绿。spec 锚点清单已交付子任务 2 quality-check-tools。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8583824` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

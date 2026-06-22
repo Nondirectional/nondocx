@@ -1,0 +1,29 @@
+{
+  "id": "docx-skill-adoption",
+  "name": "docx-skill-adoption",
+  "title": "借鉴 docx skill 升级 nondocx",
+  "description": "借鉴 zcode-plugins docx skill 的「场景化预设 + 质量自检 + 兼容性知识库」方法学，落地两个 P0 子任务：QualityCheckTools（toolkit 质量自检工具）+ renderer-compatibility（WPS/Word 兼容性 spec 与 core 写路径规避）。父任务承载共同背景与跨子任务一致性约束。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "non",
+  "assignee": "non",
+  "createdAt": "2026-06-22",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-22-quality-check-tools",
+    "06-22-renderer-compatibility"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

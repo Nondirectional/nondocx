@@ -1,0 +1,32 @@
+{
+  "id": "comments",
+  "name": "comments",
+  "title": "core 批注(comments)封装",
+  "description": "将批注从无支持升级为一等公民:读+查询、单条范围批注创作、回复+线程(commentsExtended)、基础设施(people.xml/paraId/RSID)、文档+spec。Comment 为不可变值对象,脏活集中在 internal/poi/CommentNodes。对照 tracked-changes 五子任务结构。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "non",
+  "assignee": "non",
+  "createdAt": "2026-06-22",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-22-comments-read",
+    "06-22-comments-authoring",
+    "06-22-comments-reply-threads",
+    "06-22-comments-infrastructure",
+    "06-22-comments-docs-spec"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
