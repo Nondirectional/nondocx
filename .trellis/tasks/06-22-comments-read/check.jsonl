@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/06-22-comments/prd.md", "reason": "check 阶段回看父任务，确认 read 子任务未偏离统一门面与子任务边界（创作/回复/resolve 仍在范围外）"}
+{"file": ".trellis/tasks/06-22-comments-read/design.md", "reason": "逐条核对实现是否兑现设计契约：holding-wrapper、body 顺序、text() 委托、date() 可空、get(id) 抛异常"}
+{"file": ".trellis/tasks/06-22-comments-read/research/ordering.md", "reason": "确认 CommentNodes.collect 确实实现了 body 重排而非直接委托 getComments()，且有 body 顺序≠部件顺序的定向测试"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "检查 holding-wrapper(Rule 1)、raw()(Rule 3)、异常包装(Rule 4)、internal seam(N1) 是否满足；确认未像 TOC(N11) 那样无据偏离 Rule 1"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查 get(id) miss、参数 null、collect 内异常是否符合包装规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "检查 Comments/Comment 在 api/comment/、CommentNodes 在 internal/poi/，API/internal 边界无漂移"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查值对象语义、内容相等(不比较委托引用)、Javadoc 中文、公共 API POI-free"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "评审 Javadoc 与说明是否遵守 OOXML→POI→nondocx 三层教学约定"}

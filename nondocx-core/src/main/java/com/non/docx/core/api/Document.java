@@ -419,6 +419,39 @@ public final class Document implements AutoCloseable {
     return new com.non.docx.core.api.track.TrackedChanges(delegate);
   }
 
+  /**
+   * 返回文档的批注(comments)只读消费门面。
+   *
+   * <p>这是 nondocx 对批注的统一入口。门面提供两件只读事:按文档顺序枚举批注({@link
+   * com.non.docx.core.api.comment.Comments#list()}),按 OOXML {@code w:id} 精确命中单条批注({@link
+   * com.non.docx.core.api.comment.Comments#get(String)})。
+   *
+   * <p><b>OOXML / POI / nondocx 三层。</b>
+   *
+   * <ul>
+   *   <li><b>OOXML</b>:批注正文存独立的 {@code word/comments.xml},每条 {@code <w:comment>};被评论的范围在
+   *       {@code word/document.xml} 正文里用 {@code <w:commentRangeStart>}/{@code <w:commentRangeEnd>} 包裹,
+   *       {@code <w:commentReference>} 引用,三者用同一 {@code w:id} 配对。
+   *   <li><b>POI</b>:有高级 API {@code XWPFDocument.getDocComments()}(无批注时返 {@code null})、
+   *       {@code getComments()} 枚举、{@code getCommentByID(id)} 按 id 查。但 {@code getComments()} 返回
+   *       {@code comments.xml} 部件顺序,不等于正文顺序。
+   *   <li><b>nondocx</b>:把「扫 document.xml 找锚点顺序 + 从 comments.xml 取正文」的脏活收进 {@code
+   *       internal/poi/CommentNodes},对外只暴露 {@link com.non.docx.core.api.comment.Comments} /
+   *       {@link com.non.docx.core.api.comment.Comment} 等 POI-free 类型。
+   * </ul>
+   *
+   * <p><b>与 {@code toc()} 的区别。</b> {@code toc()} 在文档无 TOC 时返回 {@code null};而批注的「列表」总是有
+   * 意义的(即便为空),故本方法<b>总是返回非 null</b>门面对象。文档无批注时 {@link
+   * com.non.docx.core.api.comment.Comments#list()} 返回空列表,不抛异常。
+   *
+   * <p><b>只读。</b> 创作批注、回复、resolve 状态均不属于当前 read 子任务。
+   *
+   * @return 批注能力门面(从不为 {@code null})
+   */
+  public com.non.docx.core.api.comment.Comments comments() {
+    return new com.non.docx.core.api.comment.Comments(delegate);
+  }
+
   // ---------- save ----------
 
   /**

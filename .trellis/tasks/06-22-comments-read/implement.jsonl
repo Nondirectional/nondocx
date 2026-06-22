@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/06-22-comments/prd.md", "reason": "父任务定义 comments 能力线的统一门面与子任务边界，read 子任务的 Comments/Comment 公共契约必须对齐"}
+{"file": ".trellis/tasks/06-22-comments-read/design.md", "reason": "本子任务的设计：holding-wrapper 形态、list() body 顺序契约、text() 委托策略、date() 可空类型，实现必须逐条遵守"}
+{"file": ".trellis/tasks/06-22-comments-read/research/ordering.md", "reason": "POI 5.2.5 探针验证结论：getComments() 返回 comments.xml 部件顺序≠正文顺序，是 CommentNodes.collect 必须自己实现 body 重排的依据"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "实现 comments 只读路径必须遵守 holding-wrapper(Rule 1)、raw()(Rule 3)、异常包装(Rule 4)、internal seam(N1)；N11 TOC 偏差用于对照确认 comments 不偏离 Rule 1"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "get(id) miss 抛 NoSuchElementException、参数校验、collect 内 POI 异常包装成 Docx*Exception 的语义需对齐异常规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "明确 Comments/Comment 落在 api/comment/、CommentNodes 落在 internal/poi/，守住 API/internal 边界"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "值对象语义、内容相等(Rule 2 不比较委托引用)、测试风格、公共 API POI-free 约束都依赖此规范"}
+{"file": ".trellis/spec/guides/teaching-approach.md", "reason": "实现与 Javadoc 按 OOXML→POI→nondocx 三层递进讲解，与 AGENTS.md 教学约定一致"}
