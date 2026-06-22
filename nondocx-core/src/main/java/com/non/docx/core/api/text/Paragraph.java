@@ -28,6 +28,8 @@ import org.apache.poi.xwpf.usermodel.XWPFHyperlinkRun;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFPicture;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFldChar;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STFldCharType;
 
 /**
  * A paragraph — a body-level block of inline content.
@@ -393,6 +395,83 @@ public final class Paragraph implements BodyElement {
     } catch (IOException | InvalidFormatException | POIXMLException e) {
       throw new DocxIOException("无法添加内联图像", e);
     }
+  }
+
+  /**
+   * 在此段落末尾追加一个简单域（simple field），并返回承载域指令的 run。
+   *
+   * <p><b>OOXML。</b> 一个简单域由三个相邻 run 组成：
+   *
+   * <pre>{@code
+   * <w:r><w:fldChar w:fldCharType="begin"/></w:r>   ← 域开始
+   * <w:r><w:instrText> PAGE </w:instrText></w:r>     ← 域指令（返回这个 run）
+   * <w:r><w:fldChar w:fldCharType="end"/></w:r>      ← 域结束
+   * }</pre>
+   *
+   * 域指令住在 {@code <w:instrText>}，不是普通可见文本 {@code <w:t>}。
+   *
+   * <p><b>POI。</b> 没有 {@code XWPFField} / {@code addSimpleField} 这类高层 API，本方法直接操纵 {@code
+   * CTR}（{@code addNewFldChar} + {@code addNewInstrText}），与 {@code addPicture} / tracked-changes
+   * 的下沉路径同型。
+   *
+   * <p><b>nondocx 为什么放在 {@code Paragraph} 上。</b> Word 标准产出的简单域就是 3 个相邻 run（不是「单 run 三子元素」）；创建新
+   * inline 内容的入口是 {@code Paragraph}（同 {@link #addHyperlink} / {@link #addImage}）， 故本方法与之同模式。入口若放在
+   * {@code Run} 上，要么违反 {@code Run} mutator 返回 {@code this} 的链式惯例， 要么越权创建兄弟 run。
+   *
+   * <p><b>域的实际可见值</b>（如 {@code PAGE} 域显示的页码数字）由 Word/WPS 打开时的渲染引擎计算，POI 与 nondocx 都不计算 ——
+   * 本方法只写指令结构。简单域不带 {@code separate} 缓存段，打开时由渲染引擎即时填充。
+   *
+   * <p><b>返回的 run</b> 承载 {@code <w:instrText>}，可对其链式设样式（域可见结果的样式由此 run 决定）。 注意该 run 的 {@link
+   * Run#text()} 返回空串 —— 指令不是 {@code <w:t>}。
+   *
+   * <p><b>读侧。</b> 识别 / 解析已有域不在本方法范围，走 {@code raw()}。
+   *
+   * @param instruction 域指令（如 {@code "PAGE"}、{@code "NUMPAGES"}、{@code "DATE \\@ yyyy"}； 原样写入 {@code
+   *     <w:instrText>}，不做语法校验；不能为 {@code null} 或空白）
+   * @return 承载域指令的 run（可继续链式设样式）
+   * @throws IllegalArgumentException 如果 {@code instruction} 为 {@code null} 或空白
+   */
+  public Run addSimpleField(String instruction) {
+    Objects.requireNonNull(instruction, "instruction");
+    if (instruction.isBlank()) {
+      throw new IllegalArgumentException("instruction 不能为空白");
+    }
+    // run 1：begin
+    XWPFRun beginRun = delegate.createRun();
+    CTFldChar begin = beginRun.getCTR().addNewFldChar();
+    begin.setFldCharType(STFldCharType.BEGIN);
+    // run 2：instrText（返回这个）
+    XWPFRun instrRun = delegate.createRun();
+    instrRun.getCTR().addNewInstrText().setStringValue(instruction);
+    // run 3：end
+    XWPFRun endRun = delegate.createRun();
+    CTFldChar end = endRun.getCTR().addNewFldChar();
+    end.setFldCharType(STFldCharType.END);
+    return new Run(instrRun);
+  }
+
+  /**
+   * 在此段落末尾追加一个页码域（{@code PAGE}），并返回承载域指令的 run。
+   *
+   * <p>等价于 {@link #addSimpleField(String) addSimpleField("PAGE")}。页码域在 Word/WPS 打开时由
+   * 渲染引擎填充当前页码。常用于页脚。
+   *
+   * @return 承载域指令的 run（可继续链式设样式）
+   */
+  public Run addPageNumberField() {
+    return addSimpleField("PAGE");
+  }
+
+  /**
+   * 在此段落末尾追加一个总页数域（{@code NUMPAGES}），并返回承载域指令的 run。
+   *
+   * <p>等价于 {@link #addSimpleField(String) addSimpleField("NUMPAGES")}。总页数域在 Word/WPS 打开时
+   * 由渲染引擎填充文档总页数。常用于页脚「第 X 页 / 共 Y 页」的「共 Y 页」部分。
+   *
+   * @return 承载域指令的 run（可继续链式设样式）
+   */
+  public Run addPageCountField() {
+    return addSimpleField("NUMPAGES");
   }
 
   /**
