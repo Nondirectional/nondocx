@@ -580,3 +580,40 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 页眉页脚编辑 API 补齐（首页/偶数页变体 + 图片/表格/页码域）
+
+**Date**: 2026-06-23
+**Task**: 页眉页脚编辑 API 补齐（首页/偶数页变体 + 图片/表格/页码域）
+**Branch**: `main`
+
+### Summary
+
+为 nondocx 补齐页眉页脚的变体（首页/偶数页）、富内容（表格/图片）、页码域三条能力线。新增 HeaderFooterVariant 枚举与 Section/Document 变体重载，ensure 时显式补齐 POI 不自动写的 titlePg/evenAndOddHeaders 开关；Header/Footer 加 addTable/tables，图片经 Paragraph.addImage 直接复用（探针确认 XWPFHeader 实现 IBody）；Paragraph 加 addSimpleField + addPageNumberField/addPageCountField，产出标准 3-run 域结构。spec 落档 poi-bridge N19/N20/N21 + renderer-compatibility even-odd-headers。289 tests green。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `414f937` | (see git log) |
+| `92230e8` | (see git log) |
+| `32ba945` | (see git log) |
+| `7464bb1` | (see git log) |
+| `ec2f672` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
-- **Last Active**: 2026-06-22
+- **Total Sessions**: 9
+- **Last Active**: 2026-06-23
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~582 | Active |
+| `journal-1.md` | ~619 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-06-23 | 页眉页脚编辑 API 补齐（首页/偶数页变体 + 图片/表格/页码域） | `414f937`, `92230e8`, `32ba945`, `7464bb1`, `ec2f672` | `main` |
 | 8 | 2026-06-22 | 借鉴 docx skill: toolkit 质量自检工具 + Row 分页 API | `97754e8` | `main` |
 | 7 | 2026-06-22 | 借鉴 docx skill: WPS/Word 渲染兼容性 spec + core API | `8583824` | `main` |
 | 6 | 2026-06-21 | DocxAgentTools 工具批量改造(单次/多次调用) | `297fb80` | `feat/agent-tools-batch` |
