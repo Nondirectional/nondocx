@@ -650,3 +650,37 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: 归档 tracked changes 已完成子任务
+
+**Date**: 2026-06-30
+**Task**: 归档 tracked changes 已完成子任务
+**Branch**: `main`
+
+### Summary
+
+验证并归档 tracked changes 单元格结构类与高级类型创作两个已完成但未归档的任务；comments-read 因仍有未提交代码改动暂不归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `07c3540` | (see git log) |
+| `f63cc0f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
