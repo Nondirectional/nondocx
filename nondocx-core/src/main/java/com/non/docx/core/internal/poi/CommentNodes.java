@@ -38,23 +38,21 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBody;
  *   </w:comment>
  * }</pre>
  *
- * 两端用同一个 {@code w:id} 配对。{@code comments.xml} 里 {@code <w:comment>} 的顺序是<b>创建顺序</b>,
- * <b>不等于</b> {@code document.xml} 里 {@code commentRangeStart} 的出现顺序(正文顺序)。
+ * 两端用同一个 {@code w:id} 配对。{@code comments.xml} 里 {@code <w:comment>} 的顺序是<b>创建顺序</b>, <b>不等于</b>
+ * {@code document.xml} 里 {@code commentRangeStart} 的出现顺序(正文顺序)。
  *
  * <p><b>POI 的坑(探针验证见 research/ordering.md)。</b>
  *
  * <ol>
- *   <li>{@code XWPFDocument.getDocComments()} 在文档<b>无任何批注</b>时返回 {@code null}(POI 不自动创建空
- *       part)。本类 null-guard 返回空列表。
- *   <li>{@code XWPFComments.getComments()} 返回 {@code comments.xml} 部件顺序(创建顺序),<b>不等于</b>正文
- *       顺序。本类自己扫 {@code document.xml} 的 {@code commentRangeStart} 重排。
- *   <li>{@code commentRangeStart} 可出现在任意层级——段落内、表格单元格内段落里、嵌套结构里。本类用
- *       {@link XmlCursor} 对 {@code CTBody} 整棵子树做深度优先遍历,按出现顺序收集 {@code commentRangeStart}
- *       的 {@code w:id},保证覆盖所有层级。
+ *   <li>{@code XWPFDocument.getDocComments()} 在文档<b>无任何批注</b>时返回 {@code null}(POI 不自动创建空 part)。本类
+ *       null-guard 返回空列表。
+ *   <li>{@code XWPFComments.getComments()} 返回 {@code comments.xml} 部件顺序(创建顺序),<b>不等于</b>正文 顺序。本类自己扫
+ *       {@code document.xml} 的 {@code commentRangeStart} 重排。
+ *   <li>{@code commentRangeStart} 可出现在任意层级——段落内、表格单元格内段落里、嵌套结构里。本类用 {@link XmlCursor} 对 {@code
+ *       CTBody} 整棵子树做深度优先遍历,按出现顺序收集 {@code commentRangeStart} 的 {@code w:id},保证覆盖所有层级。
  * </ol>
  *
- * <p><b>防御式。</b> 整个 walk 不在本类抛 POI 异常——单个批注解析失败时跳过该条而非整体失败,保证一份文档即便
- * 局部畸形也能尽量给出其余批注。
+ * <p><b>防御式。</b> 整个 walk 不在本类抛 POI 异常——单个批注解析失败时跳过该条而非整体失败,保证一份文档即便 局部畸形也能尽量给出其余批注。
  */
 public final class CommentNodes {
 
@@ -66,10 +64,10 @@ public final class CommentNodes {
    * <p>算法(design §5.4):
    *
    * <ol>
-   *   <li>从 {@code getDocComments().getComments()} 建 {@code Map<id 字符串, XWPFComment>}({@code getDocComments()}
-   *       为 null 时返回空列表)。
-   *   <li>用 {@link XmlCursor} 深度优先遍历 {@code CTBody} 整棵子树,按出现顺序收集 {@code commentRangeStart}
-   *       的 {@code w:id}。
+   *   <li>从 {@code getDocComments().getComments()} 建 {@code Map<id 字符串, XWPFComment>}({@code
+   *       getDocComments()} 为 null 时返回空列表)。
+   *   <li>用 {@link XmlCursor} 深度优先遍历 {@code CTBody} 整棵子树,按出现顺序收集 {@code commentRangeStart} 的 {@code
+   *       w:id}。
    *   <li>按 body 出现顺序从 Map 取 {@code XWPFComment},包装成 {@link Comment} 产出(取出后从 Map 移除防重复)。
    *   <li>Map 剩余的是孤儿批注({@code comments.xml} 有、{@code document.xml} 无锚点),按 {@code comments.xml}
    *       部件顺序追加到末尾,不丢弃。
@@ -116,16 +114,16 @@ public final class CommentNodes {
   }
 
   /**
-   * 用 {@link XmlCursor} 深度优先遍历 cursor 所指元素的整棵子树,遇到 {@code commentRangeStart} 就取其
-   * {@code w:id}、从 Map 取批注产出。
+   * 用 {@link XmlCursor} 深度优先遍历 cursor 所指元素的整棵子树,遇到 {@code commentRangeStart} 就取其 {@code w:id}、从 Map
+   * 取批注产出。
    *
-   * <p>深度优先(而非只扫直接子)是因为 {@code commentRangeStart} 可能在任意层级——段落内、表格单元格内段落里。
-   * 用 {@code toFirstChild/toNextSibling} 的递归下降覆盖整棵树,按文档顺序(前序遍历)收集。
+   * <p>深度优先(而非只扫直接子)是因为 {@code commentRangeStart} 可能在任意层级——段落内、表格单元格内段落里。 用 {@code
+   * toFirstChild/toNextSibling} 的递归下降覆盖整棵树,按文档顺序(前序遍历)收集。
    *
-   * <p><b>cursor 状态管理(关键)。</b> 递归下钻前用 {@link XmlCursor#push()} 保存当前位置,下钻返回后用
-   * {@link XmlCursor#pop()} 恢复——否则 {@code toFirstChild()} 会把 cursor 移到子树深处,外层的
-   * {@code toNextSibling()} 会从错误位置继续,漏掉同层后续兄弟。({@code TrackedChangeNodes} 的 walk 不踩这坑
-   * 是因为它命中修订节点后不下钻;comments 的 {@code commentRangeStart} 是叶子元素,遍历必须继续走过兄弟。)
+   * <p><b>cursor 状态管理(关键)。</b> 递归下钻前用 {@link XmlCursor#push()} 保存当前位置,下钻返回后用 {@link
+   * XmlCursor#pop()} 恢复——否则 {@code toFirstChild()} 会把 cursor 移到子树深处,外层的 {@code toNextSibling()}
+   * 会从错误位置继续,漏掉同层后续兄弟。({@code TrackedChangeNodes} 的 walk 不踩这坑 是因为它命中修订节点后不下钻;comments 的 {@code
+   * commentRangeStart} 是叶子元素,遍历必须继续走过兄弟。)
    *
    * @param cur 指向子树根的 cursor(调用前已定位;本方法 {@code toFirstChild} 进入第一层子并遍历整棵子树)
    */
@@ -154,8 +152,8 @@ public final class CommentNodes {
   }
 
   /**
-   * 把 {@code comments.xml} 里有、但 {@code document.xml} 无 {@code commentRangeStart} 锚点的孤儿批注,
-   * 按 {@code comments.xml} 部件顺序追加到结果末尾。
+   * 把 {@code comments.xml} 里有、但 {@code document.xml} 无 {@code commentRangeStart} 锚点的孤儿批注, 按 {@code
+   * comments.xml} 部件顺序追加到结果末尾。
    *
    * <p>孤儿批注通常出现在损坏文档或手工删了锚点的场景;不丢弃是为了让用户能看到所有批注内容。
    *
@@ -178,9 +176,7 @@ public final class CommentNodes {
     }
   }
 
-  /**
-   * 读 {@code XWPFComments.getComments()},防御式:POI 抛异常时返回空列表而非整体失败。
-   */
+  /** 读 {@code XWPFComments.getComments()},防御式:POI 抛异常时返回空列表而非整体失败。 */
   private static List<XWPFComment> readAllSafe(XWPFComments xcomments) {
     try {
       List<XWPFComment> list = xcomments.getComments();
@@ -191,9 +187,7 @@ public final class CommentNodes {
     }
   }
 
-  /**
-   * 把一个 {@link XWPFComment} 包装成 {@link Comment} 加入结果列表,防御式:解析失败时跳过该条。
-   */
+  /** 把一个 {@link XWPFComment} 包装成 {@link Comment} 加入结果列表,防御式:解析失败时跳过该条。 */
   private static void produceSafe(XWPFComment c, List<Comment> out) {
     try {
       out.add(new Comment(c));
@@ -215,8 +209,8 @@ public final class CommentNodes {
   /**
    * 从 cursor 指向的元素读 {@code w:<localName>} 属性的文本值;缺失返回 {@code null}。
    *
-   * <p>OOXML 的批注锚点属性({@code w:id})在 {@code w} 命名空间下,故按带命名空间的 QName 读。与
-   * {@code TrackedChangeNodes.readWAttribute} 同套路,但缺失时返回 {@code null} 以区分「无值」与「空串」。
+   * <p>OOXML 的批注锚点属性({@code w:id})在 {@code w} 命名空间下,故按带命名空间的 QName 读。与 {@code
+   * TrackedChangeNodes.readWAttribute} 同套路,但缺失时返回 {@code null} 以区分「无值」与「空串」。
    */
   private static String readWAttribute(XmlCursor cur, String localName) {
     return cur.getAttributeText(

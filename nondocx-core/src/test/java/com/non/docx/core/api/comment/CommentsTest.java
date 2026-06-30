@@ -43,10 +43,7 @@ class CommentsTest {
    * @return 写好的 docx 文件路径
    */
   private Path buildDocx(
-      Path tmp,
-      String name,
-      long[] bodyCommentIds,
-      List<CommentSpec> commentSpecs)
+      Path tmp, String name, long[] bodyCommentIds, List<CommentSpec> commentSpecs)
       throws Exception {
     Path file = tmp.resolve(name);
     try (XWPFDocument poi = new XWPFDocument()) {
@@ -195,8 +192,8 @@ class CommentsTest {
   // ---------- 核心契约:body 顺序 ≠ comments.xml 部件顺序 ----------
 
   /**
-   * fixture 里 comments.xml 按 id 2,0,1 顺序创建(部件顺序);body 按 id 0,1,2 顺序锚定(正文顺序)。
-   * list() 必须按 body 顺序返回 [0,1,2],而不是部件顺序 [2,0,1]。这是 design §5 的核心契约。
+   * fixture 里 comments.xml 按 id 2,0,1 顺序创建(部件顺序);body 按 id 0,1,2 顺序锚定(正文顺序)。 list() 必须按 body 顺序返回
+   * [0,1,2],而不是部件顺序 [2,0,1]。这是 design §5 的核心契约。
    */
   @Test
   void listReturnsBodyOrderNotPartOrder(@TempDir Path tmp) throws Exception {
@@ -217,9 +214,7 @@ class CommentsTest {
 
   // ---------- 孤儿批注降级排末尾 ----------
 
-  /**
-   * comments.xml 有 id=0,1,2 三条;body 只锚定 id=0。id=1,2 是孤儿(无锚点),按部件顺序追加到末尾,不丢弃。
-   */
+  /** comments.xml 有 id=0,1,2 三条;body 只锚定 id=0。id=1,2 是孤儿(无锚点),按部件顺序追加到末尾,不丢弃。 */
   @Test
   void orphanCommentsAppendedAtEnd(@TempDir Path tmp) throws Exception {
     Path file =
@@ -301,7 +296,12 @@ class CommentsTest {
 
   @Test
   void getWithNullIdThrowsIllegalArgument(@TempDir Path tmp) throws Exception {
-    Path file = buildDocx(tmp, "null-id.docx", new long[] {0}, List.of(new CommentSpec(0, "non", null, null, "x")));
+    Path file =
+        buildDocx(
+            tmp,
+            "null-id.docx",
+            new long[] {0},
+            List.of(new CommentSpec(0, "non", null, null, "x")));
     try (Document doc = Docx.open(file)) {
       assertThatThrownBy(() -> doc.comments().get(null))
           .isInstanceOf(IllegalArgumentException.class);
@@ -345,9 +345,13 @@ class CommentsTest {
                 new CommentSpec(1, "non1", null, null, "c1")));
     try (Document doc = Docx.open(file)) {
       List<String> ids1 =
-          doc.comments().list().stream().map(Comment::id).collect(java.util.stream.Collectors.toList());
+          doc.comments().list().stream()
+              .map(Comment::id)
+              .collect(java.util.stream.Collectors.toList());
       List<String> ids2 =
-          doc.comments().list().stream().map(Comment::id).collect(java.util.stream.Collectors.toList());
+          doc.comments().list().stream()
+              .map(Comment::id)
+              .collect(java.util.stream.Collectors.toList());
       assertThat(ids1).containsExactly("0", "1", "2");
       assertThat(ids2).isEqualTo(ids1);
     }
@@ -377,10 +381,7 @@ class CommentsTest {
   void rawReturnsSameDelegate(@TempDir Path tmp) throws Exception {
     Path file =
         buildDocx(
-            tmp,
-            "raw.docx",
-            new long[] {0},
-            List.of(new CommentSpec(0, "non", null, null, "x")));
+            tmp, "raw.docx", new long[] {0}, List.of(new CommentSpec(0, "non", null, null, "x")));
     try (Document doc = Docx.open(file)) {
       Comment c = doc.comments().get("0");
       assertThat(c.raw()).isNotNull();
@@ -390,9 +391,7 @@ class CommentsTest {
 
   // ---------- 表格内批注也能读到(body 顺序覆盖表格层级) ----------
 
-  /**
-   * 批注锚点在表格单元格的段落里(非 body 直接子段落)。验证 CommentNodes 的深度优先遍历覆盖表格层级。
-   */
+  /** 批注锚点在表格单元格的段落里(非 body 直接子段落)。验证 CommentNodes 的深度优先遍历覆盖表格层级。 */
   @Test
   void commentInsideTableIsRead(@TempDir Path tmp) throws Exception {
     Path file = tmp.resolve("in-table.docx");

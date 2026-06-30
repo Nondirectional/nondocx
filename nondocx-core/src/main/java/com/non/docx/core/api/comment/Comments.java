@@ -20,24 +20,24 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
  * <p><b>OOXML / POI / nondocx 三层。</b>
  *
  * <ul>
- *   <li><b>OOXML</b>:批注正文存独立的 {@code word/comments.xml},每条 {@code <w:comment>};被评论的范围在
- *       {@code word/document.xml} 正文里用 {@code <w:commentRangeStart>}/{@code <w:commentRangeEnd>} 包裹,
+ *   <li><b>OOXML</b>:批注正文存独立的 {@code word/comments.xml},每条 {@code <w:comment>};被评论的范围在 {@code
+ *       word/document.xml} 正文里用 {@code <w:commentRangeStart>}/{@code <w:commentRangeEnd>} 包裹,
  *       {@code <w:commentReference>} 引用,三者用同一 {@code w:id} 配对。
  *   <li><b>POI</b>:有完整高级 API {@code XWPFDocument.getDocComments()} → {@code XWPFComments}(无批注时返
- *       {@code null})、{@code getComments()} 枚举、{@code getCommentByID(id)} 按 id 查。但 {@code getComments()}
- *       返回 {@code comments.xml} 部件顺序(创建顺序),<b>不等于</b>正文顺序。
+ *       {@code null})、{@code getComments()} 枚举、{@code getCommentByID(id)} 按 id 查。但 {@code
+ *       getComments()} 返回 {@code comments.xml} 部件顺序(创建顺序),<b>不等于</b>正文顺序。
  *   <li><b>nondocx</b>:把「扫 document.xml 找锚点顺序 + 从 comments.xml 取正文」的脏活收进 {@code
  *       internal/poi/CommentNodes},对外只暴露本类与 {@link Comment} 等 POI-free 类型。
  * </ul>
  *
  * <p><b>list() 顺序契约 —— body 顺序(design §5)。</b> POI 的 {@code getComments()} 返回 {@code comments.xml}
- * 部件顺序(创建顺序),可能与正文阅读顺序不一致(探针验证见 {@code research/ordering.md})。nondocx 的 {@link
- * #list()} 按 {@code document.xml} 内 {@code commentRangeStart} 的出现顺序返回,符合「先被评论的正文 → 先返回的
- * 批注」的直觉。孤儿批注({@code comments.xml} 有、{@code document.xml} 无锚点)降级排到末尾,不丢弃。
+ * 部件顺序(创建顺序),可能与正文阅读顺序不一致(探针验证见 {@code research/ordering.md})。nondocx 的 {@link #list()} 按 {@code
+ * document.xml} 内 {@code commentRangeStart} 的出现顺序返回,符合「先被评论的正文 → 先返回的 批注」的直觉。孤儿批注({@code
+ * comments.xml} 有、{@code document.xml} 无锚点)降级排到末尾,不丢弃。
  *
- * <p><b>活对象语义(无字段快照)。</b> 本门面持有单个 {@code final XWPFDocument} 委托;{@code list()} 与
- * {@code get(id)} 每次调用都<b>当场重算</b>,不缓存批注列表——因此文档改动会实时反映,守住「无字段快照」精神
- * (与 {@code TrackedChanges.list()} 一致,poi-bridge.md Rule 1)。
+ * <p><b>活对象语义(无字段快照)。</b> 本门面持有单个 {@code final XWPFDocument} 委托;{@code list()} 与 {@code get(id)}
+ * 每次调用都<b>当场重算</b>,不缓存批注列表——因此文档改动会实时反映,守住「无字段快照」精神 (与 {@code TrackedChanges.list()}
+ * 一致,poi-bridge.md Rule 1)。
  *
  * <p><b>不参与 {@code Document.equals}。</b> 与 tracked changes / TOC 类似,批注列表不纳入 {@code Document}
  * 的内容相等性。
@@ -51,9 +51,9 @@ public final class Comments {
   /**
    * 封装给定的 POI 文档以解析其批注。
    *
-   * <p>此构造函数是 {@link com.non.docx.core.api.Document} 生成批注视图的<b>内部接缝</b>,因此它有意接受 POI
-   * 类型(与 {@code TrackedChanges(XWPFDocument)} 接受 {@code XWPFDocument} 的方式一致,见 poi-bridge.md N1)。
-   * 用户通过 {@code Document.comments()} 获取,而不是直接构造。
+   * <p>此构造函数是 {@link com.non.docx.core.api.Document} 生成批注视图的<b>内部接缝</b>,因此它有意接受 POI 类型(与 {@code
+   * TrackedChanges(XWPFDocument)} 接受 {@code XWPFDocument} 的方式一致,见 poi-bridge.md N1)。 用户通过 {@code
+   * Document.comments()} 获取,而不是直接构造。
    *
    * @param delegate 底层的 POI 文档(不能为 {@code null})
    * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
@@ -66,11 +66,11 @@ public final class Comments {
    * 返回按文档顺序排列的全部批注(活跃视图)。
    *
    * <p>返回的列表是<b>活跃的</b>:每次访问(如 {@code size()}、{@code get(i)})都从委托重读,因此文档改动会实时
-   * 反映。顺序严格按<b>文档顺序</b>({@code document.xml} 内 {@code commentRangeStart} 的出现顺序),不按
-   * {@code comments.xml} 部件顺序、不按 {@code w:id} 数值重排。
+   * 反映。顺序严格按<b>文档顺序</b>({@code document.xml} 内 {@code commentRangeStart} 的出现顺序),不按 {@code
+   * comments.xml} 部件顺序、不按 {@code w:id} 数值重排。
    *
    * <p>孤儿批注({@code comments.xml} 有批注但 {@code document.xml} 无对应 {@code commentRangeStart} 锚点,
- * 如损坏文档或手工删了锚点)按 {@code comments.xml} 部件顺序追加到末尾,不丢弃。
+   * 如损坏文档或手工删了锚点)按 {@code comments.xml} 部件顺序追加到末尾,不丢弃。
    *
    * <p>文档无任何批注时返回空列表(不抛异常)。
    *
@@ -94,8 +94,8 @@ public final class Comments {
   /**
    * 按 OOXML {@code w:id} 精确获取单条批注。
    *
-   * <p>语义是「命中式访问」:精确按 {@link Comment#id()} 定位。命中即返回;未命中抛 {@link NoSuchElementException}
-   * (而不是返回 {@code null})——按稳定标识精确定位的读取被视为「该有就有、没有就是错」。
+   * <p>语义是「命中式访问」:精确按 {@link Comment#id()} 定位。命中即返回;未命中抛 {@link NoSuchElementException} (而不是返回
+   * {@code null})——按稳定标识精确定位的读取被视为「该有就有、没有就是错」。
    *
    * <p>内部会重新扫描一次批注列表(每次调用独立重算,活对象语义)。
    *
@@ -117,9 +117,9 @@ public final class Comments {
   /**
    * 返回底层的 POI 文档。
    *
-   * <p>对返回对象的修改会立即影响文档。请谨慎使用。批注没有专属单一委托类型,这里的「委托」就是整份文档;
-   * 后续 authoring / reply 子任务会经此方法拿到可写委托做创作与回复。想直接操作批注的 OOXML 结构时,从此处
-   * 拿到 {@link XWPFDocument} 后走 {@code getDocComments()} 等到 {@code XWPFComments}。
+   * <p>对返回对象的修改会立即影响文档。请谨慎使用。批注没有专属单一委托类型,这里的「委托」就是整份文档; 后续 authoring / reply
+   * 子任务会经此方法拿到可写委托做创作与回复。想直接操作批注的 OOXML 结构时,从此处 拿到 {@link XWPFDocument} 后走 {@code getDocComments()}
+   * 等到 {@code XWPFComments}。
    *
    * @return 底层的 {@link XWPFDocument} 实例(包装器生命周期内同一实例)
    */
