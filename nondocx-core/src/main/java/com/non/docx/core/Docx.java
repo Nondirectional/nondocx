@@ -3,9 +3,11 @@ package com.non.docx.core;
 import com.non.docx.core.api.Document;
 import com.non.docx.core.api.exception.DocxFormatException;
 import com.non.docx.core.api.exception.DocxIOException;
+import com.non.docx.core.internal.compare.DocumentCompareSupport;
 import com.non.docx.core.internal.util.Objects;
 import com.non.docx.core.internal.util.Streams;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,6 +28,9 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
  * 的源 以 {@link DocxFormatException} 形式呈现，并在可用时携带源路径。
  */
 public final class Docx {
+
+  /** compare 结果文档使用的默认修订作者。 */
+  public static final String DEFAULT_COMPARE_AUTHOR = "nondocx compare";
 
   private Docx() {}
 
@@ -94,6 +99,62 @@ public final class Docx {
   }
 
   /**
+   * 比较两份现有 docx，并返回一份新的带修订结果文档。
+   *
+   * <p><b>第一版范围。</b> 当前只比较<b>正文纯文本段落</b>：结果以旧文档为基线，把新文档相对旧文档的正文文本差异写成 tracked
+   * changes。表格、页眉页脚、批注、图片、分节，以及包含超链接 / 图片 / field 等复杂内联结构的差异段落，当前不参与 compare，结果中保留旧文档原样。
+   *
+   * <p>返回的是一个新的活跃 {@link Document}。调用方负责后续 {@code save(...)} 与 {@code close()}。该方法不会修改调用者传入路径上的源文件。
+   *
+   * @param oldPath 旧版文档路径（不能为 {@code null}）
+   * @param newPath 新版文档路径（不能为 {@code null}）
+   * @return 一份新的带修订结果文档
+   * @throws DocxIOException 如果任一文件无法读取，或 compare 结果无法构造
+   * @throws DocxFormatException 如果任一文件不是有效的 docx
+   * @throws IllegalArgumentException 如果任一路径为 {@code null}
+   */
+  public static Document compare(Path oldPath, Path newPath) {
+    return compare(oldPath, newPath, DEFAULT_COMPARE_AUTHOR);
+  }
+
+  /**
+   * 比较两份现有 docx，并返回一份新的带修订结果文档，修订作者使用显式传入值。
+   *
+   * <p><b>OOXML → POI → nondocx。</b> 修订不是普通文本高亮，而是写入 {@code <w:ins>} / {@code <w:del>}
+   * 等实际修订节点。Apache POI 没有“比较两个 docx 并生成修订”的高层 API，因此 nondocx 在内部完成段落对齐、段内文本 diff，并复用现有 tracked
+   * authoring API 写出标准修订。
+   *
+   * <p><b>第一版限制。</b> 当前只比较正文纯文本段落；run 级样式不保留。若差异落在含超链接 / 图片 / field 等复杂内联结构的段落，结果中保留旧段落原样。
+   *
+   * @param oldPath 旧版文档路径（不能为 {@code null}）
+   * @param newPath 新版文档路径（不能为 {@code null}）
+   * @param author 写入修订的作者（不能为 {@code null} 或空白）
+   * @return 一份新的带修订结果文档
+   * @throws DocxIOException 如果任一文件无法读取，或 compare 结果无法构造
+   * @throws DocxFormatException 如果任一文件不是有效的 docx
+   * @throws IllegalArgumentException 如果任一路径为 {@code null}，或 {@code author} 为空白
+   */
+  public static Document compare(Path oldPath, Path newPath, String author) {
+    Objects.requireNonNull(oldPath, "oldPath");
+    Objects.requireNonNull(newPath, "newPath");
+    Objects.requireNonNull(author, "author");
+    if (author.isBlank()) {
+      throw new IllegalArgumentException("author 不能为空白");
+    }
+    try (Document oldDoc = open(oldPath);
+        Document newDoc = open(newPath)) {
+      Document working = cloneDocument(oldDoc);
+      try {
+        DocumentCompareSupport.apply(oldDoc, newDoc, working, author);
+        Document stabilized = cloneDocument(working);
+        return stabilized;
+      } finally {
+        working.close();
+      }
+    }
+  }
+
+  /**
    * Builds a document from already-buffered bytes. Because the source is now in memory, no IO can
    * fail here, so <em>any</em> exception raised while constructing the {@code XWPFDocument} — be it
    * an {@code IOException} (for example a malformed zip), a {@code POIXMLException}, or a {@code
@@ -106,5 +167,12 @@ public final class Docx {
     } catch (IOException | RuntimeException e) {
       throw new DocxFormatException("Not a valid docx file", pathStr, e);
     }
+  }
+
+  /** 深拷贝一个文档，返回独立的活跃副本。 */
+  private static Document cloneDocument(Document source) {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    source.save(out);
+    return open(new ByteArrayInputStream(out.toByteArray()));
   }
 }
