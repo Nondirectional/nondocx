@@ -617,3 +617,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: docx compare to tracked changes
+
+**Date**: 2026-06-30
+**Task**: docx compare to tracked changes
+**Branch**: `main`
+
+### Summary
+
+完成 Docx.compare API、正文文本段落 compare MVP、回归测试与示例，并归档 compare 任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `59b6809` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
