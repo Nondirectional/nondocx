@@ -684,3 +684,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 归档 comments-read 子任务
+
+**Date**: 2026-06-30
+**Task**: 归档 comments-read 子任务
+**Branch**: `main`
+
+### Summary
+
+确认 comments-read 功能与测试已完成；补交注释与测试格式整理提交后，归档 06-22-comments-read 任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e9b6538` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-06-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~686 | Active |
+| `journal-1.md` | ~719 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-06-30 | 归档 comments-read 子任务 | `e9b6538` | `main` |
 | 11 | 2026-06-30 | 归档 tracked changes 已完成子任务 | `07c3540`, `f63cc0f` | `main` |
 | 10 | 2026-06-30 | docx compare to tracked changes | `59b6809` | `main` |
 | 9 | 2026-06-23 | 页眉页脚编辑 API 补齐（首页/偶数页变体 + 图片/表格/页码域） | `414f937`, `92230e8`, `32ba945`, `7464bb1`, `ec2f672` | `main` |
