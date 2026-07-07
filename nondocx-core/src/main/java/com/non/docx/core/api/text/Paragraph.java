@@ -2,6 +2,7 @@ package com.non.docx.core.api.text;
 
 import com.non.docx.core.api.BodyElement;
 import com.non.docx.core.api.InlineElement;
+import com.non.docx.core.api.comment.Comment;
 import com.non.docx.core.api.exception.DocxIOException;
 import com.non.docx.core.api.exception.DocxOperationException;
 import com.non.docx.core.api.image.Image;
@@ -228,6 +229,58 @@ public final class Paragraph implements BodyElement {
     // ins 内的 run 不被 XWPFParagraph.getRuns() 暴露,从 CTR 重新构造 XWPFRun。
     XWPFRun inserted = new XWPFRun(ins.getRList().get(0), delegate);
     return new Run(inserted);
+  }
+
+  /**
+   * 给本段落(整段)添加一条范围批注(comment),返回新建的批注。
+   *
+   * <p>与 {@link #addInsertion(String, String)} 同属「显式创作入口」——author 必传,date 与 {@code w:id} 自动分配,
+   * POI/XmlBeans 脏活下沉到 {@code internal/poi/CommentNodes}。范围语义为<b>整段</b>:批注的
+   * {@code commentRangeStart} 在段首、{@code commentRangeEnd} 在段末,包住本段全部已有内容。
+   *
+   * <p><b>OOXML / POI / nondocx 三层。</b>
+   *
+   * <ul>
+   *   <li><b>OOXML</b>:批注在 OOXML 里是「正文锚点 + 批注正文」分离的两 part 结构。本段正文里插
+   *       {@code <w:commentRangeStart w:id=../>}(段首)与 {@code <w:commentRangeEnd w:id=../>}(段末) + 一个
+   *       {@code <w:commentReference w:id=../>} 引用 run(段末);{@code word/comments.xml} 里加
+   *       {@code <w:comment w:id=.. w:author=.. w:date=..>} 含批注正文。四处用同一 {@code w:id} 配对。
+   *   <li><b>POI</b>:{@code XWPFComments.createComment(id)} 只建 {@code comments.xml} 条目,<b>不</b>动正文;
+   *       正文锚点要 nondocx 自己插。且 POI 的 {@code addNewCommentRangeStart} <b>不</b>按 OOXML schema 顺序
+   *       排序(会落到段末、范围为空),必须 XmlCursor 手动 move 到段首——这是批注创作区别于 tracked insertion
+   *       (新建容器包新 run、顺序天然正确)的核心脏活。
+   *   <li><b>nondocx</b>:把「建 comments.xml 条目 + 正文三锚点 + XmlCursor 定位」全收进 {@code
+   *       internal/poi/CommentNodes.addWholeParagraphComment},对外只暴露本方法,返回 POI-free 的 {@link Comment}。
+   * </ul>
+   *
+   * <p><b>返回值。</b> 返回新建的 {@link Comment}(holding-wrapper,持底层 {@code XWPFComment} 委托)。调用方可立即
+   * 读 {@link Comment#id()} / {@link Comment#author()} / {@link Comment#text()} 拿到刚写入的元数据,无需二次查询;
+   * 该批注随后也能被 {@code doc.comments().list()} / {@code doc.comments().get(id)} 读回。
+   *
+   * <p><b>不返回 {@code this}</b>:与 {@link #addDeletion} 返 {@code this}(因 deletion 迁移了 run 结构、需返段落
+   * 句柄继续编辑)不同,批注创作不改变段落的"继续编辑"语义,返回批注对象本身价值更高。
+   *
+   * <p><b>initials。</b> 当前设为空串(不派生)——OOXML 不约束 initials 与 author 的关系,空 initials 不影响 Word
+   * 显示;若 AC4 人工验收发现 Word 显示需要 initials 再回退补派生逻辑。
+   *
+   * @param author 批注作者(不能为 {@code null} 或空白)
+   * @param text 批注正文(不能为 {@code null};允许空串,写出空正文批注)
+   * @return 新建的批注
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白,或 {@code text} 为 {@code null}
+   * @see com.non.docx.core.api.comment.Comments
+   * @see com.non.docx.core.api.comment.Comment
+   */
+  public Comment addComment(String author, String text) {
+    requireAuthor(author);
+    Objects.requireNonNull(text, "text");
+    XWPFDocument doc = delegate.getDocument();
+    java.util.Calendar now = java.util.Calendar.getInstance();
+    java.math.BigInteger commentId =
+        com.non.docx.core.internal.poi.CommentNodes.nextCommentId(doc);
+    org.apache.poi.xwpf.usermodel.XWPFComment created =
+        com.non.docx.core.internal.poi.CommentNodes.addWholeParagraphComment(
+            delegate, author, text, now, commentId);
+    return new Comment(created);
   }
 
   /**

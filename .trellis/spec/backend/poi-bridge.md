@@ -479,7 +479,7 @@ private static void collectRangeStartIds(XmlCursor cur, ...) {
 
 **边界行为(探针确认)**:`getDocComments()` 无批注时返 `null`(需 null-guard 返空列表);`getCommentByID(miss)` 返 `null`(包装成 `NoSuchElementException`);`XWPFComment.getDate()` 可空;`XWPFComment.getText()` 多段拼接正确(委托,不稳则回退自拼)。`Comment.id()` 直接透传 `w:id`(OOXML 语义里本就跨会话稳定,不像 tracked-changes 要造混合 id)。
 
-**范围**: 只读 `list()`/`get(id)` + 五字段。**不**含:创作(authoring 子任务)、回复/线程、resolve 状态(`commentsExtended.xml`,子任务 3)、锚点位置解析。回归:`CommentsTest` 17 用例(无批注空列表 + 单条五字段 + date/initials 缺失 + **body 顺序≠部件顺序定向测试** + 孤儿降级 + 多段拼接 + get 命中/miss/null 参数 + 活视图 + **表格内批注** + 内容相等 + raw 同一性);全量 209 tests green。
+**范围**: 只读 `list()`/`get(id)` + 五字段。**不**含:创作(已由 authoring 子任务交付,见 N22)、回复/线程、resolve 状态(`commentsExtended.xml`,子任务 3)、锚点位置解析。回归:`CommentsTest` 17 用例(无批注空列表 + 单条五字段 + date/initials 缺失 + **body 顺序≠部件顺序定向测试** + 孤儿降级 + 多段拼接 + get 命中/miss/null 参数 + 活视图 + **表格内批注** + 内容相等 + raw 同一性);全量 209 tests green。
 
 ### N19 — Header/footer 变体:POI 的 createHeader(FIRST/EVEN) 不自动写开关;POI 无统一 getter 只有三个分别方法
 
@@ -532,6 +532,35 @@ private static void collectRangeStartIds(XmlCursor cur, ...) {
 **诚实边界(读侧走 raw)**: 域的 3 个 run 在 `Paragraph.inlineElements()` 里以**3 个空文本 Run** 暴露(因为指令是 `<w:instrText>` 不是 `<w:t>`,`text()` 返空串)。识别/解析已有域(读侧)**不在**本次范围,走 `raw().getCTR().getInstrTextArray()`。不引入 `Field` 公共类型 —— 读侧建模(含 separate 缓存值、嵌套域、PAGEREF 子域)是独立大子任务(参考 TOC 的 N11 规模),本次专注写入入口。与 TOC 的「写不了、只读」边界对称,这里是「写得出来、读走 raw」。
 
 **与 Rule 1 的关系(无偏离)**: `Paragraph.addSimpleField` 操作 `XWPFParagraph` 委托(标准写穿透,`createRun` + CTR 操纵),CT 操纵内联在 `Paragraph`(与 `Run.text()` 内联清空 `<w:t>` 的 N9 手法同型,不下沉 `internal/poi`)。回归:`SimpleFieldTest` 8 用例。
+
+### N22 — Comments 创作:POI 的 addNew/insertNew 不按 schema 顺序,锚点必须 XmlCursor 定位;XWPFComment.getId() 返回 String
+
+comments-authoring 子任务交付单条**整段**范围批注的显式创作(`Paragraph.addComment(author, text)` → `Comment`)。与 tracked-changes authoring(N14)的本质差异:tracked 的 `addInsertion` 是「新建 `<w:ins>` 容器包新 run」,新节点天然在段末、顺序正确;comments 的 `addComment` 是「往**已有内容的**段落里插锚点」,锚点必须落在已有 run 的**外侧**(start 在前、end+reference 在后)。POI 不自动排序,故必须 XmlCursor 手动定位——两个非显然发现:
+
+**1. POI 的 `addNewCommentRangeStart`/`insertNewCommentRangeStart(int)` 都不按 OOXML schema 顺序,锚点落到段末(探针三方案对比验证)。** 给一个已有 2 个 run 的段落调 `addNewCommentRangeStart()`,得到的 `commentRangeStart` 落在所有 run **之后**、紧贴 `commentRangeEnd`,范围实际为空(包住 0 个 run):
+```
+addNew 前:  [r, r]
+addNew 后:  [r, r, commentRangeStart, commentRangeEnd, r(引用)]   ← start 在段末,范围为空
+```
+`insertNewCommentRangeStart(int)` 也一样——其索引是 XmlBeans 内部 **per-type 数组索引**,不是 `CTP` 全局子位置索引;该数组此前为空时新元素仍被追加到 `CTP` 子序列末尾。**POI/XmlBeans 不做 schema-order 排序。** 正确做法是 `addNew` 后用 XmlCursor 把 `commentRangeStart` move 到 `CTP` 第一个子之前(探针方案 C):
+```java
+XmlCursor pCur = ctp.newCursor();
+XmlCursor startCur = start.newCursor();
+try {
+  if (pCur.toFirstChild()) {      // 空段时返 false,跳过 move(start 已在首位)
+    startCur.moveXml(pCur);       // 把 start 移到 pCur(原第一个子)之前
+  }
+} finally { pCur.dispose(); startCur.dispose(); }
+```
+`commentRangeEnd` + 引用 run 留在段末不动——`addNew` 的自然位置(段末)就是它们的正确语义位置。**只有 `commentRangeStart` 错位需 move。** 空段(`toFirstChild` 返 false)无需 move。凡是要往「已有内容的容器」里按 schema 顺序插元素的 POI/XmlBeans 场景,都要假设 `addNew`/`insertNew` 不排序,自己用 XmlCursor 定位。
+
+**2. `XWPFComment.getId()` 返回 `String`,与 `createComment(BigInteger)` 入参类型不对称。** POI 5.2.5 的 `XWPFComments.createComment(BigInteger id)` 入参是 `BigInteger`,但读侧 `XWPFComment.getId()` 返回 `String`(而非 `BigInteger`)。分配批注 `w:id` 的 `CommentNodes.nextCommentId` 要把 `getId()` 的 String 解析回 long 取 max(非数字 id try/catch 跳过),再 `BigInteger.valueOf` 返回。与 tracked-changes 的 `nextRevisionId`(扫 `CTMarkup.getId()` 返 `BigInteger`)不同——**批注 id 与修订 id 是两套独立 OOXML id 计数器**,`nextCommentId` 不能复用 `nextRevisionId`。read 子任务 N18 末尾 `Comment.id()` 透传字符串口径与此一致。
+
+**3. initials 设空串(不派生)。** `XWPFComment.setInitials` 接受任意字符串,POI/Word 不约束 initials 与 author 的关系。创作时设空串——派生规则(取首字母等)是产品偏好,无 OOXML 约束,空 initials 不影响 Word 显示(read 子任务 N18 已验证 initials 可缺失)。若人工验收发现 Word 显示需要 initials 再回退补派生。`rStyle=CommentReference` 字符样式同理**不建**——Word 批注气泡显示由批注窗格逻辑处理,不依赖该样式。
+
+**与 Rule 1 的关系(无偏离)**: `Paragraph.addComment` 操作 `XWPFParagraph` 委托(标准写穿透),XmlCursor 定位脏活下沉到 `internal/poi/CommentNodes.addWholeParagraphComment`(与 N14 `addInsertion` 下沉到 `TrackedChangeNodes` 同型)。返回新建的 `Comment`(holding-wrapper 持新建 `XWPFComment`,N18 已建该形态),调用方可立即读 id/author/text。回归:`CommentsAuthoringTest` 7 用例(创作读回 + round-trip 结构 + 参数校验 + id 自增 + 空段边界 + 不污染 runs 视图);全量 313 tests green。
+
+**范围**: 单条**整段**范围批注创作。**不**含:run 级批注(`Run.addComment`,留 v2)、回复/线程(`commentsExtended`,子任务 3)、people.xml/paraId/RSID(子任务 4)、删除批注、跨段范围。toolkit/example 扩展留 `comments-docs-spec` 子任务(对称 tracked-changes-authoring)。
 
 ---
 

@@ -3,7 +3,7 @@
   "name": "comments-authoring",
   "title": "comments 基础创作(单条范围批注)",
   "description": "显式创作单条范围批注:Paragraph/Run.addComment。在起止节点插 commentRangeStart/End + commentReference run,comments.xml 加条目。对照 tracked-changes-authoring 子任务。回复+线程留给下一批。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

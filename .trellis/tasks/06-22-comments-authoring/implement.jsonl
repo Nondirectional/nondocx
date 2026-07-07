@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "POI-free 公共表面、holding-wrapper 委托接缝、XmlCursor 脏活集中到 internal/poi 的约定（design §2.3/§4、Comment/Comments raw() 接缝）"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "author null/空白抛 IllegalArgumentException、公共 API 不泄漏 POI 异常的契约（design §3.3、implement 3.3）"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "round-trip 相等性、活对象语义、内容相等比较字段不比较委托引用（Comment equals/hashCode、Comments.list() 重算）"}
+{"file": ".trellis/tasks/06-22-comments-authoring/research/insert-position.md", "reason": "Q1 探针结论：POI addNew/insertNew 不按 schema 顺序，必须 XmlCursor 把 commentRangeStart move 到段首（design §4 核心算法依据）"}
+{"file": ".trellis/tasks/archive/2026-06/06-22-comments-read/research/ordering.md", "reason": "read 子任务的 POI comments 行为探针：getDocComments() 无批注返 null、getComments() 部件顺序≠正文顺序（nextCommentId 与 collect 的前置依据）"}

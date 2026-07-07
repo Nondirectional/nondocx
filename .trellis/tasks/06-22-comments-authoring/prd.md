@@ -74,10 +74,11 @@ POI 5.2.5 能力：
 - [ ] **R1.4** date 自动分配 `Calendar.getInstance()`（对照 tracked 创作约定）。
 - [ ] **R1.5** `w:id` 自动分配（扫描已有批注 id 取 max+1，对照 `TrackedChangeNodes.nextRevisionId`）。
 
-### R2. Run 级批注（可选，倾向 v2）
+### R2. Run 级批注（明确留 v2）
 
-- [ ] **R2.1** `Run.addComment(author, text)` —— 范围限定到单 run。
-- [ ] 若 POI 在 run 内插 rangeStart/End 的复杂度过高，本子任务可只做整段，run 级留 future。
+- **决策（2026-07-07 收敛）**：本子任务**只做整段批注**，`Run.addComment(author, text)` 不在本子任务交付。
+- 探针结论：run 级 = 整段算法 + 多一步「在 CTP 子序列里定位目标 CTR」，复杂度增量不大，但 MVP 优先闭环，run 级作为细化另起子任务或并入 reply-threads 批次（见 design §6 future）。
+- 创作入口在 `Paragraph`（与 R4 一致）；run 级 API 形态留给 future design 决策。
 
 ### R3. 与读侧的闭环
 
@@ -86,7 +87,7 @@ POI 5.2.5 能力：
 
 ### R4. 一致性约束
 
-- [ ] 创作入口在**内容类型**（`Paragraph` / `Run`），不在门面——对照 `addInsertion`。
+- [ ] 创作入口在**内容类型**（本子任务即 `Paragraph`），不在门面——对照 `addInsertion`。
 - [ ] POI-free 公共表面；CT 脏活在 `internal/poi/CommentNodes`。
 - [ ] 现有普通写 API 行为不变。
 - [ ] 异常遵守 `error-handling.md`。
@@ -98,7 +99,7 @@ POI 5.2.5 能力：
 - [ ] AC3 save→reopen round-trip 后批注仍在（OOXML 结构完整）。
 - [ ] AC4 在 Word / WPS 打开能看到批注气泡（人工验收，附截图或描述）。
 - [ ] AC5 author 为 null/空白抛 `IllegalArgumentException`。
-- [ ] AC6 新 API 加入 DocxAgentTools（若 toolkit 组工具需要扩展，可选）。
+- [ ] AC6 toolkit / example 扩展**不在本子任务**（对称 tracked-changes-authoring：核心 API + 测试先行，toolkit/example 留 `comments-docs-spec` 子任务）。
 
 ## Out of Scope
 
@@ -107,8 +108,8 @@ POI 5.2.5 能力：
 - **删除批注** —— 留 future（读侧能枚举后，删 = 撤 range + 删 comments.xml 条目，可后续补 `Comments.remove(id)`）。
 - **批注范围跨多段** —— 本子任务范围 = 整段或单 run；跨段范围（addComment(startPara, endPara, ...)）留 future。
 
-## Open Questions（design.md 收敛）
+## Open Questions（已收敛 → 见 design.md）
 
-- **Q1**：整段批注的 rangeStart/End 插在段的什么位置？`CTP` 的子元素有 schema 顺序（pPr → r → ... → ins/del），rangeStart 应在所有 r 之前，rangeEnd + reference 在所有 r 之后。需探针验证 POI 的 `addNewCommentRangeStart()` 插在末尾还是有序位置；若末尾，需手动重排或用 XmlCursor 精准定位。
-- **Q2**：commentReference run 的 rStyle `CommentReference` 是否需要 nondocx 显式建样式定义？POI 可能不自动建 styles.xml 里的 `CommentReference` 样式，需探针；若 Word 显示不依赖该样式，可省。
-- **Q3**：run 级批注（R2）本子任务做不做？倾向「整段先做透，run 级评估复杂度后决定」——若 run 内 rangeStart/End 插入与整段同套路，顺手做；否则留 v2。
+- **Q1 ✅ 已收敛**（探针见 `research/insert-position.md`）：POI 的 `addNew`/`insertNew` 都不按 schema 顺序，`commentRangeStart` 会落到段末（范围空）。必须用 **XmlCursor 手动把 start move 到 CTP 第一个子之前**——这是 authoring 区别于 tracked-changes `addInsertion` 的核心脏活，下沉到 `internal/poi/CommentNodes`。
+- **Q2 ⚠️ 低风险，实现期验证**：`commentReference` run 的 `rStyle=CommentReference` **不建**样式定义。理由：Word 批注气泡显示由批注窗格逻辑处理，不依赖该字符样式；read 子任务探针代码亦未建任何样式，round-trip 正常。AC4 人工验收若 Word 显示异常再回退补。
+- **Q3 ✅ 已收敛**：run 级批注留 v2（见 R2）。

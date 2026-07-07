@@ -1,7 +1,9 @@
 package com.non.docx.core.internal.poi;
 
 import com.non.docx.core.api.comment.Comment;
+import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -10,8 +12,11 @@ import java.util.Set;
 import org.apache.poi.xwpf.usermodel.XWPFComment;
 import org.apache.poi.xwpf.usermodel.XWPFComments;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.xmlbeans.XmlCursor;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBody;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTMarkupRange;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR;
 
 /**
  * 内部 API——恕不另行通知即可更改。
@@ -19,7 +24,14 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBody;
  * <p>这是 nondocx 里<b>唯一</b>接触批注 OOXML 结构的地方,因此公有类型 {@link Comment} / {@link
  * com.non.docx.core.api.comment.Comments} 在源代码层面保持无 {@code org.apache.poi.*}(构造函数接缝除外)。
  *
- * <p><b>职责。</b> 提供只读能力:按文档顺序枚举批注,解析为 {@link Comment} 领域视图。
+ * <p><b>职责。</b> 提供读 + 创作两类能力:
+ *
+ * <ul>
+ *   <li><b>读</b>({@link #collect}):按文档顺序枚举批注,解析为 {@link Comment} 领域视图。
+ *   <li><b>创作</b>({@link #nextCommentId} / {@link #addWholeParagraphComment}):分配批注 {@code w:id},给整段
+ *       插入范围批注(锚点 + comments.xml 条目)。
+ * </ul>
+ *
  *
  * <p><b>OOXML 结构(教学要点)。</b> 批注在 OOXML 里是「正文 + 锚点」分离的两 part 结构:
  *
@@ -216,5 +228,130 @@ public final class CommentNodes {
     return cur.getAttributeText(
         javax.xml.namespace.QName.valueOf(
             "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}" + localName));
+  }
+
+  // ---------- 破坏性写:批注创作 ----------
+
+  /**
+   * 计算文档下一个可用的批注 {@code w:id}(扫描 {@code comments.xml} 已有批注的 {@code w:id},取最大值 +1;无任何
+   * 批注时返回 0)。
+   *
+   * <p>这是底层 OOXML 批注 id,与 {@link TrackedChangeNodes#nextRevisionId 修订 id} <b>不是</b>同一套计数器——批注
+   * 的 {@code CTMarkup} {@code w:id} 与修订的 {@code CTTrackChange} {@code w:id} 在 OOXML 里是两个独立命名空间,互不
+   * 影响(见 design §5)。
+   *
+   * <p>扫 {@code comments.xml} 的全部批注取 max(而非扫 {@code document.xml} 的锚点),因为 {@code w:id} 的真源是
+   * {@code comments.xml} 的 {@code <w:comment w:id=..>};锚点只是引用同一个 id。{@code XWPFComment.getId()} 在 POI
+   * 5.2.5 返回 {@code String},本方法解析为 {@code long} 取 max;非数字 id(罕见)跳过。
+   *
+   * @param document POI 文档(不能为 {@code null})
+   * @return 下一个可用的批注 {@code w:id}(无批注时返回 0)
+   */
+  public static BigInteger nextCommentId(XWPFDocument document) {
+    java.util.Objects.requireNonNull(document, "document");
+    XWPFComments xcomments = document.getDocComments();
+    if (xcomments == null) {
+      return BigInteger.ZERO;
+    }
+    List<XWPFComment> all = readAllSafe(xcomments);
+    long max = -1;
+    for (XWPFComment c : all) {
+      // XWPFComment.getId() 返回 String(POI 5.2.5),解析为 long 取 max;非数字 id 跳过
+      String idStr = commentIdOf(c);
+      if (idStr != null) {
+        try {
+          long v = Long.parseLong(idStr);
+          if (v > max) {
+            max = v;
+          }
+        } catch (NumberFormatException e) {
+          // 非数字 id(罕见)跳过,不影响数字 id 的 max 计算
+        }
+      }
+    }
+    return BigInteger.valueOf(max + 1);
+  }
+
+  /**
+   * 给一个<b>已有内容</b>的段落加整条范围批注(范围 = 整段),返回新建的 POI 批注对象。
+   *
+   * <p>OOXML 形态(教学要点,见 {@code research/insert-position.md} 探针):
+   *
+   * <pre>{@code
+   * word/document.xml(正文锚点):
+   *   <w:p>
+   *     <w:commentRangeStart w:id="0"/>     ← 必须在段首(包住整段)
+   *     <w:r>已有文本</w:r>
+   *     <w:commentRangeEnd w:id="0"/>       ← run 之后(段末语义位置)
+   *     <w:r><w:commentReference w:id="0"/></w:r>   ← 引用 run(新建,段末)
+   *   </w:p>
+   * word/comments.xml(批注正文):
+   *   <w:comment w:id="0" w:author=.. w:date=.. w:initials=..>
+   *     <w:p><w:r><w:t>批注正文</w:t></w:r></w:p>
+   *   </w:comment>
+   * }</pre>
+   *
+   * <p><b>POI 的坑(探针验证见 {@code research/insert-position.md} §3.1)。</b> {@link
+   * XWPFComments#createComment} 只建 {@code comments.xml} 的条目,<b>不</b>动正文;正文锚点要自己用 {@link
+   * org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP#addNewCommentRangeStart} 等建。而 POI 的
+   * {@code addNew}/{@code insertNew} 都<b>不</b>按 OOXML schema 顺序排序——{@code commentRangeStart} 会被追加到段末
+   * (在所有已有 run 之后),导致范围实际为空(包住 0 个 run)。故必须用 {@link XmlCursor} 把 {@code commentRangeStart}
+   * 手动 move 到 {@code CTP} 第一个子之前。这是批注创作区别于 {@link TrackedChangeNodes#addInsertion}(新建容器包新
+   * run,顺序天然正确)的核心脏活。
+   *
+   * <p><b>边界:空段。</b> 若 {@code CTP} 无任何子元素,{@code addNew} 自然把 {@code commentRangeStart} 放在首位,无需
+   * move({@code toFirstChild} 返回 false 时跳过 move)。
+   *
+   * @param target 目标语段落的 POI 句柄(不能为 {@code null});文档从 {@code target.getDocument()} 取
+   * @param author 批注作者(不能为 {@code null})
+   * @param text 批注正文(不能为 {@code null};允许空串,写出空正文批注)
+   * @param date 批注时间(不能为 {@code null})
+   * @param id 批注的 OOXML {@code w:id}(不能为 {@code null};由 {@link #nextCommentId} 分配)
+   * @return 新建的 {@link XWPFComment}(已设 author/date/initials + 单段正文)
+   */
+  public static XWPFComment addWholeParagraphComment(
+      XWPFParagraph target, String author, String text, Calendar date, BigInteger id) {
+    java.util.Objects.requireNonNull(target, "target");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(text, "text");
+    java.util.Objects.requireNonNull(date, "date");
+    java.util.Objects.requireNonNull(id, "id");
+
+    XWPFDocument document = target.getDocument();
+    // 首条批注时 comments part 尚不存在(POI 不自动创建空 part),getDocComments() 返回 null
+    XWPFComments xcomments = document.getDocComments();
+    if (xcomments == null) {
+      xcomments = document.createComments();
+    }
+    // 1) comments.xml 条目:设 author/date/initials + 单段正文
+    XWPFComment comment = xcomments.createComment(id);
+    comment.setAuthor(author);
+    comment.setDate(date);
+    comment.setInitials(""); // 不派生 initials(见 design §4.1);空串不影响 Word 显示
+    comment.createParagraph().createRun().setText(text);
+
+    // 2) 正文 CTP 三锚点:addNew 都追加到段末
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP ctp = target.getCTP();
+    CTMarkupRange start = ctp.addNewCommentRangeStart();
+    start.setId(id);
+    CTMarkupRange end = ctp.addNewCommentRangeEnd();
+    end.setId(id);
+    CTR refRun = ctp.addNewR();
+    refRun.addNewCommentReference().setId(id);
+
+    // 3) XmlCursor 把 commentRangeStart move 到 CTP 第一个子之前(包住整段)。
+    //    commentRangeEnd + 引用 run 留在段末(addNew 自然位置即正确语义)。
+    //    空段(toFirstChild 返 false)时无需 move——start 已在首位。
+    XmlCursor pCur = ctp.newCursor();
+    XmlCursor startCur = start.newCursor();
+    try {
+      if (pCur.toFirstChild()) {
+        startCur.moveXml(pCur); // 把 start 移到 pCur(原第一个子)之前
+      }
+    } finally {
+      pCur.dispose();
+      startCur.dispose();
+    }
+    return comment;
   }
 }
