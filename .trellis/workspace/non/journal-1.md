@@ -750,3 +750,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: comments 基础创作（单条范围批注）
+
+**Date**: 2026-07-07
+**Task**: comments 基础创作（单条范围批注）
+**Branch**: `main`
+
+### Summary
+
+完成 comments 父任务第 2 个子任务 06-22-comments-authoring：Paragraph.addComment(author, text) → Comment 单条整段范围批注的显式创作。核心发现是 POI 的 addNew/insertNew 不按 OOXML schema 顺序排序——给已有内容的段落 addNewCommentRangeStart 会落到段末、范围为空，必须 XmlCursor 手动 move 到 CTP 第一个子之前（探针三方案 A/B/C 对比验证，仅 C 正确）。这是 comments 创作区别于 tracked-changes addInsertion（新建容器包新 run、顺序天然正确）的核心脏活。另发现 XWPFComment.getId() 返回 String 与 createComment(BigInteger) 入参类型不对称，nextCommentId 需解析回 long 取 max；批注 id 与修订 id 是两套独立 OOXML 计数器，不复用 nextRevisionId。initials 设空串、rStyle 不建样式（低风险，AC4 Word 人工验收通过）。交付：CommentNodes 下沉脏活 + Paragraph 公共入口 + CommentsAuthoringTest 7 用例；全量 313 tests green；spec 增 N22、N18 补交叉引用。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `15f5dc5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
