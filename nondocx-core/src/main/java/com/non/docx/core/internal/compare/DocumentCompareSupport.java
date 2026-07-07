@@ -5,6 +5,7 @@ import com.non.docx.core.api.InlineElement;
 import com.non.docx.core.api.exception.DocxOperationException;
 import com.non.docx.core.api.style.HeadingLevel;
 import com.non.docx.core.api.style.ListKind;
+import com.non.docx.core.api.style.RunStyle;
 import com.non.docx.core.api.style.Shading;
 import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
@@ -90,7 +91,9 @@ public final class DocumentCompareSupport {
     if (java.util.Objects.equals(oldText, newText)) {
       return;
     }
-    if (!supportsTrackedRewrite(oldParagraph) || !supportsTrackedRewrite(newParagraph)) {
+    UniformParagraphStyle oldStyle = uniformParagraphStyle(oldParagraph);
+    UniformParagraphStyle newStyle = uniformParagraphStyle(newParagraph);
+    if (oldStyle == null || newStyle == null) {
       return;
     }
     List<TextSegment> segments = diffText(oldText, newText);
@@ -101,14 +104,17 @@ public final class DocumentCompareSupport {
       }
       switch (segment.kind) {
         case EQUAL:
-          target.addRun(segment.text);
+          Run equal = target.addRun(segment.text);
+          applyStyle(equal, oldStyle.style);
           break;
         case DELETE:
           Run deleted = target.addRun(segment.text);
+          applyStyle(deleted, oldStyle.style);
           target.addDeletion(author, deleted);
           break;
         case INSERT:
-          target.addInsertion(author, segment.text);
+          Run inserted = target.addInsertion(author, segment.text);
+          applyStyle(inserted, newStyle.style);
           break;
         default:
           throw new DocxOperationException("未知文本 diff 片段类型", segment.kind.name());
@@ -117,7 +123,8 @@ public final class DocumentCompareSupport {
   }
 
   private static void markWholeParagraphDeleted(Paragraph paragraph, String author) {
-    if (!supportsTrackedRewrite(paragraph)) {
+    UniformParagraphStyle style = uniformParagraphStyle(paragraph);
+    if (style == null) {
       return;
     }
     String oldText = paragraph.text();
@@ -126,16 +133,22 @@ public final class DocumentCompareSupport {
       return;
     }
     Run deleted = paragraph.addRun(oldText);
+    applyStyle(deleted, style.style);
     paragraph.addDeletion(author, deleted);
   }
 
   private static void insertParagraphBeforeAnchor(
       Document result, int nextOldAnchorIndex, Paragraph source, String author) {
+    UniformParagraphStyle style = uniformParagraphStyle(source);
+    if (style == null) {
+      return;
+    }
     Paragraph inserted = createParagraphBeforeAnchor(result, nextOldAnchorIndex);
     copyParagraphProperties(source, inserted);
     String text = source.text();
     if (!text.isEmpty()) {
-      inserted.addInsertion(author, text);
+      Run insertedRun = inserted.addInsertion(author, text);
+      applyStyle(insertedRun, style.style);
     }
   }
 
@@ -173,21 +186,48 @@ public final class DocumentCompareSupport {
     }
   }
 
-  private static boolean supportsTrackedRewrite(Paragraph paragraph) {
+  private static UniformParagraphStyle uniformParagraphStyle(Paragraph paragraph) {
+    RunStyle style = null;
     for (InlineElement element : paragraph.inlineElements()) {
       if (element instanceof Hyperlink) {
-        return false;
+        return null;
       }
       if (!(element instanceof Run)) {
-        return false;
+        return null;
       }
       Run run = (Run) element;
       if (run.raw().getCTR().sizeOfFldCharArray() > 0
           || run.raw().getCTR().sizeOfInstrTextArray() > 0) {
-        return false;
+        return null;
+      }
+      if (style == null) {
+        style = run.style();
+      } else if (!style.equals(run.style())) {
+        return null;
       }
     }
-    return true;
+    return new UniformParagraphStyle(style == null ? RunStyle.empty() : style);
+  }
+
+  private static void applyStyle(Run run, RunStyle style) {
+    if (style.isBold()) {
+      run.bold();
+    }
+    if (style.isItalic()) {
+      run.italic();
+    }
+    if (style.isUnderline()) {
+      run.underline();
+    }
+    if (style.font() != null) {
+      run.font(style.font());
+    }
+    if (style.size() != null) {
+      run.fontSize(style.size());
+    }
+    if (style.color() != null) {
+      run.color(style.color());
+    }
   }
 
   private static void clearInlineContent(Paragraph paragraph) {
@@ -317,6 +357,14 @@ public final class DocumentCompareSupport {
     private AnchorPair(int oldIndex, int newIndex) {
       this.oldIndex = oldIndex;
       this.newIndex = newIndex;
+    }
+  }
+
+  private static final class UniformParagraphStyle {
+    private final RunStyle style;
+
+    private UniformParagraphStyle(RunStyle style) {
+      this.style = style;
     }
   }
 
