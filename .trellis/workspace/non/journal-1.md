@@ -783,3 +783,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: comments 回复+线程（commentsExtended 四 part 自维护）
+
+**Date**: 2026-07-08
+**Task**: comments 回复+线程（commentsExtended 四 part 自维护）
+**Branch**: `main`
+
+### Summary
+
+完成 comments 父任务第 3 个子任务 06-22-comments-reply-threads：Comments.reply(parentId, author, text) → Comment 批注回复 + Comment.parentId()/paraId() 线程建模。POI 对 commentsExtended/Ids/Extensible 三个 part 零支持，nondocx 首次建立「自维护 OOXML part」模式：新建 CommentExtendedParts 内部类，用 OPCPackage.createPart（自动注册 Content_Types）+ addRelationship + DOM 读-改-写自维护三 part。线程读侧 ThreadResolver 在 collect 入口建 paraId↔commentId 映射，两步 join commentsExtended 的 paraIdParent 得 parentId（paraId 是中间 key，非直接 commentId→parentId）。paraId/durableId 8 位 hex（<0x7FFFFFFF）；authoring 产出的批注无 paraId，reply 时给父批注补 paraId 防 paraIdParent 链断。实现期踩到关键 POI 坑：MemoryPackagePart.getOutputStream() 累加语义——多次写入要先 clear() 再写，否则 part 内容拼出多份非法 XML（readDom 解析失败）。Comment 扩展 paraId/parentId 字段（不纳入 equals，保 read 五字段契约）。交付：CommentExtendedParts（新）+ CommentNodes.replyToComment/ThreadResolver + Comments.reply + Comment.paraId/parentId + CommentsReplyThreadsTest 8 用例；全量 321 tests green；spec 增 N23、N22 补交叉引用。AC4 Word 线程显示人工验收通过（父-子层级/多级链 A→B→C/兄弟回复都对）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f841ce4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
