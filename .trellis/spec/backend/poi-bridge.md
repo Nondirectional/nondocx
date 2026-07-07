@@ -560,7 +560,46 @@ try {
 
 **与 Rule 1 的关系(无偏离)**: `Paragraph.addComment` 操作 `XWPFParagraph` 委托(标准写穿透),XmlCursor 定位脏活下沉到 `internal/poi/CommentNodes.addWholeParagraphComment`(与 N14 `addInsertion` 下沉到 `TrackedChangeNodes` 同型)。返回新建的 `Comment`(holding-wrapper 持新建 `XWPFComment`,N18 已建该形态),调用方可立即读 id/author/text。回归:`CommentsAuthoringTest` 7 用例(创作读回 + round-trip 结构 + 参数校验 + id 自增 + 空段边界 + 不污染 runs 视图);全量 313 tests green。
 
-**范围**: 单条**整段**范围批注创作。**不**含:run 级批注(`Run.addComment`,留 v2)、回复/线程(`commentsExtended`,子任务 3)、people.xml/paraId/RSID(子任务 4)、删除批注、跨段范围。toolkit/example 扩展留 `comments-docs-spec` 子任务(对称 tracked-changes-authoring)。
+**范围**: 单条**整段**范围批注创作。**不**含:run 级批注(`Run.addComment`,留 v2)、回复/线程(`commentsExtended`,已由 reply-threads 子任务交付,见 N23)、people.xml/RSID(子任务 4)、删除批注、跨段范围。toolkit/example 扩展留 `comments-docs-spec` 子任务(对称 tracked-changes-authoring)。
+
+### N23 — Comments 回复+线程:POI 零支持的三个 part 用 OPC 自维护;MemoryPackagePart.getOutputStream() 累加语义要 clear()
+
+comments-reply-threads 子任务交付批注回复(`Comments.reply(parentId, author, text)` → `Comment`)与线程建模(`Comment.parentId()`/`paraId()`)。POI 5.2.5 对 `commentsExtended.xml`/`commentsIds.xml`/`commentsExtensible.xml` 三个 part **无 Java 类、无 API**(父任务 prd 已确认),nondocx 首次建立「自维护 OOXML part」模式。三个非显然发现:
+
+**1. OPC createPart 自动注册 Content_Types,addRelationship 手动加关系(探针验证)。** POI 的 OPC 层完整支持自维护 part:
+```java
+PackagePartName name = PackagingURIHelper.createPartName("/word/commentsExtended.xml");
+PackagePart part = pkg.createPart(name, contentType);   // [Content_Types].xml 的 Override 自动注册!
+try (OutputStream os = part.getOutputStream()) { os.write(xml.getBytes(UTF_8)); }
+document.getPackagePart().addRelationship(name, TargetMode.INTERNAL, relType);  // relationship 手动加
+```
+`createPart` **自动**在 `[Content_Types].xml` 注册 Override——这是简化关键,不用手写 Content_Types。relationship 要手动 `addRelationship`(document.xml part → 新 part)。**幂等坑**:重复 `createPart(同名)` 抛 `PartAlreadyExistsException`,必须先 `getPart(name)` 检查(存在读-改-写、不存在 create)。
+
+**2. MemoryPackagePart.getOutputStream() 累加语义——多次写入要先 clear()(实现期踩到的关键坑)。** 对同一 part 多次 `getOutputStream()` 写入,内容**累加**而非覆盖——实测三次 writeDom 后 part 里有**三段独立 XML 文档**拼接(`<?xml?><commentsEx>..</commentsEx><?xml?><commentsEx>..</commentsEx>...`),是非法 XML,readDom 解析失败(`[Fatal Error] 不允许有匹配 "[xX][mM][lL]" 的处理指令目标`)。根因:`MemoryPackagePart.getOutputStreamImpl()` 关闭时把本次写入字节**追加**到 part 现有 buffer,而非替换。修复:writeDom 前 `((MemoryPackagePart) part).clear()`:
+```java
+if (part instanceof MemoryPackagePart) {
+  ((MemoryPackagePart) part).clear();
+}
+try (OutputStream os = part.getOutputStream()) { ... 写完整 DOM ... }
+```
+**通用教训**:凡是对 POI OPC part 多次写入(读-改-写循环),都要先 clear 再写。`MemoryPackagePart.clear()` 是 public(基类 `PackagePart` 无,需 instanceof——POI 运行时实现都是 MemoryPackagePart)。
+
+**3. 线程关系的读侧解析是两步 join(paraId 是中间 key)。** 线程关系唯一线索是 `commentsExtended.xml` 的 `w15:paraIdParent`,但它指向父批注的 **paraId** 而非 comment id。要得到「回复批注的 parentId(父 comment id)」需两步 join:
+- comments.xml:批注内首段的 `w14:paraId` → 批注 `w:id`(paraId→commentId)
+- commentsExtended:`paraId` → `paraIdParent`(本 paraId → 父 paraId)
+- 再 join:父 paraId → 父 comment id
+
+`CommentNodes.ThreadResolver` 内部类在 `collect` 入口建三张映射(paraId→parentParaId、paraId→commentId、commentId→paraId),产出时 join 注入 `Comment(c, paraId, parentId)`。**防御式**:无 commentsExtended/paraId 缺失/join 失败时,parentId 为 null(根批注语义),不抛——畸形/旧文档不破坏读侧。
+
+**paraId/durableId 生成**:8 位大写 hex 随机,范围 `[1, 0x7FFFFFFE]`(OOXML 约束必须 < 0x7FFFFFFF,对照 docx skill `_generate_hex_id`)。authoring 产出的批注无 paraId(`XWPFComment.createParagraph` 不写),reply 时若父批注无 paraId 要补一个(否则 paraIdParent 链断)。dateUtc 用 ISO-8601 UTC(`2026-07-07T12:34:56Z`),注入 commentsExtensible 的 `w16du:dateUtc`。
+
+**回复的正文锚点位置**(对照 docx skill `reply_to_comment`):在父批注 `commentRangeStart` 后插新 `commentRangeStart`;在父批注引用 run(含 `commentReference`)后插新 `commentRangeEnd` + 引用 run。用 XmlCursor 定位父锚点(N22 的定位脏活同型,但基准是「父批注锚点」而非「段首」)。回复范围紧贴父范围、几乎重合。
+
+**Comment holding-wrapper 扩展**:POI 委托(`XWPFComment`)不提供 paraId/parentId,故新增 `Comment(delegate, paraId, parentId)` 构造,既有单参构造保留(read 兼容,paraId/parentId=null)。**paraId/parentId 不纳入 equals/hashCode**——保 read 子任务的 round-trip 五字段相等性契约。`parentId()` 返回 `Optional<String>`(根批注 empty),`paraId()` 返回可空 String(与 `date()` 同型)。
+
+**与 Rule 1 的关系(无偏离)**: 四 part 自维护脏活全收进 `internal/poi/CommentExtendedParts`(新建)+ `CommentNodes.replyToComment`,对外 `Comments.reply`/`Comment.parentId`/`paraId` POI-free。回归:`CommentsReplyThreadsTest` 8 用例(reply 读回 + round-trip 线程 + 四 part 幂等 + 多级链 + 参数校验 + 兼容性 + 结构断言);全量 321 tests green。
+
+**范围**: 回复 + 线程(commentsExtended 四 part 全做)。**不**含:people.xml/RSID(子任务 4)、resolve/done 状态 API、删除回复、跨段批注回复。toolkit/example 扩展留 `comments-docs-spec` 子任务。
 
 ---
 

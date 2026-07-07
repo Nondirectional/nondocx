@@ -3,7 +3,7 @@
   "name": "comments-reply-threads",
   "title": "comments 回复+线程(commentsExtended)",
   "description": "回复能力 + 线程结构:Comments.reply(parentId, text)。需自维护 commentsExtended.xml(标 paraIdParent)+ commentsIds.xml + commentsExtensible.xml 四 part。POI 无 API,自写。对照 tracked-changes-advanced-types 子任务。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

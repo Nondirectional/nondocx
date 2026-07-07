@@ -2,6 +2,7 @@ package com.non.docx.core.api.comment;
 
 import com.non.docx.core.internal.util.Objects;
 import java.util.Calendar;
+import java.util.Optional;
 import org.apache.poi.xwpf.usermodel.XWPFComment;
 
 /**
@@ -48,19 +49,44 @@ import org.apache.poi.xwpf.usermodel.XWPFComment;
 public final class Comment {
 
   private final XWPFComment delegate;
+  // 线程字段(reply-threads 子任务新增):POI 委托不提供,由 CommentNodes.collect 从 commentsExtended.xml
+  // 解析后注入。无线程信息时(根批注/旧文档)paraId 为 null、parentId 为 null。
+  private final String paraId;
+  private final String parentId;
 
   /**
-   * 包装一个 POI 批注对象。
+   * 包装一个 POI 批注对象(无线程字段)。
    *
-   * <p>此构造函数是 {@code internal/poi/CommentNodes} 生成领域视图的<b>内部接缝</b>,因此它有意接受 POI 类型 (与 {@code
-   * TrackedChange(CTRunTrackChange)} 接受 {@code CTRunTrackChange} 的方式一致,见 poi-bridge.md N1)。用户通过
-   * {@link Comments#list()} / {@link Comments#get(String)} 获取批注,而不是直接构造。
+   * <p>等价于 {@code Comment(delegate, null, null)}——paraId/parentId 为 null(根批注或旧文档场景)。保留此构造
+   * 供既有调用方兼容。
    *
    * @param delegate 底层的 POI 批注(不能为 {@code null})
    * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
    */
   public Comment(XWPFComment delegate) {
+    this(delegate, null, null);
+  }
+
+  /**
+   * 包装一个 POI 批注对象,并注入线程字段(paraId / parentId)。
+   *
+   * <p>此构造函数是 {@code internal/poi/CommentNodes} 生成领域视图的<b>内部接缝</b>,因此它有意接受 POI 类型 (与 {@code
+   * TrackedChange(CTRunTrackChange)} 接受 {@code CTRunTrackChange} 的方式一致,见 poi-bridge.md N1)。用户通过
+   * {@link Comments#list()} / {@link Comments#get(String)} 获取批注,而不是直接构造。
+   *
+   * <p>线程字段由 {@code CommentNodes.collect} 从 {@code commentsExtended.xml} 解析后注入:paraId 派生自批注内首段的
+   * {@code w14:paraId},parentId 经 paraId→parentParaId→commentId join 得到。无线程信息(根批注/无
+   * commentsExtended 的旧文档)时两者为 {@code null}。
+   *
+   * @param delegate 底层的 POI 批注(不能为 {@code null})
+   * @param paraId 批注的 {@code w14:paraId}(可为 {@code null})
+   * @param parentId 父批注的 OOXML {@code w:id}(可为 {@code null} = 根批注)
+   * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
+   */
+  public Comment(XWPFComment delegate, String paraId, String parentId) {
     this.delegate = Objects.requireNonNull(delegate, "delegate");
+    this.paraId = paraId;
+    this.parentId = parentId;
   }
 
   /**
@@ -122,9 +148,39 @@ public final class Comment {
   }
 
   /**
+   * 返回批注的 {@code w14:paraId}(线程关系的链 key)。
+   *
+   * <p>派生自批注内首段落的 {@code w14:paraId} 属性。{@code commentsExtended.xml} 的 {@code w15:paraIdParent}
+   * 用父批注的 paraId 表达线程关系,故 paraId 是 {@link #parentId()} 解析的中间 key。
+   *
+   * <p><b>可缺失。</b> 旧文档、authoring 子任务产出的批注(未补 paraId)、或解析失败时返回 {@code null}。paraId 缺失意味
+   * 着该批注无法参与线程链,{@link #parentId()} 也会是 empty。
+   *
+   * @return 批注的 paraId,或 {@code null}(无 paraId)
+   */
+  public String paraId() {
+    return paraId;
+  }
+
+  /**
+   * 返回父批注的 OOXML {@code w:id}(线程关系),根批注返回 {@link Optional#empty()}。
+   *
+   * <p>派生自 {@code commentsExtended.xml} 的 {@code w15:paraIdParent}:本批注的 paraId → 父批注 paraId → 父批注
+   * comment id(经 {@code CommentNodes.collect} 的 join 解析)。根批注(无 paraIdParent)、无
+   * {@code commentsExtended.xml} 的旧文档、或 paraId 缺失时返回 {@link Optional#empty()}。
+   *
+   * <p><b>线程语义。</b> {@code isPresent()} 为 true 即「本批注是某批注的回复」;为 empty 即「根批注」。
+   *
+   * @return 父批注的 {@code w:id},或 {@link Optional#empty()}(根批注/无线程信息)
+   */
+  public Optional<String> parentId() {
+    return parentId == null ? Optional.empty() : Optional.of(parentId);
+  }
+
+  /**
    * 返回底层的 POI 批注对象。
    *
-   * <p>对返回对象的修改会立即影响文档。请谨慎使用。后续 authoring / reply 子任务会经此方法拿到可写委托做创作 与回复;本 read 子任务只读不写。
+   * <p>对返回对象的修改会立即影响文档。请谨慎使用。authoring / reply 子任务经此方法拿到可写委托做创作 与回复(见 {@code internal/poi/CommentNodes})。
    *
    * @return 底层的 {@link XWPFComment} 实例(包装器生命周期内同一实例)
    */

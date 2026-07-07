@@ -1,1 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "check 核对：round-trip 相等性（新字段不破坏既有五字段 equals）、活对象语义、POI-free 表面、DOM 解析防御式、测试确定性"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "check 核对：POI/OPC 类型不泄漏公共 API、internal/poi 收容所边界、四 part 自维护模式"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "check 核对：NoSuchElementException/IllegalArgumentException 异常类型、POI/OPC 异常不外泄到 reply/parentId/paraId"}

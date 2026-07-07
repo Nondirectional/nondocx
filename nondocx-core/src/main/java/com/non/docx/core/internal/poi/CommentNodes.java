@@ -107,21 +107,23 @@ public final class CommentNodes {
     if (byId.isEmpty()) {
       return out;
     }
+    // 线程解析器:解析 commentsExtended.xml 得 paraId→parentParaId,产出时注入 Comment(reply-threads)
+    ThreadResolver threads = ThreadResolver.build(document, byId);
     // 扫 document.xml 的 commentRangeStart,按出现顺序产出
     CTBody body = document.getDocument().getBody();
     if (body == null) {
-      appendOrphans(allByPartOrder, byId, new HashSet<>(), out);
+      appendOrphans(allByPartOrder, byId, new HashSet<>(), out, threads);
       return out;
     }
     Set<String> seen = new HashSet<>();
     XmlCursor cur = body.newCursor();
     try {
-      collectRangeStartIds(cur, byId, seen, out);
+      collectRangeStartIds(cur, byId, seen, out, threads);
     } finally {
       cur.dispose();
     }
     // 孤儿降级:Map 里没被 body 锚点命中的批注,按部件顺序追加末尾
-    appendOrphans(allByPartOrder, byId, seen, out);
+    appendOrphans(allByPartOrder, byId, seen, out, threads);
     return out;
   }
 
@@ -140,7 +142,11 @@ public final class CommentNodes {
    * @param cur 指向子树根的 cursor(调用前已定位;本方法 {@code toFirstChild} 进入第一层子并遍历整棵子树)
    */
   private static void collectRangeStartIds(
-      XmlCursor cur, Map<String, XWPFComment> byId, Set<String> seen, List<Comment> out) {
+      XmlCursor cur,
+      Map<String, XWPFComment> byId,
+      Set<String> seen,
+      List<Comment> out,
+      ThreadResolver threads) {
     if (!cur.toFirstChild()) {
       return;
     }
@@ -152,13 +158,13 @@ public final class CommentNodes {
           seen.add(id);
           XWPFComment c = byId.get(id);
           if (c != null) {
-            produceSafe(c, out);
+            produceSafe(c, out, threads);
           }
         }
       }
       // 下钻子树前 push 保存位置,返回后 pop 恢复,保证 toNextSibling 在正确的兄弟层推进
       cur.push();
-      collectRangeStartIds(cur, byId, seen, out);
+      collectRangeStartIds(cur, byId, seen, out, threads);
       cur.pop();
     } while (cur.toNextSibling());
   }
@@ -177,14 +183,15 @@ public final class CommentNodes {
       List<XWPFComment> allByPartOrder,
       Map<String, XWPFComment> byId,
       Set<String> seen,
-      List<Comment> out) {
+      List<Comment> out,
+      ThreadResolver threads) {
     for (XWPFComment c : allByPartOrder) {
       String id = commentIdOf(c);
       if (id == null || seen.contains(id)) {
         continue;
       }
       seen.add(id);
-      produceSafe(c, out);
+      produceSafe(c, out, threads);
     }
   }
 
@@ -199,10 +206,15 @@ public final class CommentNodes {
     }
   }
 
-  /** 把一个 {@link XWPFComment} 包装成 {@link Comment} 加入结果列表,防御式:解析失败时跳过该条。 */
-  private static void produceSafe(XWPFComment c, List<Comment> out) {
+  /**
+   * 把一个 {@link XWPFComment} 包装成 {@link Comment} 加入结果列表,注入线程字段(paraId/parentId),防御式:解析失败时
+   * 跳过该条。
+   */
+  private static void produceSafe(XWPFComment c, List<Comment> out, ThreadResolver threads) {
     try {
-      out.add(new Comment(c));
+      String paraId = threads.paraIdOf(c);
+      String parentId = threads.parentIdOf(c);
+      out.add(new Comment(c, paraId, parentId));
     } catch (RuntimeException e) {
       // 单条批注解析失败时跳过,不影响其余批注产出(PRD R3.3)
     }
@@ -353,5 +365,388 @@ public final class CommentNodes {
       startCur.dispose();
     }
     return comment;
+  }
+
+  /**
+   * 对一条已有批注回复,返回新建的回复批注。
+   *
+   * <p>回复 = 普通批注 + 线程关系。创作四步(design §4):
+   *
+   * <ol>
+   *   <li>comments.xml 加回复条目(同普通批注),给其内首段补 {@code w14:paraId}。
+   *   <li>正文锚点:在父批注 {@code commentRangeStart} 后插新 {@code commentRangeStart};在父批注引用 run 后插 新
+   *       {@code commentRangeEnd} + 引用 run(对照 docx skill {@code reply_to_comment})。
+   *   <li>检查父批注 paraId:无则补(否则 paraIdParent 链断)。
+   *   <li>{@link CommentExtendedParts#appendEntries} 四 part 追加线程关系 + durableId/dateUtc。
+   * </ol>
+   *
+   * @param document POI 文档(不能为 {@code null})
+   * @param parent 父批注(不能为 {@code null},需已存在于 comments.xml 与正文)
+   * @param author 回复作者(不能为 {@code null})
+   * @param text 回复正文(不能为 {@code null})
+   * @return 新建的回复批注(含线程字段)
+   */
+  public static XWPFComment replyToComment(
+      XWPFDocument document, XWPFComment parent, String author, String text) {
+    java.util.Objects.requireNonNull(document, "document");
+    java.util.Objects.requireNonNull(parent, "parent");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(text, "text");
+
+    BigInteger replyId = nextCommentId(document);
+    String replyParaId = CommentExtendedParts.randomHexId();
+    String durableId = CommentExtendedParts.randomHexId();
+    String dateUtc = CommentExtendedParts.dateUtcNow();
+    java.util.Calendar now = java.util.Calendar.getInstance();
+
+    // 父批注 paraId:无则补一个(否则 paraIdParent 链断)
+    String parentParaId = ensureCommentParaId(parent);
+
+    // 1) comments.xml 回复条目
+    XWPFComments xcomments = document.getDocComments();
+    if (xcomments == null) {
+      xcomments = document.createComments();
+    }
+    XWPFComment reply = xcomments.createComment(replyId);
+    reply.setAuthor(author);
+    reply.setDate(now);
+    reply.setInitials("");
+    reply.createParagraph().createRun().setText(text);
+    // 给回复批注内首段补 w14:paraId(POI createParagraph 不写)
+    setParagraphParaId(reply.getParagraphs().get(0), replyParaId);
+
+    // 2) 正文锚点:父 commentRangeStart 后插新 commentRangeStart;父引用 run 后插新 commentRangeEnd + 引用 run
+    String parentIdStr = commentIdOf(parent);
+    insertReplyAnchors(document, parentIdStr, replyId);
+
+    // 3) 四 part 追加线程关系(根批注也要在 commentsExtended 里有条目?——docx skill 只在 reply 时给子条目
+    //    标 paraIdParent;父批注若无 commentsExtended 条目,Word 仍能按 paraIdParent 显示线程。故只追加回复条目)
+    CommentExtendedParts.appendEntries(document, replyParaId, parentParaId, durableId, dateUtc);
+
+    return reply;
+  }
+
+  /**
+   * 在正文里插回复批注的锚点:父批注 {@code commentRangeStart(id=parentId)} 后插新 {@code commentRangeStart(id=replyId)};
+   * 父批注引用 run(含 {@code commentReference(id=parentId)}) 后插新 {@code commentRangeEnd(id=replyId)} + 引用 run。
+   *
+   * <p>用 XmlCursor 扫 body 定位父锚点。父锚点位置参考 docx skill {@code reply_to_comment}:回复范围紧跟父范围、几乎重合。
+   */
+  private static void insertReplyAnchors(
+      XWPFDocument document, String parentIdStr, BigInteger replyId) {
+    CTBody body = document.getDocument().getBody();
+    if (body == null) {
+      return;
+    }
+    XmlCursor cur = body.newCursor();
+    try {
+      if (!cur.toFirstChild()) {
+        return;
+      }
+      // 第一遍:定位父 commentRangeStart,在其后插新 commentRangeStart
+      boolean[] insertedStart = {false};
+      do {
+        if ("commentRangeStart".equals(localOf(cur))) {
+          if (parentIdStr.equals(readWAttribute(cur, "id"))) {
+            // 在 cursor(父 start)后插新 start。moveXml/end 不可用(会动现有节点),用 beginElement 新建
+            cur.push();
+            cur.toEndToken(); // 父 start 是自闭合/空元素,toEndToken 到其末尾
+            cur.beginElement(
+                javax.xml.namespace.QName.valueOf(
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentRangeStart"));
+            cur.insertAttributeWithValue(
+                javax.xml.namespace.QName.valueOf(
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id"),
+                replyId.toString());
+            cur.pop();
+            insertedStart[0] = true;
+            break;
+          }
+        }
+        cur.push();
+        descendForCommentRangeStart(cur, parentIdStr, replyId, insertedStart);
+        cur.pop();
+      } while (cur.toNextSibling() && !insertedStart[0]);
+    } finally {
+      cur.dispose();
+    }
+
+    // 第二遍:定位父 commentReference 所在 run,在其后插新 commentRangeEnd + 引用 run
+    cur = body.newCursor();
+    try {
+      if (!cur.toFirstChild()) {
+        return;
+      }
+      boolean[] insertedEnd = {false};
+      do {
+        if (containsCommentReference(cur, parentIdStr)) {
+          // 找到父引用 run,在其后插 commentRangeEnd + 引用 run
+          cur.push();
+          cur.toEndToken(); // 到 run 末尾
+          // 先插 commentRangeEnd
+          cur.beginElement(
+              javax.xml.namespace.QName.valueOf(
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentRangeEnd"));
+          cur.insertAttributeWithValue(
+              javax.xml.namespace.QName.valueOf(
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id"),
+              replyId.toString());
+          cur.toNextSibling(); // 移过刚插的 commentRangeEnd
+          // 再插引用 run(<w:r><w:commentReference id=../></w:r>)
+          cur.beginElement(
+              javax.xml.namespace.QName.valueOf(
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r"));
+          cur.toFirstChild(); // 进入 r 内
+          cur.beginElement(
+              javax.xml.namespace.QName.valueOf(
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentReference"));
+          cur.insertAttributeWithValue(
+              javax.xml.namespace.QName.valueOf(
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id"),
+              replyId.toString());
+          cur.pop();
+          insertedEnd[0] = true;
+          break;
+        }
+        cur.push();
+        descendForCommentReference(cur, parentIdStr, replyId, insertedEnd);
+        cur.pop();
+      } while (cur.toNextSibling() && !insertedEnd[0]);
+    } finally {
+      cur.dispose();
+    }
+  }
+
+  /** 深度优先在子树里找父 commentRangeStart,找到则在其后插新 commentRangeStart。 */
+  private static void descendForCommentRangeStart(
+      XmlCursor cur, String parentIdStr, BigInteger replyId, boolean[] inserted) {
+    if (inserted[0] || !cur.toFirstChild()) {
+      return;
+    }
+    do {
+      if ("commentRangeStart".equals(localOf(cur))
+          && parentIdStr.equals(readWAttribute(cur, "id"))) {
+        cur.push();
+        cur.toEndToken();
+        cur.beginElement(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentRangeStart"));
+        cur.insertAttributeWithValue(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id"),
+            replyId.toString());
+        cur.pop();
+        inserted[0] = true;
+        return;
+      }
+      cur.push();
+      descendForCommentRangeStart(cur, parentIdStr, replyId, inserted);
+      cur.pop();
+    } while (cur.toNextSibling() && !inserted[0]);
+  }
+
+  /** 深度优先在子树里找父 commentReference 所在 run,找到则在其后插新 commentRangeEnd + 引用 run。 */
+  private static void descendForCommentReference(
+      XmlCursor cur, String parentIdStr, BigInteger replyId, boolean[] inserted) {
+    if (inserted[0] || !cur.toFirstChild()) {
+      return;
+    }
+    do {
+      if (containsCommentReference(cur, parentIdStr)) {
+        cur.push();
+        cur.toEndToken();
+        cur.beginElement(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentRangeEnd"));
+        cur.insertAttributeWithValue(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id"),
+            replyId.toString());
+        cur.toNextSibling();
+        cur.beginElement(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r"));
+        cur.toFirstChild();
+        cur.beginElement(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentReference"));
+        cur.insertAttributeWithValue(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id"),
+            replyId.toString());
+        cur.pop();
+        inserted[0] = true;
+        return;
+      }
+      cur.push();
+      descendForCommentReference(cur, parentIdStr, replyId, inserted);
+      cur.pop();
+    } while (cur.toNextSibling() && !inserted[0]);
+  }
+
+  /** cursor 指向的元素是否为 {@code r}(run)且其内含 {@code commentReference(id=parentIdStr)}。 */
+  private static boolean containsCommentReference(XmlCursor cur, String parentIdStr) {
+    if (!"r".equals(localOf(cur))) {
+      return false;
+    }
+    cur.push();
+    try {
+      if (!cur.toFirstChild()) {
+        return false;
+      }
+      do {
+        if ("commentReference".equals(localOf(cur))
+            && parentIdStr.equals(readWAttribute(cur, "id"))) {
+          return true;
+        }
+      } while (cur.toNextSibling());
+      return false;
+    } finally {
+      cur.pop();
+    }
+  }
+
+  /** cursor 当前元素的 local name;cursor 在 END_TOKEN 时返回父元素的(回退一格)。 */
+  private static String localOf(XmlCursor cur) {
+    org.apache.xmlbeans.XmlCursor.TokenType t = cur.currentTokenType();
+    if (t.isStart()) {
+      return cur.getName() == null ? "" : cur.getName().getLocalPart();
+    }
+    return "";
+  }
+
+  /** 返回批注内首段的 w14:paraId;无返回 null。 */
+  private static String ensureCommentParaId(XWPFComment c) {
+    String existing = paraIdOfComment(c);
+    if (existing != null) {
+      return existing;
+    }
+    // 补一个
+    String newParaId = CommentExtendedParts.randomHexId();
+    if (!c.getParagraphs().isEmpty()) {
+      setParagraphParaId(c.getParagraphs().get(0), newParaId);
+    }
+    return newParaId;
+  }
+
+  /** 给段落的 {@code <w:p>} 设 {@code w14:paraId} 属性。 */
+  private static void setParagraphParaId(
+      org.apache.poi.xwpf.usermodel.XWPFParagraph paragraph, String paraId) {
+    try {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP ctp = paragraph.getCTP();
+      XmlCursor cur = ctp.newCursor();
+      try {
+        cur.setAttributeText(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.microsoft.com/office/word/2010/wordml}paraId"),
+            paraId);
+      } finally {
+        cur.dispose();
+      }
+    } catch (RuntimeException e) {
+      // 设失败不致命:paraIdParent 链可能断,但 comments.xml 正文仍完整
+    }
+  }
+
+  // ---------- 线程读侧解析(reply-threads) ----------
+
+  /**
+   * 批注线程解析器:把 {@code commentsExtended.xml} 的 {@code w15:paraIdParent} 线索解析为 {@code parentId}(父批注的 OOXML
+   * {@code w:id}),供 {@link #produceSafe} 注入 {@link Comment}。
+   *
+   * <p><b>解析链(两步 join)。</b>
+   *
+   * <ol>
+   *   <li>{@link CommentExtendedParts#parseParents} 解析 commentsExtended,得 {@code paraId → parentParaId}。
+   *   <li>批注的 paraId(批注内首段的 {@code w14:paraId})经 paraId→parentParaId 得父 paraId,再反查「父 paraId → 父
+   *       comment id」得 {@code parentId}。
+   * </ol>
+   *
+   * <p><b>防御式。</b> 无 commentsExtended、paraId 缺失、join 失败时,paraId/parentId 均为 {@code null}(根批注语义),
+   * 不抛——保证畸形/旧文档不破坏读侧。
+   */
+  static final class ThreadResolver {
+    private final Map<String, String> paraIdToParentParaId; // 批注 paraId → 父批注 paraId
+    private final Map<String, String> paraIdToCommentId; // 批注 paraId → 本批注 comment id
+    private final Map<String, String> commentIdToParaId; // 本批注 comment id → 本批注 paraId
+
+    private ThreadResolver(
+        Map<String, String> paraIdToParentParaId,
+        Map<String, String> paraIdToCommentId,
+        Map<String, String> commentIdToParaId) {
+      this.paraIdToParentParaId = paraIdToParentParaId;
+      this.paraIdToCommentId = paraIdToCommentId;
+      this.commentIdToParaId = commentIdToParaId;
+    }
+
+    /** 从 document 构建:解析 commentsExtended + 扫每条批注的 paraId,建三张映射。 */
+    static ThreadResolver build(XWPFDocument document, Map<String, XWPFComment> byId) {
+      Map<String, String> paraToParent = CommentExtendedParts.parseParents(document);
+      Map<String, String> paraToComment = new HashMap<>();
+      Map<String, String> commentToPara = new HashMap<>();
+      for (Map.Entry<String, XWPFComment> e : byId.entrySet()) {
+        String commentId = e.getKey();
+        String paraId = paraIdOfComment(e.getValue());
+        if (paraId != null) {
+          paraToComment.put(paraId, commentId);
+          commentToPara.put(commentId, paraId);
+        }
+      }
+      return new ThreadResolver(paraToParent, paraToComment, commentToPara);
+    }
+
+    /** 返回批注的 paraId(无则 {@code null})。 */
+    String paraIdOf(XWPFComment c) {
+      String commentId = commentIdOf(c);
+      return commentId == null ? null : commentIdToParaId.get(commentId);
+    }
+
+    /**
+     * 返回批注的 parentId(父批注 comment id),根批注/无 paraId/join 失败时返回 {@code null}。
+     *
+     * <p>join 链:本批注 paraId → paraIdToParentParaId 得父 paraId → paraIdToComment 反查得父 comment id。
+     */
+    String parentIdOf(XWPFComment c) {
+      String commentId = commentIdOf(c);
+      if (commentId == null) {
+        return null;
+      }
+      String paraId = commentIdToParaId.get(commentId);
+      if (paraId == null) {
+        return null;
+      }
+      String parentParaId = paraIdToParentParaId.get(paraId);
+      if (parentParaId == null) {
+        return null; // 根批注(无 paraIdParent)
+      }
+      return paraIdToCommentId.get(parentParaId); // 父 paraId → 父 comment id(可能 null:父批注无 paraId)
+    }
+  }
+
+  /**
+   * 读批注内<b>首段落</b>的 {@code w14:paraId} 属性;无(POI createParagraph 不写、或旧文档)返回 {@code null}。
+   *
+   * <p>批注的 paraId 不在 {@code <w:comment>} 上,而在批注内段落的 {@code <w:p w14:paraId=..>} 上(线程链的 key)。
+   */
+  private static String paraIdOfComment(XWPFComment c) {
+    try {
+      List<org.apache.poi.xwpf.usermodel.XWPFParagraph> paras = c.getParagraphs();
+      if (paras.isEmpty()) {
+        return null;
+      }
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP ctp = paras.get(0).getCTP();
+      org.apache.xmlbeans.XmlCursor cur = ctp.newCursor();
+      try {
+        // w14 命名空间:http://schemas.microsoft.com/office/word/2010/wordml
+        return cur.getAttributeText(
+            javax.xml.namespace.QName.valueOf(
+                "{http://schemas.microsoft.com/office/word/2010/wordml}paraId"));
+      } finally {
+        cur.dispose();
+      }
+    } catch (RuntimeException e) {
+      // 解析失败视为无 paraId
+      return null;
+    }
   }
 }

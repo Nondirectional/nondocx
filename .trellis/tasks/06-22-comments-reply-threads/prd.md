@@ -20,8 +20,8 @@
 try (Document doc = Docx.open(Path.of("commented.docx"))) {
     Comments comments = doc.comments();
 
-    // 对 id=0 的批注回复
-    comments.reply("0", "同意，但建议补充数据来源");
+    // 对 id=0 的批注回复(author 必传)
+    comments.reply("0", "审阅者乙", "同意，但建议补充数据来源");
 
     // 遍历线程
     for (Comment c : comments.list()) {
@@ -68,10 +68,10 @@ commentsExtensible.xml — w16cex 扩展（dateUtc 等）                ← POI
 
 ### R1. 回复 API
 
-- [ ] **R1.1** `Comments.reply(String parentId, String text)` 返回新 `Comment`（回复批注）。
-- [ ] **R1.2** parentId 未命中抛 `NoSuchElementException`（对照 `get(id)`）。
-- [ ] **R1.3** author 沿用父批注的 author，或必传新 author（design 决策，倾向必传与 `addComment` 一致）。
-- [ ] **R1.4** date / w:id 自动分配。
+- [ ] **R1.1** `Comments.reply(String parentId, String author, String text)` 返回新 `Comment`（回复批注）。
+- [ ] **R1.2** parentId 未命中抛 `NoSuchElementException`（对照 `get(id)`）；author null/空白抛 `IllegalArgumentException`（对照 `addComment`）。
+- [ ] **R1.3** author 必传（Q3 收敛：与 `addComment` 对称，回复者常与原作者不同）。
+- [ ] **R1.4** date / w:id / paraId / durableId 自动分配。
 
 ### R2. 线程建模
 
@@ -94,7 +94,7 @@ commentsExtensible.xml — w16cex 扩展（dateUtc 等）                ← POI
 
 ## Acceptance Criteria
 
-- [ ] AC1 `Comments.reply(parentId, text)` 可用，返回新 `Comment`。
+- [ ] AC1 `Comments.reply(parentId, author, text)` 可用，返回新 `Comment`。
 - [ ] AC2 回复后 `Comment.parentId()` 返回父批注 id。
 - [ ] AC3 save→reopen 后 `Comments.list()` 能正确还原线程关系（parent 链完整）。
 - [ ] AC4 在 Word 打开能看到**线程化**批注（父批注下挂子回复，人工验收）。
@@ -107,9 +107,9 @@ commentsExtensible.xml — w16cex 扩展（dateUtc 等）                ← POI
 - **批注 resolve/done 状态** —— commentsExtended.xml 里有 `done` 属性，本子任务可顺带读写，但不做专门 API（留 future）。
 - **跨段批注的回复** —— 回复锚点固定在父批注的 rangeStart 后，不涉及跨段定位。
 
-## Open Questions（design.md 收敛）
+## Open Questions（已收敛 → 见 design.md）
 
-- **Q1**：四 part 的初始模板从哪来？docx skill 用 `scripts/templates/*.xml` 静态模板；nondocx 可在代码内嵌字符串模板（无需资源文件），或探针看 POI 是否能从空 part 起步。倾向代码内嵌。
-- **Q2**：`Comment.parentId()` 的实现——读 commentsExtended.xml 的 `w15:paraIdParent`，但需把 paraId 反查回 comment id。需在 `Comments.list()` 时建 paraId→commentId 映射。
-- **Q3**：回复的 author——沿用父批注 author，还是必传？倾向必传（与 `addComment` 对称，且回复者常与原作者不同）。
-- **Q4**：w14:paraId / w16du:dateUtc 的生成——这两个属于「基础设施」范畴，本子任务为保证线程关系**必须**生成 paraId（paraIdParent 靠它），但 dateUtc 等可留给子任务 4。需明确最小必要集。
+- **Q1 ✅ 已收敛**（探针见 `research/part-lifecycle.md`）：四 part 用 **POI 的 OPC API 代码内嵌创建**——`OPCPackage.createPart(partName, contentType)` + `getOutputStream` 写内容 + `addRelationship` 加关系。`[Content_Types].xml` 的 Override **由 POI createPart 自动注册**，无需手写。不用静态模板文件（docx skill 的字符串模板对照参考，但 nondocx 代码内嵌 XML）。**幂等**：重复 createPart 抛 `PartAlreadyExistsException`，nondocx 先 `getPart` 检查（存在追加、不存在 create）。
+- **Q2 ✅ 已收敛**：`Comment.parentId()` 读 commentsExtended.xml 的 `w15:paraIdParent`。解析需 paraId→commentId 映射——在 `Comments.list()` 时扫 commentsExtended 建 `paraId→parentId`，再扫 comments.xml 建 `paraId→commentId`（批注内首段的 `w14:paraId`），两端 join 得 `commentId→parentId`。详见 design §5。
+- **Q3 ✅ 已收敛**：回复 author **必传**（与 `addComment` 对称：`Comments.reply(String parentId, String author, String text)`）。理由：回复者常与原作者不同；authoring 已定 author 必传，reply 保持一致。
+- **Q4 ✅ 已收敛**：本子任务四 part 全做（含 durableId/dateUtc 生成）。paraId / durableId 用 8 位 hex 随机（`< 0x7FFFFFFF`，OOXML 约束）；dateUtc 用 ISO-8601 UTC。对照 docx skill 的 `_generate_hex_id`。**决策依据**：四 part 全做以完全对称 Word 自身产出，人工验收无悬念；durableId/dateUtc 本属子任务 4 范围，提前到本子任务与线程关系一并交付更内聚。

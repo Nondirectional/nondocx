@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "POI-free 公共表面、holding-wrapper 委托接缝、XmlCursor 脏活集中到 internal/poi（design §2.3/§4.2）；N22 是 authoring 的 XmlCursor 定位先例，本子任务回复锚点同型"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "parentId 未命中 NoSuchElementException、author null/空白 IllegalArgumentException、POI/OPC 异常不外泄（design §4.1、prd R1.2）"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "round-trip 相等性（新字段 paraId/parentId 不纳入 equals，design §4.5）、活对象语义、DOM 解析防御式"}
+{"file": ".trellis/tasks/06-22-comments-reply-threads/research/part-lifecycle.md", "reason": "OPC part 生命周期探针：createPart 自动注册 Content_Types、幂等防 PartAlreadyExistsException、四 part 真实结构、paraId/durableId 生成约束（design §3/§4 全部依据）"}
+{"file": ".trellis/tasks/archive/2026-06/06-22-comments-read/research/ordering.md", "reason": "read 子任务 collect 的 body 顺序解析——本子任务 collect 扩展在其上 join paraId→parentId（design §5.2）"}
