@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
-- **Last Active**: 2026-06-30
+- **Total Sessions**: 13
+- **Last Active**: 2026-07-07
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~719 | Active |
+| `journal-1.md` | ~752 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-07-07 | compare batch 2: run 级样式保真落地与收尾 | `2112a2f` | `main` |
 | 12 | 2026-06-30 | 归档 comments-read 子任务 | `e9b6538` | `main` |
 | 11 | 2026-06-30 | 归档 tracked changes 已完成子任务 | `07c3540`, `f63cc0f` | `main` |
 | 10 | 2026-06-30 | docx compare to tracked changes | `59b6809` | `main` |

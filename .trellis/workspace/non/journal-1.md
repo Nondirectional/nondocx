@@ -717,3 +717,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: compare batch 2: run 级样式保真落地与收尾
+
+**Date**: 2026-07-07
+**Task**: compare batch 2: run 级样式保真落地与收尾
+**Branch**: `main`
+
+### Summary
+
+推进 06-30-compare-batch2-upgrades 任务至完成：为可归约成单一样式的纯文本段落补上 run 级六样式保真（删除看旧/插入看新/未改看旧），复杂混排与超链接/field 段落继续静默跳过。验证核心套件 306 测试全过、example main 实跑样式保真生效，并修复 spotless 格式。提交实现后走 finish-work 归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2112a2f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
