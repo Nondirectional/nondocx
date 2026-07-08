@@ -1,0 +1,30 @@
+{
+  "id": "table-toolkit-style-gap",
+  "name": "table-toolkit-style-gap",
+  "title": "表格工具组样式编辑能力补齐",
+  "description": "补齐 nondocx-toolkit TableTools 缺失的表格样式编辑能力：core 层 Cell/Row/Table/Paragraph/Run 已有底层方法，toolkit 层未暴露",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "non",
+  "assignee": "non",
+  "createdAt": "2026-07-08",
+  "completedAt": "2026-07-09",
+  "branch": null,
+  "base_branch": "feat/onlyoffice-demo",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-08-ttk-style-basics",
+    "07-08-ttk-layout-width",
+    "07-08-ttk-structure-tail"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "父任务约束：所有子任务走 core 活对象直写，不穿透 raw，遵循 holding wrapper/枚举映射规则"}
