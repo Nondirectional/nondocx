@@ -1,0 +1,49 @@
+# nondocx demo 的辅助服务:OnlyOffice Document Server。
+#
+# 为什么只 compose 这一个服务:
+#   OnlyOffice 是独立的渲染/转换进程,demo 开发期不值得为它手敲一长串 docker run。
+#   而后端(nondocx-demo)仍在开发期频繁改动,用 `mvn exec:java` 跑体验最好,
+#   改代码无需重建镜像。后续若要整体分发,再补 Dockerfile 把 demo 服务加进来。
+#
+# 用法(项目根目录):
+#   docker compose up -d        启动 OnlyOffice
+#   docker compose ps           查看状态(healthcheck 显示 healthy 即就绪)
+#   docker compose down         停止
+#
+# 就绪后:浏览器最终访问的是 mvn 起的后端 http://localhost:8080,
+# 后端会把 docx 文件以 http://host.docker.internal:8080/api/doc/file 暴露给本容器拉取。
+
+services:
+  onlyoffice:
+    # OnlyOffice Docs 社区版。demo 用 latest;生产环境建议 pin 固定版本(如 8.2.x)以保证可复现。
+    image: onlyoffice/documentserver:latest
+    container_name: oo-docs
+    # 宿主机 9090 → 容器 80。浏览器通过后端间接使用 OO 的 api.js(localhost:9090),
+    # OO 又通过 host.docker.internal 回拉宿主机的 docx 文件。
+    ports:
+      - "9090:80"
+    environment:
+      # demo 明文 config 即可,关掉 JWT 签名。生产环境务必开启 JWT。
+      - JWT_ENABLED=false
+      # 关键:放行 OO 从私有 IP 下载文档。
+      # OO 8.x+ 默认禁止私有 IP 下载(防 SSRF),而 demo 后端就在宿主机,
+      # host.docker.internal 解析出的正是私有 IP,会被挡(报 "is not allowed. Because, It is private IP address")。
+      # OO 启动脚本 run-document-server.sh 内置了对这两个环境变量的支持(用 json -I 原地改 local.json,
+      # 不走 rename,不会撞 bind mount)。
+      # ⚠ 这关闭了 SSRF 防护,仅适用于本地可信 demo。生产环境改用公网 IP + JWT。
+      - ALLOW_PRIVATE_IP_ADDRESS=true
+      - ALLOW_META_IP_ADDRESS=true
+    # 关键:让容器内的 OO 能用 host.docker.internal 解析到宿主机。
+    # macOS/Windows 的 Docker Desktop 本就提供该域名,这里声明对它们无害;
+    # Linux 必须有这一行,否则 OO 拉不到宿主机的 /api/doc/file。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # OO 启动较慢(首次 30-60s),加 healthcheck 让 `docker compose ps` 显示就绪状态,
+    # 避免盲等。OO 提供 /healthcheck 端点,返回 200 即就绪。
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
