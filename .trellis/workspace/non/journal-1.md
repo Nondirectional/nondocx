@@ -849,3 +849,37 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: comments 文档+spec 收尾 — 父任务 06-22-comments 全部完成
+
+**Date**: 2026-07-08
+**Task**: comments 文档+spec 收尾 — 父任务 06-22-comments 全部完成
+**Branch**: `main`
+
+### Summary
+
+完成 comments 能力线最后一步(docs-spec 子任务),父任务 06-22-comments 五子任务全部交付并归档。本会话含两项工作:① infrastructure 子任务(people.xml/paraId/RSID 自动注入,见前次 journal 详述);② docs-spec 子任务——docs/06-comments/ 四篇教学文档(README+01-concepts/02-read/03-authoring/04-infrastructure,对照 05-tracked-changes 三层递进)、03-api-reference.md 补 Comments/Comment 速查、docs/根 README 索引更新(不重编号,comments 作专题插入)、spec index.md 修正 Scope Boundaries(tracked+comments 从 raw-only 改标已落地)、CommentsExample.java 完整闭环示例。父任务 AC 全绿:AC1 五子任务/AC2 POI-free(仅内部接缝)/AC3 文档对称/AC4 示例可运行/AC5 全量 332 tests green。实现期修正了 02-read.md 三个字段类型写错(date/initials/paraId 非 Optional)。comments 能力线(read→authoring→reply-threads→infrastructure→docs-spec)对称 tracked-changes 完整收官。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5bf0b86` | (see git log) |
+| `c656828` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
