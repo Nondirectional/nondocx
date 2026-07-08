@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/renderer-compatibility.md", "reason": "列宽 DXA 在 WPS 触发 tblGrid 错位(#table-width-dxa)，百分比是主推跨引擎路径；headerRow/cantSplit 跨引擎一致"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "行属性与列宽走 core 活对象直写，遵循 holding wrapper 规则"}
