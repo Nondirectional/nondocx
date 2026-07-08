@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/renderer-compatibility.md", "reason": "检查产出底纹不为黑块、跨 Word/WPS 显示正确"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "新工具需配套 round-trip 单测，无 POI 类型泄漏到公共面"}
