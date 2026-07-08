@@ -883,3 +883,37 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: OnlyOffice 实时预览的 nondocx Agent 对话 demo
+
+**Date**: 2026-07-08
+**Task**: OnlyOffice 实时预览的 nondocx Agent 对话 demo
+**Branch**: `feat/onlyoffice-demo`
+
+### Summary
+
+新建 nondocx-demo 子模块,把 nondocx-toolkit 的 Agent 工具集包装成可交互网页:左侧 OnlyOffice 实时预览 docx,右侧 Agent 对话驱动编辑,save_docx 后自动刷新。复用 DocxToolkit + nonchain Agent(主库零改动)。后端 Javalin 6.6.0,SSE 流式推送 AgentEvent;前端纯静态 HTML/JS。支持上传自有文档(换文档清 Agent 记忆)。docker compose 编排 OnlyOffice,踩了三个坑并解决:首启 OOM(内存调 8GB+)、私有 IP 被 SSRF 防护挡(ALLOW_PRIVATE_IP_ADDRESS=true)、bind mount local.json 致 EBUSY 崩溃(改用环境变量)。全项目 mvn verify 绿。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c2dd76b` | (see git log) |
+| `679f002` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
