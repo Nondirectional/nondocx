@@ -816,3 +816,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: comments 基础设施: people.xml/paraId/RSID 自动注入
+
+**Date**: 2026-07-08
+**Task**: comments 基础设施: people.xml/paraId/RSID 自动注入
+**Branch**: `main`
+
+### Summary
+
+实现 comments-infrastructure 子任务:三项现代 Word 兼容基础设施自动注入。新建 internal/poi/AuthoringInfra 作为统一入口——people.xml(w15,复用 N23 OPC 自维护模式,ensurePart/readOrCreateDom/writeDom 提升为 package-private 共享)、w14:paraId(从 CommentNodes 私有 helper 提升到 public,补到 addComment 路径)、RSID(Document 级单例,持久化在 settings.xml <w:rsidRoot>;CTDocRsids 是 dangling reference 走 XmlCursor)。实现期关键发现:XmlCursor.beginElement 后 cursor 停在 END(非 START),建嵌套结构需 toNextToken 导航。tracked-changes 创作路径不接入(AC6 隔离)。CommentsInfrastructureTest 11 用例,全量 332 tests green、spotless clean。spec poi-bridge.md 增 N24。AC4 Word 人工验收留 review gate。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5bf0b86` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

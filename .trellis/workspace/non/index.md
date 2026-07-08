@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-07-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~818 | Active |
+| `journal-1.md` | ~851 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-07-08 | comments 基础设施: people.xml/paraId/RSID 自动注入 | `5bf0b86` | `main` |
 | 15 | 2026-07-08 | comments 回复+线程（commentsExtended 四 part 自维护） | `f841ce4` | `main` |
 | 14 | 2026-07-07 | comments 基础创作（单条范围批注） | `15f5dc5` | `main` |
 | 13 | 2026-07-07 | compare batch 2: run 级样式保真落地与收尾 | `2112a2f` | `main` |
