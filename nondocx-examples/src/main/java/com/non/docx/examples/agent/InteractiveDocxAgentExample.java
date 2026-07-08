@@ -79,7 +79,7 @@ public final class InteractiveDocxAgentExample {
           + "【批量工具】read_paragraph（段落索引数组 paragraph_indexes）、"
           + "read_run / read_table_cell（对象数组 runs/cells）、"
           + "replace_run_text / replace_table_cell_run_text（对象数组 edits，含完整坐标与 text，"
-          + "部分失败不中断、返回每条明细）、append_paragraph（文本数组 texts）、"
+          + "部分失败不中断、返回每条明细）、insert_paragraph（对象数组 paragraphs，每个含 body_index/text）、"
           + "insert_tracked_run / delete_run_tracked / replace_run_tracked / mark_cell_inserted / mark_cell_deleted"
           + "（author 共享 + 对象数组 edits/cells）、"
           + "accept/reject_text_or_move_revision、accept/reject_property_change、accept/reject_cell_change（id 数组 ids）、"

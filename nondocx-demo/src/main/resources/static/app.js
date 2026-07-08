@@ -114,9 +114,9 @@ chatForm.addEventListener('submit', async (e) => {
   chatInput.value = '';
   setChatting(true);
 
-  // 2) 准备一个空的助手气泡(text 帧会往里追加)
-  const assistantEl = appendMsg('assistant', '');
-  let firstText = true;
+  // 2) 按 SSE 到达顺序渲染助手文字与工具卡片。
+  // text 连续到达时续写当前气泡；工具调用后再来的 text 会新建气泡，保持时间轴顺序。
+  const assistantState = { currentTextEl: null };
 
   try {
     // 3) POST 消息,拿 ReadableStream
@@ -144,7 +144,7 @@ chatForm.addEventListener('submit', async (e) => {
       while ((sep = buffer.indexOf('\n\n')) >= 0) {
         const frame = buffer.slice(0, sep);
         buffer = buffer.slice(sep + 2);
-        handleSseFrame(frame, assistantEl, () => firstText);
+        handleSseFrame(frame, assistantState);
       }
     }
   } catch (err) {
@@ -159,9 +159,9 @@ chatForm.addEventListener('submit', async (e) => {
  * 处理一个 SSE 帧(形如 "data: {...}")。
  *
  * @param frame 原始帧文本(如 'data: {"type":"text","delta":"你"}')
- * @param assistantEl 当前助手气泡元素(text/tool_* 帧渲染到这里)
+ * @param assistantState 当前助手渲染状态
  */
-function handleSseFrame(frame, assistantEl, getFirstText) {
+function handleSseFrame(frame, assistantState) {
   // 提取 data: 后的 JSON
   const match = frame.match(/^data:\s*(.+)$/s);
   if (!match) return;
@@ -174,8 +174,8 @@ function handleSseFrame(frame, assistantEl, getFirstText) {
   }
   switch (data.type) {
     case 'text':
-      // 追加到当前助手气泡(打字机效果)
-      assistantEl.appendChild(document.createTextNode(data.delta));
+      // 追加到当前助手气泡(打字机效果)；若前一个事件是工具调用，则新建气泡。
+      appendAssistantText(assistantState, data.delta || '');
       scrollToBottom();
       break;
     case 'tool_start':
@@ -185,6 +185,7 @@ function handleSseFrame(frame, assistantEl, getFirstText) {
       tcStart.textContent = '🔧 ' + data.name + '(' + (data.arguments || '') + ')';
       tcStart.dataset.toolName = data.name;
       messagesEl.appendChild(tcStart);
+      assistantState.currentTextEl = null;
       scrollToBottom();
       break;
     case 'tool_end':
@@ -206,15 +207,19 @@ function handleSseFrame(frame, assistantEl, getFirstText) {
       appendMsg('error', data.message || '未知错误');
       break;
     case 'done':
-      // 流结束;若助手气泡为空,移除它(Agent 只调工具没说话的情况)
-      if (!assistantEl.textContent.trim()) {
-        assistantEl.remove();
-      }
       break;
   }
 }
 
 // ============ DOM 辅助 ============
+
+function appendAssistantText(state, delta) {
+  if (!delta) return;
+  if (!state.currentTextEl) {
+    state.currentTextEl = appendMsg('assistant', '');
+  }
+  state.currentTextEl.appendChild(document.createTextNode(delta));
+}
 
 function appendMsg(cls, text) {
   const div = document.createElement('div');

@@ -53,5 +53,10 @@ gradle-app.setting
 .env
 .env.local
 
-# ─── Local agent/tooling state (.pi workspace, machine-local paths) ───
+# ─── Local agent / AI tooling state (machine-local, not for VCS) ───
+# pi coding agent runtime dir (tracked configs under .pi/ are added explicitly)
 .pi/
+
+# Other local AI coding tools' working dirs
+.zcode/
+.agents/

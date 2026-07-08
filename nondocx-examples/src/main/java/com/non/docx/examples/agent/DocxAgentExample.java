@@ -64,7 +64,7 @@ public final class DocxAgentExample {
           + "read_run / read_table_cell（对象数组 runs/cells，一次读多个 run 或单元格）、"
           + "replace_run_text / replace_table_cell_run_text（对象数组 edits，每个对象含完整坐标与 text，"
           + "一次改多处，部分失败不中断、返回每条成功/失败明细）、"
-          + "append_paragraph（文本数组 texts，一次追加多段）、"
+          + "insert_paragraph（对象数组 paragraphs，每个含 body_index/text，可在开头/中间/末尾插段）、"
           + "insert_tracked_run（author 共享 + 对象数组 edits，每个含 paragraph_index/text 及可选样式）、"
           + "delete_run_tracked / replace_run_tracked（author 共享 + 对象数组 edits，每个含坐标，"
           + "同段删/换多个 run 不会索引漂移、自动去重）、"

@@ -121,19 +121,45 @@ class DocxToolkitBatchTest {
   }
 
   @Test
-  void shouldAppendMultipleParagraphs(@TempDir Path tmp) throws Exception {
-    Path file = tmp.resolve("append.docx");
+  void shouldInsertMultipleParagraphsByBodyIndex(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("insert.docx");
     try (Document doc = Docx.create()) {
-      doc.addParagraph("原有");
+      doc.addParagraph("正文");
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
     String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
-    String result = tk.body.appendParagraph(docId, List.of("追加一", "追加二"));
-    assertThat(result).contains("已追加 2 段").contains("追加一").contains("追加二");
-    // 文档现在应有 3 段:原有 + 两条追加。
+    String result =
+        tk.body.insertParagraph(
+            docId,
+            List.of(paragraphInsert(0, "标题"), paragraphInsert(2, "结尾")));
+    assertThat(result).contains("body 0").contains("标题").contains("body 2").contains("结尾");
+    assertThat(result).contains("成功 2 条,失败 0 条");
+    assertThat(tk.body.readParagraph(docId, List.of(0))).contains("标题");
+    assertThat(tk.body.readParagraph(docId, List.of(1))).contains("正文");
+    assertThat(tk.body.readParagraph(docId, List.of(2))).contains("结尾");
     assertThat(tk.session.getParagraphCount(docId)).contains("段落数: 3");
+  }
+
+  @Test
+  void shouldInsertParagraphBeforeMiddleBodyElement(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("insert-middle.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("开头");
+      var row = doc.addTable().addRow();
+      row.addCell().addParagraph().addRun("表格");
+      doc.addParagraph("结尾");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    String result = tk.body.insertParagraph(docId, List.of(paragraphInsert(1, "表格前说明")));
+    assertThat(result).contains("body 1").contains("表格前说明").contains("成功 1 条,失败 0 条");
+    assertThat(tk.body.readParagraph(docId, List.of(0))).contains("开头");
+    assertThat(tk.body.readParagraph(docId, List.of(1))).contains("表格前说明");
+    assertThat(tk.body.readParagraph(docId, List.of(2))).contains("结尾");
   }
 
   @Test
@@ -190,7 +216,7 @@ class DocxToolkitBatchTest {
     // 空数组:返回提示而非 NPE。
     assertThat(tk.body.readParagraph(docId, List.of())).contains("为空");
     assertThat(tk.body.replaceRunText(docId, List.of())).contains("为空");
-    assertThat(tk.body.appendParagraph(docId, List.of())).contains("为空");
+    assertThat(tk.body.insertParagraph(docId, List.of())).contains("为空");
     assertThat(tk.trackedChangeQuery.acceptTextOrMoveRevision(docId, List.of())).contains("为空");
   }
 
@@ -199,7 +225,8 @@ class DocxToolkitBatchTest {
     DocxToolkit tk = new DocxToolkit();
     assertThat(tk.body.readParagraph("doc-999", List.of(0))).contains("不存在");
     assertThat(tk.body.replaceRunText("doc-999", List.of())).contains("不存在");
-    assertThat(tk.body.appendParagraph("doc-999", List.of("x"))).contains("不存在");
+    assertThat(tk.body.insertParagraph("doc-999", List.of(paragraphInsert(0, "x"))))
+        .contains("不存在");
     assertThat(tk.trackedChangeQuery.acceptTextOrMoveRevision("doc-999", List.of("ins:1")))
         .contains("不存在");
   }
@@ -510,6 +537,13 @@ class DocxToolkitBatchTest {
     Map<String, Object> m = new LinkedHashMap<>();
     m.put("paragraph_index", paragraphIndex);
     m.put("run_index", runIndex);
+    m.put("text", text);
+    return m;
+  }
+
+  private static Map<String, Object> paragraphInsert(int bodyIndex, String text) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("body_index", bodyIndex);
     m.put("text", text);
     return m;
   }

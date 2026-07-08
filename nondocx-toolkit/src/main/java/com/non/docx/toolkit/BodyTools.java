@@ -268,35 +268,94 @@ public final class BodyTools extends ToolkitToolContext {
   }
 
   /**
-   * 在正文末尾批量追加若干单 run 段落。
+   * 按正文 body 顺序批量插入若干单 run 段落。
    *
-   * <p><b>批量语义（v2）。</b> 入参是<b>文本数组</b> {@code texts},长度 1 即追加一段,多个即一次追加多段。
-   * 追加是"无索引"操作(总是加在末尾),天然全部成功、无越界、无索引漂移,是批量工具里最简单的一类。
+   * <p><b>OOXML → POI → nondocx 三层</b>:OOXML 的正文是 {@code <w:body>} 下 {@code <w:p>} 与
+   * {@code <w:tbl>} 的有序序列,所以"文档开头/中间"插入本质是在某个 body 子元素前插入新的 {@code <w:p>}。 POI 通过
+   * {@code XWPFDocument.insertNewParagraph(XmlCursor)} 完成这个位置插入; nondocx 已封装为 {@link
+   * Document#insertParagraph(int)},这里复用它而不穿透 raw。
    *
-   * <p>返回按数组顺序列出每段内容,如 {@code 已追加 2 段:[0] "甲" [1] "乙"}。
+   * <p><b>批量语义（v3）。</b> 入参是对象数组 {@code paragraphs},每个对象含:
+   *
+   * <ul>
+   *   <li>{@code body_index}:整数,必填,正文 body 顺序索引(0 起);{@code bodyElements().size()} 表示末尾
+   *   <li>{@code text}:字符串,必填,新段落文本
+   * </ul>
+   *
+   * <p>按数组顺序执行。若多条使用同一个 {@code body_index},第二条会插在第一条之后,从而保持 Agent 传入顺序。
+   * 越界/缺字段按 collect-errors 处理,成功项立即写入,失败项不中断整批。
    */
   @ToolDef(
-      name = "append_paragraph",
-      description = "在正文末尾批量追加若干单 run 段落(改完需 save_docx 落盘)。texts 是文本数组," + "长度 1 即追加一段,可一次追加多段。")
-  public String appendParagraph(
+      name = "insert_paragraph",
+      description =
+          "按正文 body 顺序批量插入若干单 run 段落(改完需 save_docx 落盘)。"
+              + "paragraphs 是对象数组,每个对象含 body_index(int,正文 body 顺序索引 0 起;body 元素总数表示末尾)、"
+              + "text(string,新段落文本)。body_index=0 可在文档开头插入;中间索引可插在段落或表格前。"
+              + "部分失败不中断,返回每条成功/失败明细。")
+  public String insertParagraph(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "texts", description = "段落文本数组,如 [\"第一段\",\"第二段\"];单段传 [\"甲\"]")
-          List<String> texts) {
+      @ToolParam(
+              name = "paragraphs",
+              description =
+                  "对象数组,每个对象含 body_index(int)、text(string),"
+                      + "如 [{\"body_index\":0,\"text\":\"标题\"},{\"body_index\":3,\"text\":\"中间段\"}]")
+          List<Map<String, Object>> paragraphs) {
     Document doc = document(docId);
     if (doc == null) {
       return docNotFound(docId);
     }
-    List<Object> list = coerceList(texts);
+    List<Object> list = coerceList(paragraphs);
     if (list.isEmpty()) {
-      return "texts 为空";
+      return "paragraphs 为空";
     }
     StringBuilder sb = new StringBuilder();
-    sb.append("已追加 ").append(list.size()).append(" 段:");
+    int ok = 0;
+    int fail = 0;
     for (int i = 0; i < list.size(); i++) {
-      String text = String.valueOf(list.get(i));
-      doc.addParagraph(text);
-      sb.append(" [").append(i).append("] \"").append(text).append("\"");
+      if (i > 0) {
+        sb.append('\n');
+      }
+      Object item = list.get(i);
+      String tag = "[" + i + "] ";
+      if (!(item instanceof Map)) {
+        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
+        fail++;
+        continue;
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> m = (Map<String, Object>) item;
+      int bodyIndex;
+      String text;
+      try {
+        bodyIndex = getInt(m, "body_index");
+        text = getStr(m, "text");
+      } catch (RuntimeException e) {
+        sb.append(tag).append("错误:").append(e.getMessage());
+        fail++;
+        continue;
+      }
+      int bodySize = doc.bodyElements().size();
+      if (bodyIndex < 0 || bodyIndex > bodySize) {
+        sb.append(tag).append("错误：body_index ").append(bodyIndex).append(" 越界（共 ").append(bodySize).append("）");
+        fail++;
+        continue;
+      }
+      try {
+        doc.insertParagraph(bodyIndex).addRun(text);
+      } catch (RuntimeException e) {
+        sb.append(tag).append("错误:").append(rootMessage(e));
+        fail++;
+        continue;
+      }
+      sb.append(tag)
+          .append("body ")
+          .append(bodyIndex)
+          .append(" 插入段落 → \"")
+          .append(text)
+          .append("\" ✓");
+      ok++;
     }
+    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
     return sb.toString();
   }
 

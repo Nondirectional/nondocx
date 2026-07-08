@@ -100,7 +100,7 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 | `read_paragraph` | 读段落（含 run 列表） | ✅ `paragraph_indexes` 数组 |
 | `read_run` | 读单个 run | ✅ `runs` 数组 |
 | `replace_run_text` | 改 run 文本 | ✅ `edits` 数组 |
-| `append_paragraph` | 末尾追加段 | ✅ `texts` 数组 |
+| `insert_paragraph` | 按 body 顺序插入段（开头/中间/末尾） | ✅ `paragraphs` 对象数组 |
 | `read_hyperlink` | 读超链接 | 单条 |
 | `update_hyperlink` | 改超链接 text/url（都可选） | 单条 |
 | `search_text` | 跨容器文本搜索（页眉页脚也命中） | 返回多结果 |
