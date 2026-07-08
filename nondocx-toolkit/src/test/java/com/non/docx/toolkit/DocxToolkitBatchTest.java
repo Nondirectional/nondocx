@@ -23,8 +23,8 @@ import org.junit.jupiter.api.io.TempDir;
  *   <li>健壮性:LLM 误传单值标量(而非数组)时仍能工作(coerceList 兜底)。
  * </ul>
  *
- * <p>工具方法签名多为 {@code List},少量对象数组入参直接构造 {@code Map<String, Object>[]};与 nonchain
- * 运行时 Jackson 还原出的结构一致——因此测试结果等价于 Agent 经框架调用。
+ * <p>工具方法签名多为 {@code List},少量对象数组入参直接构造 {@code Map<String, Object>[]};与 nonchain 运行时 Jackson
+ * 还原出的结构一致——因此测试结果等价于 Agent 经框架调用。
  *
  * <p>本测试经 {@link DocxToolkit} 门面驱动,验证拆分后六个工具类<b>共享同一份会话状态</b>: {@code tk.session.openDocx} 打开的文档,在
  * {@code tk.body}/{@code tk.trackedChangeQuery} 等其它工具里也能按 docId 取回。
@@ -63,7 +63,10 @@ class DocxToolkitBatchTest {
     String result =
         tk.body.updateParagraphAlignment(
             docId,
-            List.of(paragraphAlignment(0, "center"), paragraphAlignment(1, "RIGHT"), paragraphAlignment(99, "LEFT")));
+            List.of(
+                paragraphAlignment(0, "center"),
+                paragraphAlignment(1, "RIGHT"),
+                paragraphAlignment(99, "LEFT")));
     assertThat(result).contains("段落 0 对齐 → CENTER");
     assertThat(result).contains("段落 1 对齐 → RIGHT");
     assertThat(result).contains("[2]").contains("越界");
@@ -83,7 +86,8 @@ class DocxToolkitBatchTest {
     DocxToolkit tk = new DocxToolkit();
     String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
-    String result = tk.body.updateParagraphAlignment(docId, List.of(paragraphAlignment(0, "MIDDLE")));
+    String result =
+        tk.body.updateParagraphAlignment(docId, List.of(paragraphAlignment(0, "MIDDLE")));
     assertThat(result).contains("仅支持 LEFT/CENTER/RIGHT/JUSTIFY").contains("成功 0 条,失败 1 条");
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("对齐: LEFT");
   }
@@ -314,9 +318,7 @@ class DocxToolkitBatchTest {
     String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
     String result =
-        tk.body.insertParagraph(
-            docId,
-            List.of(paragraphInsert(0, "标题"), paragraphInsert(2, "结尾")));
+        tk.body.insertParagraph(docId, List.of(paragraphInsert(0, "标题"), paragraphInsert(2, "结尾")));
     assertThat(result).contains("body 0").contains("标题").contains("body 2").contains("结尾");
     assertThat(result).contains("成功 2 条,失败 0 条");
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("标题");
@@ -405,7 +407,8 @@ class DocxToolkitBatchTest {
     assertThat(tk.body.insertParagraph(docId, List.of())).contains("为空");
     assertThat(tk.table.createTable(docId, List.of())).contains("为空");
     assertThat(tk.table.mergeTableCells(docId, array())).contains("为空");
-    assertThat(tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "TEXT_OR_MOVE", List.of()))
+    assertThat(
+            tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "TEXT_OR_MOVE", List.of()))
         .contains("为空");
   }
 
@@ -414,7 +417,8 @@ class DocxToolkitBatchTest {
     DocxToolkit tk = new DocxToolkit();
     assertThat(tk.session.getDocumentOverview("doc-999")).contains("不存在");
     assertThat(tk.body.readParagraph("doc-999", List.of(0))).contains("不存在");
-    assertThat(tk.body.updateParagraphAlignment("doc-999", List.of(paragraphAlignment(0, "CENTER"))))
+    assertThat(
+            tk.body.updateParagraphAlignment("doc-999", List.of(paragraphAlignment(0, "CENTER"))))
         .contains("不存在");
     assertThat(tk.body.replaceRunText("doc-999", List.of())).contains("不存在");
     assertThat(tk.body.updateRunStyle("doc-999", List.of(styleEdit(0, 0)))).contains("不存在");
@@ -680,7 +684,8 @@ class DocxToolkitBatchTest {
     String id1 = extractId(list, "cell_ins:", 2);
 
     // 批量 accept 两条。
-    String result = tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "CELL", List.of(id0, id1));
+    String result =
+        tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "CELL", List.of(id0, id1));
     assertThat(result).contains("成功 2 条,失败 0 条");
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("无修订");
   }
@@ -696,7 +701,8 @@ class DocxToolkitBatchTest {
     String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     String id = extractId(tk.trackedChangeQuery.listTrackedChanges(docId), "ins:");
 
-    assertThat(tk.trackedChangeQuery.applyTrackedChanges(docId, "MERGE", "TEXT_OR_MOVE", List.of(id)))
+    assertThat(
+            tk.trackedChangeQuery.applyTrackedChanges(docId, "MERGE", "TEXT_OR_MOVE", List.of(id)))
         .contains("action 仅支持");
     assertThat(tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "COMMENT", List.of(id)))
         .contains("target 仅支持");

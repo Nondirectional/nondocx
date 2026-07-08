@@ -111,8 +111,7 @@ public final class SessionTools extends ToolkitToolContext {
   @ToolDef(
       name = "get_document_overview",
       description =
-          "返回文档结构概览：正文段落数、正文表格数、body 元素数、section 数。"
-              + "了解文档规模/判断后续索引范围时优先用它，不要分别调用多个 count 工具。")
+          "返回文档结构概览：正文段落数、正文表格数、body 元素数、section 数。" + "了解文档规模/判断后续索引范围时优先用它，不要分别调用多个 count 工具。")
   public String getDocumentOverview(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
     Document doc = sessions.get(docId);
@@ -129,5 +128,4 @@ public final class SessionTools extends ToolkitToolContext {
         + "\nsection 数: "
         + doc.sections().size();
   }
-
 }

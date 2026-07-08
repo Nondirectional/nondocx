@@ -102,12 +102,12 @@ public final class BodyTools extends ToolkitToolContext {
   /**
    * 批量修改正文若干段落的水平对齐方式（活对象直写，需 save_docx 落盘）。
    *
-   * <p><b>OOXML → POI → nondocx 三层</b>:段落对齐写在段落属性 {@code <w:pPr>} 的 {@code <w:jc>} 上,
-   * 例如居中是 {@code <w:jc w:val="center"/>};POI 暴露为 {@code XWPFParagraph#setAlignment};
-   * nondocx 封装为 {@link Paragraph#alignment(Alignment)},并只暴露 {@code LEFT/CENTER/RIGHT/JUSTIFY} 四种常用值。
+   * <p><b>OOXML → POI → nondocx 三层</b>:段落对齐写在段落属性 {@code <w:pPr>} 的 {@code <w:jc>} 上, 例如居中是 {@code
+   * <w:jc w:val="center"/>};POI 暴露为 {@code XWPFParagraph#setAlignment}; nondocx 封装为 {@link
+   * Paragraph#alignment(Alignment)},并只暴露 {@code LEFT/CENTER/RIGHT/JUSTIFY} 四种常用值。
    *
-   * <p><b>批量语义（v3）。</b> 入参是对象数组 {@code edits},每个对象含 {@code paragraph_index} 与
-   * {@code alignment}。alignment 大小写不敏感,支持 {@code LEFT}、{@code CENTER}、{@code RIGHT}、{@code JUSTIFY}。
+   * <p><b>批量语义（v3）。</b> 入参是对象数组 {@code edits},每个对象含 {@code paragraph_index} 与 {@code
+   * alignment}。alignment 大小写不敏感,支持 {@code LEFT}、{@code CENTER}、{@code RIGHT}、{@code JUSTIFY}。
    */
   @ToolDef(
       name = "update_paragraph_alignment",
@@ -366,15 +366,14 @@ public final class BodyTools extends ToolkitToolContext {
   /**
    * 批量修改正文若干 run 的内联样式（活对象直写，需 save_docx 落盘）。
    *
-   * <p><b>OOXML → POI → nondocx 三层</b>:run 样式写在 {@code <w:rPr>} 下,例如 {@code <w:b>}、
-   * {@code <w:i>}、{@code <w:u>}、{@code <w:rFonts>}、{@code <w:sz>}、{@code <w:color>}。POI 暴露为
-   * {@code XWPFRun#setBold/setItalic/setUnderline/setFontFamily/setFontSize/setColor}; nondocx 用
-   * {@link Run#bold(boolean)} / {@link Run#italic(boolean)} 等链式方法封装这些写入。
+   * <p><b>OOXML → POI → nondocx 三层</b>:run 样式写在 {@code <w:rPr>} 下,例如 {@code <w:b>}、 {@code
+   * <w:i>}、{@code <w:u>}、{@code <w:rFonts>}、{@code <w:sz>}、{@code <w:color>}。POI 暴露为 {@code
+   * XWPFRun#setBold/setItalic/setUnderline/setFontFamily/setFontSize/setColor}; nondocx 用 {@link
+   * Run#bold(boolean)} / {@link Run#italic(boolean)} 等链式方法封装这些写入。
    *
-   * <p><b>批量语义（v3）。</b> 入参是对象数组 {@code edits},每个对象含 {@code paragraph_index}、
-   * {@code run_index},以及一个或多个样式字段:{@code bold}、{@code italic}、{@code underline}、
-   * {@code font}、{@code font_size}、{@code color}。布尔字段按"是否存在"判断,因此显式传 {@code false}
-   * 可清除对应样式；未传字段不改。
+   * <p><b>批量语义（v3）。</b> 入参是对象数组 {@code edits},每个对象含 {@code paragraph_index}、 {@code
+   * run_index},以及一个或多个样式字段:{@code bold}、{@code italic}、{@code underline}、 {@code font}、{@code
+   * font_size}、{@code color}。布尔字段按"是否存在"判断,因此显式传 {@code false} 可清除对应样式；未传字段不改。
    */
   @ToolDef(
       name = "update_run_style",
@@ -498,9 +497,9 @@ public final class BodyTools extends ToolkitToolContext {
   /**
    * 按正文 body 顺序批量插入若干单 run 段落。
    *
-   * <p><b>OOXML → POI → nondocx 三层</b>:OOXML 的正文是 {@code <w:body>} 下 {@code <w:p>} 与
-   * {@code <w:tbl>} 的有序序列,所以"文档开头/中间"插入本质是在某个 body 子元素前插入新的 {@code <w:p>}。 POI 通过
-   * {@code XWPFDocument.insertNewParagraph(XmlCursor)} 完成这个位置插入; nondocx 已封装为 {@link
+   * <p><b>OOXML → POI → nondocx 三层</b>:OOXML 的正文是 {@code <w:body>} 下 {@code <w:p>} 与 {@code
+   * <w:tbl>} 的有序序列,所以"文档开头/中间"插入本质是在某个 body 子元素前插入新的 {@code <w:p>}。 POI 通过 {@code
+   * XWPFDocument.insertNewParagraph(XmlCursor)} 完成这个位置插入; nondocx 已封装为 {@link
    * Document#insertParagraph(int)},这里复用它而不穿透 raw。
    *
    * <p><b>批量语义（v3）。</b> 入参是对象数组 {@code paragraphs},每个对象含:
@@ -510,8 +509,8 @@ public final class BodyTools extends ToolkitToolContext {
    *   <li>{@code text}:字符串,必填,新段落文本
    * </ul>
    *
-   * <p>按数组顺序执行。若多条使用同一个 {@code body_index},第二条会插在第一条之后,从而保持 Agent 传入顺序。
-   * 越界/缺字段按 collect-errors 处理,成功项立即写入,失败项不中断整批。
+   * <p>按数组顺序执行。若多条使用同一个 {@code body_index},第二条会插在第一条之后,从而保持 Agent 传入顺序。 越界/缺字段按 collect-errors
+   * 处理,成功项立即写入,失败项不中断整批。
    */
   @ToolDef(
       name = "insert_paragraph",
@@ -564,7 +563,12 @@ public final class BodyTools extends ToolkitToolContext {
       }
       int bodySize = doc.bodyElements().size();
       if (bodyIndex < 0 || bodyIndex > bodySize) {
-        sb.append(tag).append("错误：body_index ").append(bodyIndex).append(" 越界（共 ").append(bodySize).append("）");
+        sb.append(tag)
+            .append("错误：body_index ")
+            .append(bodyIndex)
+            .append(" 越界（共 ")
+            .append(bodySize)
+            .append("）");
         fail++;
         continue;
       }
@@ -661,9 +665,9 @@ public final class BodyTools extends ToolkitToolContext {
    * 在整份文档里搜索 keyword，一次返回所有命中位置的坐标。
    *
    * <p><b>为什么需要这个工具。</b> 现有的 {@code read_paragraph} / {@code read_table_cell} 都是
-   * <em>按索引寻址</em>——知道位置才能读。但 Agent 要改某段文字时，往往不知道它在第几段、第几个单元格， 只能 {@code get_document_overview} → 逐个
-   * {@code read_paragraph} 盲读，每步都是一轮 LLM 往返， 定位特别慢。本工具把"线性扫描"从 Agent 循环里搬出来：一次调用遍历正文段落、表格所有单元格、 各
-   * section 的页眉页脚段落，直接吐出所有命中坐标。
+   * <em>按索引寻址</em>——知道位置才能读。但 Agent 要改某段文字时，往往不知道它在第几段、第几个单元格， 只能 {@code get_document_overview} →
+   * 逐个 {@code read_paragraph} 盲读，每步都是一轮 LLM 往返， 定位特别慢。本工具把"线性扫描"从 Agent 循环里搬出来：一次调用遍历正文段落、表格所有单元格、
+   * 各 section 的页眉页脚段落，直接吐出所有命中坐标。
    *
    * <p><b>遍历范围（OOXML 三层对应）：</b>
    *
@@ -867,8 +871,7 @@ public final class BodyTools extends ToolkitToolContext {
     if (exact) {
       return text.equals(keyword);
     }
-    return text
-        .toLowerCase(java.util.Locale.ROOT)
+    return text.toLowerCase(java.util.Locale.ROOT)
         .contains(keyword.toLowerCase(java.util.Locale.ROOT));
   }
 

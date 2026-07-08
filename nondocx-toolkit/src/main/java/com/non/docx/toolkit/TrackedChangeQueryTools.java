@@ -140,9 +140,8 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
   /**
    * 批量处理指定 family 的修订 ids。
    *
-   * <p>工具面规划：accept/reject 以及 text/property/cell 是同一个「处理修订」意图的两个维度。
-   * 合成一个工具后，Agent 只需选 {@code action=ACCEPT/REJECT} 与 {@code target=TEXT_OR_MOVE/PROPERTY/CELL}，
-   * 不再在 6 个近似工具名之间选择。
+   * <p>工具面规划：accept/reject 以及 text/property/cell 是同一个「处理修订」意图的两个维度。 合成一个工具后，Agent 只需选 {@code
+   * action=ACCEPT/REJECT} 与 {@code target=TEXT_OR_MOVE/PROPERTY/CELL}， 不再在 6 个近似工具名之间选择。
    */
   @ToolDef(
       name = "apply_tracked_changes",
