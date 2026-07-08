@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "结构编辑的索引漂移需在返回提示；新工具配套 round-trip 单测"}

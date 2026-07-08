@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "增删行列/单元格与段落样式走 core 活对象；N2 POI 预填默认单元格需剥离；N4 清列表用 unsetNumPr"}
+{"file": ".trellis/spec/backend/renderer-compatibility.md", "reason": "段落底纹同样强制 clear 避免 WPS 黑块(#shading-solid)"}
