@@ -63,7 +63,8 @@ class DocxToolkitTrackedChangesTest {
     assertThat(cellInsId).isNotBlank();
 
     // accept cellIns:工具返回"已应用",再 list 只剩 2 条
-    String acceptResult = tk.trackedChangeQuery.acceptCellChange(docId, List.of(cellInsId));
+    String acceptResult =
+        tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "CELL", List.of(cellInsId));
     assertThat(acceptResult).contains("已应用");
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
   }
@@ -82,7 +83,7 @@ class DocxToolkitTrackedChangesTest {
     String id = extractId(tk.trackedChangeQuery.listTrackedChanges(docId), "cell_merge:");
 
     // cellMerge 的 accept 应返回含错误的明细串(而非抛异常),整批失败 1 条
-    String result = tk.trackedChangeQuery.acceptCellChange(docId, List.of(id));
+    String result = tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "CELL", List.of(id));
     assertThat(result).contains("错误");
     assertThat(result).contains("失败 1 条");
     // 文档未变,cellMerge 仍在
@@ -94,7 +95,8 @@ class DocxToolkitTrackedChangesTest {
     DocxToolkit tk = new DocxToolkit();
     assertThat(tk.trackedChangeQuery.getTrackedChangesEnabled("doc-999")).contains("不存在");
     assertThat(tk.trackedChangeQuery.listTrackedChanges("doc-999")).contains("不存在");
-    assertThat(tk.trackedChangeQuery.acceptCellChange("doc-999", List.of("x"))).contains("不存在");
+    assertThat(tk.trackedChangeQuery.applyTrackedChanges("doc-999", "ACCEPT", "CELL", List.of("x")))
+        .contains("不存在");
   }
 
   /** set_tracked_changes_enabled:开/关往返 + 读回一致 + docId 不存在返回错误串。 */
@@ -187,7 +189,8 @@ class DocxToolkitTrackedChangesTest {
     DocxToolkit tk = new DocxToolkit();
     String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     String result =
-        tk.trackedChangeAuthoring.markCellInserted(docId, "甲", List.of(cellCoord(0, 0, 0)));
+        tk.trackedChangeAuthoring.markTrackedCells(
+            docId, "INSERTED", "甲", List.of(cellCoord(0, 0, 0)));
     assertThat(result).contains("cellIns");
     // 读回应有一条 CELL_INS
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("CELL_INS");
@@ -212,7 +215,7 @@ class DocxToolkitTrackedChangesTest {
 
   @Test
   void shouldRejectWrongFamily(@TempDir Path tmp) throws Exception {
-    // 文本类 ins 用 accept_property_change 应返回错误串(family 不符)
+    // 文本类 ins 用 target=PROPERTY 应返回错误串(family 不符)
     Path file = tmp.resolve("text.docx");
     try (Document doc = Docx.create()) {
       var p = doc.raw().getDocument().getBody().addNewP();
@@ -226,7 +229,7 @@ class DocxToolkitTrackedChangesTest {
     String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     String id = extractId(tk.trackedChangeQuery.listTrackedChanges(docId), "ins:");
     // family 不符 → 该条记错误不中断
-    assertThat(tk.trackedChangeQuery.acceptPropertyChange(docId, List.of(id)))
+    assertThat(tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "PROPERTY", List.of(id)))
         .contains("错误")
         .contains("失败 1 条");
   }

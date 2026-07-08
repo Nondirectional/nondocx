@@ -108,7 +108,7 @@ public final class QualityCheckTools extends ToolkitToolContext {
    * renderer-compatibility.md} 锚点。只报告，不修复。
    *
    * @param docId 文档句柄
-   * @param checks 检查项数组（空或 null 则跑全量）；未知项会被忽略并标注
+   * @param checks 检查项数组（空或 null 则跑全量）；未知项会在报告里标注为跳过
    * @return 结构化报告字符串；docId 不存在则返回 {@code docNotFound} 错误串
    */
   @ToolDef(
@@ -138,14 +138,14 @@ public final class QualityCheckTools extends ToolkitToolContext {
     return formatReport(docId, results);
   }
 
-  /** 解析 checks 入参为有效检查名列表（null/空 → 全量；未知项忽略）。 */
+  /** 解析 checks 入参（null/空 → 全量；未知项保留，交给 runCheck 生成可见提示）。 */
   private List<String> resolveChecks(List<String> checks) {
     if (checks == null || checks.isEmpty()) {
       return ALL_CHECKS;
     }
     List<String> selected = new ArrayList<>();
     for (String c : checks) {
-      if (ALL_CHECKS.contains(c)) {
+      if (c != null && !c.isBlank()) {
         selected.add(c);
       }
     }

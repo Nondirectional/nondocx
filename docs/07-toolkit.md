@@ -51,7 +51,7 @@ agent.run("把 /tmp/a.docx 第一段第一个 run 的文本改成 'Hello'");
 
 | 字段 | 类型 | 职责 |
 |---|---|---|
-| `session` | `SessionTools` | open/save/close + 段落/表格计数（**会话状态的源头**） |
+| `session` | `SessionTools` | open/save/close + 文档结构概览（**会话状态的源头**） |
 | `body` | `BodyTools` | 正文 run / 超链接 / 文本搜索 |
 | `table` | `TableTools` | 单元格读 / 单元格内 run 读改 |
 | `headerFooterToc` | `HeaderFooterTocTools` | 页眉页脚 + 目录（只读） |
@@ -90,16 +90,17 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 | `open_docx` | 打开文件，返回 `docId` 句柄 |
 | `save_docx` | 按 `docId` 保存到 `output_path`（覆盖写） |
 | `close_docx` | 关闭并释放会话（幂等） |
-| `get_paragraph_count` | 正文段落数 |
-| `get_table_count` | 正文表格数 |
+| `get_document_overview` | 文档结构概览：正文段落数、正文表格数、body 元素数、section 数 |
 
 ### BodyTools（正文）
 
 | 工具 | 作用 | 批量 |
 |---|---|---|
 | `read_paragraph` | 读段落（含 run 列表） | ✅ `paragraph_indexes` 数组 |
+| `update_paragraph_alignment` | 改段落对齐（LEFT/CENTER/RIGHT/JUSTIFY） | ✅ `edits` 数组 |
 | `read_run` | 读单个 run | ✅ `runs` 数组 |
 | `replace_run_text` | 改 run 文本 | ✅ `edits` 数组 |
+| `update_run_style` | 改 run 样式（bold/italic/underline/font/font_size/color） | ✅ `edits` 数组 |
 | `insert_paragraph` | 按 body 顺序插入段（开头/中间/末尾） | ✅ `paragraphs` 对象数组 |
 | `read_hyperlink` | 读超链接 | 单条 |
 | `update_hyperlink` | 改超链接 text/url（都可选） | 单条 |
@@ -109,6 +110,9 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 
 | 工具 | 作用 | 批量 |
 |---|---|---|
+| `create_table` | 末尾创建表格并按二维数组填充单元格 | `rows` 二维数组 |
+| `set_table_borders` | 设置表格边框（当前支持 NONE 无边框） | 单条 |
+| `merge_table_cells` | 合并单元格（HORIZONTAL / VERTICAL） | ✅ `merges` 对象数组 |
 | `read_table_cell` | 读单元格 | ✅ `cells` 数组 |
 | `read_table_cell_run` | 读单元格内 run | 单条 |
 | `replace_table_cell_run_text` | 改单元格 run 文本 | ✅ `edits` 数组 |
@@ -117,8 +121,7 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 
 | 工具 | 作用 |
 |---|---|
-| `read_header` | 读页眉段落 |
-| `read_footer` | 读页脚段落 |
+| `read_header_footer` | 读页眉/页脚段落（`part=HEADER/FOOTER`） |
 | `read_toc` | 读首个目录的条目 |
 
 ### TrackedChangeQueryTools（修订查询 + 处理）
@@ -129,12 +132,8 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 | `set_tracked_changes_enabled` | 改修订开关 | — |
 | `list_tracked_changes` | 枚举修订 | — |
 | `get_tracked_change` | 按 id 取单条 | — |
-| `accept_text_or_move_revision` | accept 文本/移动类 | ✅ `ids` |
-| `reject_text_or_move_revision` | reject 文本/移动类 | ✅ `ids` |
-| `accept_all_text_revisions` / `reject_all_text_revisions` | 全部 accept/reject | — |
-| `accept_text_revisions_by_author` / `reject_text_revisions_by_author` | 按作者 | — |
-| `accept_property_change` / `reject_property_change` | 属性类 | ✅ `ids` |
-| `accept_cell_change` / `reject_cell_change` | 单元格类 | ✅ `ids` |
+| `apply_tracked_changes` | 按 `action=ACCEPT/REJECT`、`target=TEXT_OR_MOVE/PROPERTY/CELL` 处理指定 ids | ✅ `ids` |
+| `apply_text_revisions` | 按 `action=ACCEPT/REJECT`、`scope=ALL/AUTHOR` 批量处理文本/移动类修订 | — |
 
 > 修订的 family gate / 异常契约 与 core 一致，详见 [05/03 accept-reject](./05-tracked-changes/03-accept-reject.md)。
 
@@ -146,7 +145,7 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 | `delete_run_tracked` | tracked 删除 | ✅ `edits` |
 | `replace_run_tracked` | tracked 替换 | ✅ `edits` |
 | `mark_style_change_tracked` | rPrChange 创作（bold/italic/color） | 单条 |
-| `mark_cell_inserted` / `mark_cell_deleted` | cell 存亡 | ✅ `cells` |
+| `mark_tracked_cells` | 按 `change_type=INSERTED/DELETED` 标记 cell 存亡 | ✅ `cells` |
 | `move_run_tracked` | 移动 run | 单条 |
 
 ### QualityCheckTools（文档质量自检）

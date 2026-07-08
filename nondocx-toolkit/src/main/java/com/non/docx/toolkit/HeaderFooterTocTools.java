@@ -42,31 +42,25 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
 
   // ==================== 页眉 / 页脚（读取） ====================
 
-  /**
-   * 读取页眉某段的结构摘要（文本 + run 数 + 超链接数），风格对齐 {@code read_paragraph}。
-   *
-   * @param sectionIndex section 索引（0 起）；单 section 文档用 0
-   * @param paragraphIndex 页眉内段落索引（0 起）
-   */
   @ToolDef(
-      name = "read_header",
-      description = "读取第 section_index 个 section 的默认页眉里第 paragraph_index 段（均 0 起）的结构摘要")
-  public String readHeader(
+      name = "read_header_footer",
+      description =
+          "读取第 section_index 个 section 的默认页眉或页脚里第 paragraph_index 段的结构摘要。"
+              + "part 支持 HEADER/FOOTER（大小写不敏感）。")
+  public String readHeaderFooter(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "part", description = "HEADER=页眉,FOOTER=页脚") String part,
       @ToolParam(name = "section_index", description = "section 索引（0 起）") int sectionIndex,
-      @ToolParam(name = "paragraph_index", description = "页眉内段落索引（0 起）") int paragraphIndex) {
-    return readHeaderFooterParagraph(docId, sectionIndex, paragraphIndex, /* isHeader= */ true);
-  }
-
-  /** 读取页脚某段的结构摘要，语义同 {@link #readHeader} 但针对页脚。 */
-  @ToolDef(
-      name = "read_footer",
-      description = "读取第 section_index 个 section 的默认页脚里第 paragraph_index 段（均 0 起）的结构摘要")
-  public String readFooter(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "section_index", description = "section 索引（0 起）") int sectionIndex,
-      @ToolParam(name = "paragraph_index", description = "页脚内段落索引（0 起）") int paragraphIndex) {
-    return readHeaderFooterParagraph(docId, sectionIndex, paragraphIndex, /* isHeader= */ false);
+      @ToolParam(name = "paragraph_index", description = "页眉/页脚内段落索引（0 起）") int paragraphIndex) {
+    boolean isHeader;
+    if ("HEADER".equalsIgnoreCase(part)) {
+      isHeader = true;
+    } else if ("FOOTER".equalsIgnoreCase(part)) {
+      isHeader = false;
+    } else {
+      return "错误：part 仅支持 HEADER/FOOTER";
+    }
+    return readHeaderFooterParagraph(docId, sectionIndex, paragraphIndex, isHeader);
   }
 
   /**

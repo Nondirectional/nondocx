@@ -23,8 +23,8 @@ import org.junit.jupiter.api.io.TempDir;
  *   <li>健壮性:LLM 误传单值标量(而非数组)时仍能工作(coerceList 兜底)。
  * </ul>
  *
- * <p>工具方法签名接收 {@code List};这里直接构造 {@code ArrayList<LinkedHashMap>} 调用, 与 nonchain 运行时 Jackson
- * 还原出的结构一致——因此测试结果等价于 Agent 经框架调用。
+ * <p>工具方法签名多为 {@code List},少量对象数组入参直接构造 {@code Map<String, Object>[]};与 nonchain
+ * 运行时 Jackson 还原出的结构一致——因此测试结果等价于 Agent 经框架调用。
  *
  * <p>本测试经 {@link DocxToolkit} 门面驱动,验证拆分后六个工具类<b>共享同一份会话状态</b>: {@code tk.session.openDocx} 打开的文档,在
  * {@code tk.body}/{@code tk.trackedChangeQuery} 等其它工具里也能按 docId 取回。
@@ -47,6 +47,45 @@ class DocxToolkitBatchTest {
     assertThat(result).contains("段落 0").contains("第一段");
     assertThat(result).contains("段落 1").contains("第二段");
     assertThat(result).contains("段落 5").contains("越界").contains("共 2");
+  }
+
+  @Test
+  void shouldUpdateMultipleParagraphAlignmentsCollectErrors(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("align.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("标题");
+      doc.addParagraph("署名");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    String result =
+        tk.body.updateParagraphAlignment(
+            docId,
+            List.of(paragraphAlignment(0, "center"), paragraphAlignment(1, "RIGHT"), paragraphAlignment(99, "LEFT")));
+    assertThat(result).contains("段落 0 对齐 → CENTER");
+    assertThat(result).contains("段落 1 对齐 → RIGHT");
+    assertThat(result).contains("[2]").contains("越界");
+    assertThat(result).contains("成功 2 条,失败 1 条");
+
+    assertThat(tk.body.readParagraph(docId, List.of(0))).contains("对齐: CENTER");
+    assertThat(tk.body.readParagraph(docId, List.of(1))).contains("对齐: RIGHT");
+  }
+
+  @Test
+  void shouldRejectInvalidParagraphAlignment(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("align-invalid.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("正文");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    String result = tk.body.updateParagraphAlignment(docId, List.of(paragraphAlignment(0, "MIDDLE")));
+    assertThat(result).contains("仅支持 LEFT/CENTER/RIGHT/JUSTIFY").contains("成功 0 条,失败 1 条");
+    assertThat(tk.body.readParagraph(docId, List.of(0))).contains("对齐: LEFT");
   }
 
   @Test
@@ -74,6 +113,59 @@ class DocxToolkitBatchTest {
     // 成功的两条应真写入:重新读回应是新文本。
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("新 A");
     assertThat(tk.body.readParagraph(docId, List.of(1))).contains("新 B");
+  }
+
+  @Test
+  void shouldUpdateMultipleRunStylesCollectErrors(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("style.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addRun("标题");
+      doc.addParagraph().addRun("正文").bold();
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    Map<String, Object> title = styleEdit(0, 0);
+    title.put("bold", true);
+    title.put("italic", true);
+    title.put("underline", true);
+    title.put("font", "Arial");
+    title.put("font_size", 18);
+    title.put("color", "FF0000");
+    Map<String, Object> body = styleEdit(1, 0);
+    body.put("bold", false);
+    Map<String, Object> bad = styleEdit(99, 0);
+    bad.put("italic", true);
+
+    String result = tk.body.updateRunStyle(docId, List.of(title, body, bad));
+    assertThat(result).contains("bold=true").contains("italic=true").contains("color=FF0000");
+    assertThat(result).contains("bold=false");
+    assertThat(result).contains("[2]").contains("越界");
+    assertThat(result).contains("成功 2 条,失败 1 条");
+
+    assertThat(tk.body.readRun(docId, List.of(runCoord(0, 0))))
+        .contains("bold=true")
+        .contains("italic=true")
+        .contains("underline=true")
+        .contains("font=Arial")
+        .contains("size=18")
+        .contains("color=FF0000");
+    assertThat(tk.body.readRun(docId, List.of(runCoord(1, 0)))).contains("bold=false");
+  }
+
+  @Test
+  void shouldRejectRunStyleEditWithoutStyleFields(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("style-empty.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addRun("正文");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    String result = tk.body.updateRunStyle(docId, List.of(styleEdit(0, 0)));
+    assertThat(result).contains("未提供任何样式字段").contains("成功 0 条,失败 1 条");
   }
 
   @Test
@@ -121,6 +213,97 @@ class DocxToolkitBatchTest {
   }
 
   @Test
+  void shouldCreateTableFromRowsMatrix(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("create-table.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("表格前");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    String result =
+        tk.table.createTable(
+            docId, List.of(List.of("姓名", "分数"), List.of("张三", "95"), List.of("李四", "88")));
+    assertThat(result).contains("已创建表格 0").contains("3 行").contains("6 个单元格");
+    assertThat(tk.session.getDocumentOverview(docId)).contains("正文表格数: 1");
+    assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 0)))).contains("姓名");
+    assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 1, 1)))).contains("95");
+  }
+
+  @Test
+  void shouldRejectMalformedTableRowsWithoutCreatingTable(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("create-table-bad.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("正文");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    String result = tk.table.createTable(docId, List.of(List.of("A"), List.of()));
+    assertThat(result).contains("错误:第 1 行为空");
+    assertThat(tk.session.getDocumentOverview(docId)).contains("正文表格数: 0");
+  }
+
+  @Test
+  void shouldSetTableBordersToNone(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("table-border-none.docx");
+    try (Document doc = Docx.create()) {
+      doc.addTable().addRow().addCell().text("x");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    String result = tk.table.setTableBorders(docId, 0, "NONE");
+    assertThat(result).contains("表格 0").contains("无边框");
+  }
+
+  @Test
+  void shouldMergeTableCellsHorizontallyAndVertically(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("table-merge.docx");
+    try (Document doc = Docx.create()) {
+      var table = doc.addTable();
+      table.row(r -> r.cell("A1").cell("B1").cell("C1"));
+      table.row(r -> r.cell("A2").cell("B2").cell("C2"));
+      table.row(r -> r.cell("A3").cell("B3").cell("C3"));
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    String horizontal = tk.table.mergeTableCells(docId, array(horizontalMerge(0, 0, 0, 2)));
+    assertThat(horizontal).contains("已横向合并表格 0 行 0 单元格 0..2");
+    assertThat(horizontal).contains("成功 1 条,失败 0 条");
+    assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 1)))).contains("越界");
+
+    String vertical = tk.table.mergeTableCells(docId, array(verticalMerge(0, 1, 1, 2)));
+    assertThat(vertical).contains("已纵向合并表格 0 列 1 行 1..2");
+    assertThat(vertical).contains("成功 1 条,失败 0 条");
+  }
+
+  @Test
+  void shouldReturnReadableErrorForMalformedMergeRequest(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("table-merge-bad.docx");
+    try (Document doc = Docx.create()) {
+      doc.addTable().row(r -> r.cell("A").cell("B"));
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    Map<String, Object> bad = new LinkedHashMap<>();
+    bad.put("table_index", 0);
+    bad.put("direction", "HORIZONTAL");
+    bad.put("row_index", 0);
+    bad.put("from_cell_index", 0);
+    String result = tk.table.mergeTableCells(docId, array(bad));
+    assertThat(result).contains("缺少必填字段 to_cell_index");
+    assertThat(result).contains("成功 0 条,失败 1 条");
+  }
+
+  @Test
   void shouldInsertMultipleParagraphsByBodyIndex(@TempDir Path tmp) throws Exception {
     Path file = tmp.resolve("insert.docx");
     try (Document doc = Docx.create()) {
@@ -139,7 +322,7 @@ class DocxToolkitBatchTest {
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("标题");
     assertThat(tk.body.readParagraph(docId, List.of(1))).contains("正文");
     assertThat(tk.body.readParagraph(docId, List.of(2))).contains("结尾");
-    assertThat(tk.session.getParagraphCount(docId)).contains("段落数: 3");
+    assertThat(tk.session.getDocumentOverview(docId)).contains("正文段落数: 3");
   }
 
   @Test
@@ -180,7 +363,8 @@ class DocxToolkitBatchTest {
     assertThat(realId).isNotBlank();
 
     String result =
-        tk.trackedChangeQuery.acceptTextOrMoveRevision(docId, List.of(realId, "ins:not-exist"));
+        tk.trackedChangeQuery.applyTrackedChanges(
+            docId, "ACCEPT", "TEXT_OR_MOVE", List.of(realId, "ins:not-exist"));
     assertThat(result).contains(realId).contains("已应用");
     assertThat(result).contains("ins:not-exist").contains("错误");
     assertThat(result).contains("成功 1 条,失败 1 条");
@@ -215,20 +399,77 @@ class DocxToolkitBatchTest {
     String docId = tk.session.openDocx(file.toAbsolutePath().toString());
     // 空数组:返回提示而非 NPE。
     assertThat(tk.body.readParagraph(docId, List.of())).contains("为空");
+    assertThat(tk.body.updateParagraphAlignment(docId, List.of())).contains("为空");
     assertThat(tk.body.replaceRunText(docId, List.of())).contains("为空");
+    assertThat(tk.body.updateRunStyle(docId, List.of())).contains("为空");
     assertThat(tk.body.insertParagraph(docId, List.of())).contains("为空");
-    assertThat(tk.trackedChangeQuery.acceptTextOrMoveRevision(docId, List.of())).contains("为空");
+    assertThat(tk.table.createTable(docId, List.of())).contains("为空");
+    assertThat(tk.table.mergeTableCells(docId, array())).contains("为空");
+    assertThat(tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "TEXT_OR_MOVE", List.of()))
+        .contains("为空");
   }
 
   @Test
   void shouldReturnErrorForUnknownDocId() {
     DocxToolkit tk = new DocxToolkit();
+    assertThat(tk.session.getDocumentOverview("doc-999")).contains("不存在");
     assertThat(tk.body.readParagraph("doc-999", List.of(0))).contains("不存在");
+    assertThat(tk.body.updateParagraphAlignment("doc-999", List.of(paragraphAlignment(0, "CENTER"))))
+        .contains("不存在");
     assertThat(tk.body.replaceRunText("doc-999", List.of())).contains("不存在");
+    assertThat(tk.body.updateRunStyle("doc-999", List.of(styleEdit(0, 0)))).contains("不存在");
     assertThat(tk.body.insertParagraph("doc-999", List.of(paragraphInsert(0, "x"))))
         .contains("不存在");
-    assertThat(tk.trackedChangeQuery.acceptTextOrMoveRevision("doc-999", List.of("ins:1")))
+    assertThat(tk.table.createTable("doc-999", List.of(List.of("x")))).contains("不存在");
+    assertThat(tk.table.setTableBorders("doc-999", 0, "NONE")).contains("不存在");
+    assertThat(tk.table.mergeTableCells("doc-999", array(horizontalMerge(0, 0, 0, 1))))
         .contains("不存在");
+    assertThat(
+            tk.trackedChangeQuery.applyTrackedChanges(
+                "doc-999", "ACCEPT", "TEXT_OR_MOVE", List.of("ins:1")))
+        .contains("不存在");
+  }
+
+  @Test
+  void shouldSaveToCurrentDirectoryRelativePath(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("source.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("当前目录保存");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    Path output = Path.of("relative-output.docx").toAbsolutePath();
+
+    try {
+      java.nio.file.Files.deleteIfExists(output);
+      String result = tk.session.saveDocx(docId, "relative-output.docx");
+
+      assertThat(result).contains("已保存到");
+      assertThat(output).exists();
+    } finally {
+      java.nio.file.Files.deleteIfExists(output);
+    }
+  }
+
+  @Test
+  void shouldReadHeaderAndFooterThroughUnifiedTool(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("header-footer.docx");
+    try (Document doc = Docx.create()) {
+      doc.ensureHeader().addParagraph().addRun("页眉内容");
+      doc.ensureFooter().addParagraph().addRun("页脚内容");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    assertThat(tk.headerFooterToc.readHeaderFooter(docId, "HEADER", 0, 0))
+        .contains("页眉")
+        .contains("页眉内容");
+    assertThat(tk.headerFooterToc.readHeaderFooter(docId, "footer", 0, 0))
+        .contains("页脚")
+        .contains("页脚内容");
+    assertThat(tk.headerFooterToc.readHeaderFooter(docId, "SIDE", 0, 0)).contains("part 仅支持");
   }
 
   // ============ 第二梯队批量测试 ============
@@ -351,15 +592,15 @@ class DocxToolkitBatchTest {
 
     // 批量标记两个单元格为 cellIns。
     String ins =
-        tk.trackedChangeAuthoring.markCellInserted(
-            docId, "甲", List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 1)));
+        tk.trackedChangeAuthoring.markTrackedCells(
+            docId, "INSERTED", "甲", List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 1)));
     assertThat(ins).contains("cellIns").contains("成功 2 条,失败 0 条");
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
 
     // 批量标记一个单元格为 cellDel(另一条越界,应记错误不中断)。
     String del =
-        tk.trackedChangeAuthoring.markCellDeleted(
-            docId, "甲", List.of(cellCoord(0, 0, 2), cellCoord(0, 0, 99)));
+        tk.trackedChangeAuthoring.markTrackedCells(
+            docId, "DELETED", "甲", List.of(cellCoord(0, 0, 2), cellCoord(0, 0, 99)));
     assertThat(del).contains("cellDel");
     assertThat(del).contains("成功 1 条,失败 1 条");
   }
@@ -403,7 +644,8 @@ class DocxToolkitBatchTest {
 
     // 批量 accept:真实 id + 不存在的 id。
     String result =
-        tk.trackedChangeQuery.acceptPropertyChange(docId, List.of(propId, "rpr_change:not-exist"));
+        tk.trackedChangeQuery.applyTrackedChanges(
+            docId, "ACCEPT", "PROPERTY", List.of(propId, "rpr_change:not-exist"));
     assertThat(result).contains(propId).contains("已应用");
     assertThat(result).contains("not-exist").contains("错误");
     assertThat(result).contains("成功 1 条,失败 1 条");
@@ -427,9 +669,9 @@ class DocxToolkitBatchTest {
     }
     DocxToolkit tk = new DocxToolkit();
     String docId = tk.session.openDocx(file.toAbsolutePath().toString());
-    // 用 mark_cell_inserted 造两条 cellIns。
-    tk.trackedChangeAuthoring.markCellInserted(
-        docId, "甲", List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 1)));
+    // 用 mark_tracked_cells 造两条 cellIns。
+    tk.trackedChangeAuthoring.markTrackedCells(
+        docId, "INSERTED", "甲", List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 1)));
 
     String list = tk.trackedChangeQuery.listTrackedChanges(docId);
     assertThat(list).contains("共 2 条修订");
@@ -438,9 +680,80 @@ class DocxToolkitBatchTest {
     String id1 = extractId(list, "cell_ins:", 2);
 
     // 批量 accept 两条。
-    String result = tk.trackedChangeQuery.acceptCellChange(docId, List.of(id0, id1));
+    String result = tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "CELL", List.of(id0, id1));
     assertThat(result).contains("成功 2 条,失败 0 条");
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("无修订");
+  }
+
+  @Test
+  void shouldRejectInvalidTrackedChangeActionAndTarget(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("invalid-apply.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addInsertion("甲", "待处理");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String id = extractId(tk.trackedChangeQuery.listTrackedChanges(docId), "ins:");
+
+    assertThat(tk.trackedChangeQuery.applyTrackedChanges(docId, "MERGE", "TEXT_OR_MOVE", List.of(id)))
+        .contains("action 仅支持");
+    assertThat(tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "COMMENT", List.of(id)))
+        .contains("target 仅支持");
+  }
+
+  @Test
+  void shouldApplyAllTextRevisionsThroughUnifiedTool(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("apply-text-all.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addInsertion("甲", "第一处");
+      doc.addParagraph().addInsertion("乙", "第二处");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
+
+    String result = tk.trackedChangeQuery.applyTextRevisions(docId, "ACCEPT", "ALL", null);
+    assertThat(result).contains("已应用 2 条文本/移动类修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("无修订");
+  }
+
+  @Test
+  void shouldApplyTextRevisionsByAuthorThroughUnifiedTool(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("apply-text-author.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addInsertion("甲", "甲的插入");
+      doc.addParagraph().addInsertion("乙", "乙的插入");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    String result = tk.trackedChangeQuery.applyTextRevisions(docId, "REJECT", "AUTHOR", "甲");
+    assertThat(result).contains("已撤销作者「甲」的 1 条文本/移动类修订");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId))
+        .contains("共 1 条修订")
+        .contains("乙")
+        .doesNotContain("甲的插入");
+  }
+
+  @Test
+  void shouldRejectInvalidTextRevisionScopeArgs(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("apply-text-invalid.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addInsertion("甲", "待处理");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+
+    assertThat(tk.trackedChangeQuery.applyTextRevisions(docId, "MERGE", "ALL", null))
+        .contains("action 仅支持");
+    assertThat(tk.trackedChangeQuery.applyTextRevisions(docId, "ACCEPT", "IDS", null))
+        .contains("scope 仅支持");
+    assertThat(tk.trackedChangeQuery.applyTextRevisions(docId, "ACCEPT", "AUTHOR", null))
+        .contains("author 必填");
   }
 
   @Test
@@ -541,6 +854,27 @@ class DocxToolkitBatchTest {
     return m;
   }
 
+  private static Map<String, Object> paragraphAlignment(int paragraphIndex, String alignment) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("paragraph_index", paragraphIndex);
+    m.put("alignment", alignment);
+    return m;
+  }
+
+  private static Map<String, Object> styleEdit(int paragraphIndex, int runIndex) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("paragraph_index", paragraphIndex);
+    m.put("run_index", runIndex);
+    return m;
+  }
+
+  private static Map<String, Object> runCoord(int paragraphIndex, int runIndex) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("paragraph_index", paragraphIndex);
+    m.put("run_index", runIndex);
+    return m;
+  }
+
   private static Map<String, Object> paragraphInsert(int bodyIndex, String text) {
     Map<String, Object> m = new LinkedHashMap<>();
     m.put("body_index", bodyIndex);
@@ -568,6 +902,33 @@ class DocxToolkitBatchTest {
     m.put("row_index", r);
     m.put("cell_index", c);
     return m;
+  }
+
+  private static Map<String, Object> horizontalMerge(
+      int tableIndex, int rowIndex, int fromCellIndex, int toCellIndex) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("table_index", tableIndex);
+    m.put("direction", "HORIZONTAL");
+    m.put("row_index", rowIndex);
+    m.put("from_cell_index", fromCellIndex);
+    m.put("to_cell_index", toCellIndex);
+    return m;
+  }
+
+  private static Map<String, Object> verticalMerge(
+      int tableIndex, int cellIndex, int fromRowIndex, int toRowIndex) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("table_index", tableIndex);
+    m.put("direction", "VERTICAL");
+    m.put("cell_index", cellIndex);
+    m.put("from_row_index", fromRowIndex);
+    m.put("to_row_index", toRowIndex);
+    return m;
+  }
+
+  @SafeVarargs
+  private static Map<String, Object>[] array(Map<String, Object>... items) {
+    return items;
   }
 
   /** 取文档正文首个超链接的 URL(save+reopen 后验证落盘结果用)。无超链接返回 null。 */

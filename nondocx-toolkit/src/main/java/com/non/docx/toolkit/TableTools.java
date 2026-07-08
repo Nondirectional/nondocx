@@ -3,6 +3,9 @@ package com.non.docx.toolkit;
 import com.non.chain.tool.ToolDef;
 import com.non.chain.tool.ToolParam;
 import com.non.docx.core.api.Document;
+import com.non.docx.core.api.table.Row;
+import com.non.docx.core.api.table.Table;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -29,6 +32,221 @@ public final class TableTools extends ToolkitToolContext {
   /** 接收门面注入的共享会话状态（与 SessionTools 共享同一份 sessions/seq）。 */
   TableTools(Map<String, Document> sharedSessions, AtomicInteger sharedSeq) {
     super(sharedSessions, sharedSeq);
+  }
+
+  /**
+   * 在正文末尾创建一个表格，并按二维数组填充单元格文本。
+   *
+   * <p><b>OOXML → POI → nondocx 三层</b>:表格在正文里是 {@code <w:tbl>},内部是 {@code <w:tr>} 行、
+   * {@code <w:tc>} 单元格、单元格内的 {@code <w:p>/<w:r>} 文本。POI 的 {@code XWPFDocument#createTable()}
+   * 会预填默认行；nondocx 的 {@link Document#addTable()} 已剥离这个默认行,保证这里传入几行几列就创建几行几列。
+   *
+   * <p><b>矩阵语义。</b> {@code rows} 是二维数组,外层为行,内层为单元格文本。各行列数可以不同,toolkit 会照传入结构创建。
+   */
+  @ToolDef(
+      name = "create_table",
+      description =
+          "在正文末尾创建一个表格(改完需 save_docx 落盘)。rows 是二维数组,外层为行、内层为单元格文本,"
+              + "如 [[\"姓名\",\"分数\"],[\"张三\",\"95\"]]。各行列数可不同。返回新表格的 table_index。")
+  public String createTable(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(
+              name = "rows",
+              description =
+                  "二维数组,外层为行、内层为单元格文本,"
+                      + "如 [[\"姓名\",\"分数\"],[\"张三\",\"95\"]]")
+          List<List<String>> rows) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    List<Object> rowList = coerceList(rows);
+    if (rowList.isEmpty()) {
+      return "rows 为空";
+    }
+    for (int r = 0; r < rowList.size(); r++) {
+      if (!(rowList.get(r) instanceof List)) {
+        return "错误:第 " + r + " 行不是数组(" + rowList.get(r) + ")";
+      }
+    }
+    for (int r = 0; r < rowList.size(); r++) {
+      if (coerceList(rowList.get(r)).isEmpty()) {
+        return "错误:第 " + r + " 行为空";
+      }
+    }
+    int tableIndex = doc.tables().size();
+    Table table = doc.addTable();
+    int cellCount = 0;
+    for (Object rowObj : rowList) {
+      Row row = table.addRow();
+      for (Object cellObj : coerceList(rowObj)) {
+        row.addCell().text(String.valueOf(cellObj));
+        cellCount++;
+      }
+    }
+    return "已创建表格 "
+        + tableIndex
+        + ": "
+        + rowList.size()
+        + " 行,"
+        + cellCount
+        + " 个单元格";
+  }
+
+  /**
+   * 设置表格边框。当前支持 {@code NONE},即显式写入无边框。
+   *
+   * <p><b>OOXML → POI → nondocx 三层</b>:表格边框位于 {@code <w:tblPr>/<w:tblBorders>}。无边框不是删节点,
+   * 而是把 top/left/bottom/right/insideH/insideV 写成 {@code w:val="nil"},避免渲染器按默认边框处理。
+   * POI 无友好高层 API,nondocx 在 core 的 {@link Table#noBorders()} 收口。
+   */
+  @ToolDef(
+      name = "set_table_borders",
+      description =
+          "设置表格边框(改完需 save_docx 落盘)。当前 border_style 仅支持 NONE,即显式无边框。"
+              + "参数:table_index(int,表格索引 0 起)、border_style(string,NONE)。")
+  public String setTableBorders(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex,
+      @ToolParam(name = "border_style", description = "边框样式,当前仅支持 NONE") String borderStyle) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    var tables = doc.tables();
+    if (outOfBounds(tableIndex, tables.size())) {
+      return indexError("表格索引", tableIndex, tables.size());
+    }
+    if (borderStyle == null || !"NONE".equalsIgnoreCase(borderStyle.trim())) {
+      return "错误:border_style 仅支持 NONE";
+    }
+    try {
+      tables.get(tableIndex).noBorders();
+      return "已设置表格 " + tableIndex + " 为无边框";
+    } catch (RuntimeException e) {
+      return "错误:" + rootMessage(e);
+    }
+  }
+
+  /**
+   * 批量合并表格单元格。支持横向 {@code HORIZONTAL} 与纵向 {@code VERTICAL}。
+   *
+   * <p>横向合并使用首格 {@code gridSpan} 并删除右侧覆盖单元格；纵向合并使用同列单元格 {@code vMerge}
+   * restart/continue。两者均要求连续矩形边界的一条线段,不处理复杂跨行跨列矩形。
+   *
+   * <p><b>为什么用对象数组。</b> 不把横向/纵向坐标做成多个顶层可选 {@code int} 参数,因为部分工具框架会在可选 primitive
+   * 缺失时于方法调用前绑定失败,导致用户只看到"工具执行失败",看不到本方法返回的中文错误。对象数组让缺字段校验留在工具内部完成。
+   */
+  @ToolDef(
+      name = "merge_table_cells",
+      description =
+          "批量合并表格单元格(改完需 save_docx 落盘)。merges 是对象数组,每个对象含 table_index(int)、direction(string)。"
+              + "direction=HORIZONTAL 时还需 row_index/from_cell_index/to_cell_index;"
+              + "direction=VERTICAL 时还需 cell_index/from_row_index/to_row_index。索引均 0 起。"
+              + "部分失败不中断,返回每条成功/失败明细。")
+  public String mergeTableCells(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(
+              name = "merges",
+              description =
+                  "对象数组。横向示例:[{\"table_index\":0,\"direction\":\"HORIZONTAL\",\"row_index\":0,"
+                      + "\"from_cell_index\":0,\"to_cell_index\":2}];纵向示例:"
+                      + "[{\"table_index\":0,\"direction\":\"VERTICAL\",\"cell_index\":1,"
+                      + "\"from_row_index\":0,\"to_row_index\":2}]")
+          Map<String, Object>[] merges) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    List<Object> list = coerceObjectArray(merges);
+    if (list.isEmpty()) {
+      return "merges 为空";
+    }
+    StringBuilder sb = new StringBuilder();
+    int ok = 0;
+    int fail = 0;
+    for (int i = 0; i < list.size(); i++) {
+      if (i > 0) {
+        sb.append('\n');
+      }
+      Object item = list.get(i);
+      String tag = "[" + i + "] ";
+      if (!(item instanceof Map)) {
+        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
+        fail++;
+        continue;
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> m = (Map<String, Object>) item;
+      int tableIndex;
+      String direction;
+      try {
+        tableIndex = getInt(m, "table_index");
+        direction = getStr(m, "direction");
+      } catch (RuntimeException e) {
+        sb.append(tag).append("错误:").append(e.getMessage());
+        fail++;
+        continue;
+      }
+      var tables = doc.tables();
+      if (outOfBounds(tableIndex, tables.size())) {
+        sb.append(tag).append(indexError("表格索引", tableIndex, tables.size()));
+        fail++;
+        continue;
+      }
+      try {
+        if ("HORIZONTAL".equalsIgnoreCase(direction.trim())) {
+          int rowIndex = getInt(m, "row_index");
+          int fromCellIndex = getInt(m, "from_cell_index");
+          int toCellIndex = getInt(m, "to_cell_index");
+          tables.get(tableIndex).mergeCellsHorizontal(rowIndex, fromCellIndex, toCellIndex);
+          sb.append(tag)
+              .append("已横向合并表格 ")
+              .append(tableIndex)
+              .append(" 行 ")
+              .append(rowIndex)
+              .append(" 单元格 ")
+              .append(fromCellIndex)
+              .append("..")
+              .append(toCellIndex)
+              .append(" ✓");
+          ok++;
+          continue;
+        }
+        if ("VERTICAL".equalsIgnoreCase(direction.trim())) {
+          int cellIndex = getInt(m, "cell_index");
+          int fromRowIndex = getInt(m, "from_row_index");
+          int toRowIndex = getInt(m, "to_row_index");
+          tables.get(tableIndex).mergeCellsVertical(cellIndex, fromRowIndex, toRowIndex);
+          sb.append(tag)
+              .append("已纵向合并表格 ")
+              .append(tableIndex)
+              .append(" 列 ")
+              .append(cellIndex)
+              .append(" 行 ")
+              .append(fromRowIndex)
+              .append("..")
+              .append(toRowIndex)
+              .append(" ✓");
+          ok++;
+          continue;
+        }
+        sb.append(tag).append("错误:direction 仅支持 HORIZONTAL/VERTICAL");
+        fail++;
+      } catch (RuntimeException e) {
+        sb.append(tag).append("错误:").append(rootMessage(e));
+        fail++;
+      }
+    }
+    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
+    return sb.toString();
+  }
+
+  private static List<Object> coerceObjectArray(Map<String, Object>[] raw) {
+    if (raw == null) {
+      return List.of();
+    }
+    return new java.util.ArrayList<Object>(Arrays.asList(raw));
   }
 
   /**

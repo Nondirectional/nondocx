@@ -6,6 +6,7 @@ import com.non.docx.core.api.Document;
 import com.non.docx.core.api.InlineElement;
 import com.non.docx.core.api.header.Footer;
 import com.non.docx.core.api.header.Header;
+import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
@@ -44,7 +45,7 @@ public final class BodyTools extends ToolkitToolContext {
   // ==================== 正文段落 / run ====================
 
   /**
-   * 读取正文多个段落的结构摘要（文本 + run 数 + 是否含超链接）。
+   * 读取正文多个段落的结构摘要（文本 + run 数 + 是否含超链接 + 段落对齐）。
    *
    * <p><b>批量语义（v2）。</b> 入参是<b>段落索引数组</b> {@code paragraph_indexes},长度 1 即单次读取,
    * 多个即一次读多段——避免"了解文档结构"这类场景里逐段调用造成大量 LLM 往返。 越界的索引不会中断整批, 而是标在结果里("索引越界,共 N"),让 Agent 据此修正后重读。
@@ -57,7 +58,7 @@ public final class BodyTools extends ToolkitToolContext {
   @ToolDef(
       name = "read_paragraph",
       description =
-          "读取正文多个段落的结构摘要(文本、run 数、是否含超链接)。"
+          "读取正文多个段落的结构摘要(文本、run 数、是否含超链接、段落对齐)。"
               + "paragraph_indexes 是段落索引数组(0 起),长度 1 即单次读,可一次读多段。"
               + "越界索引不中断整批,会在结果里标注。")
   public String readParagraph(
@@ -91,9 +92,93 @@ public final class BodyTools extends ToolkitToolContext {
       long hyperlinkCount = hyperlinkCount(p);
       sb.append("段落 ").append(idx).append('\n');
       sb.append("文本: ").append(p.text()).append('\n');
+      sb.append("对齐: ").append(p.alignment()).append('\n');
       sb.append("run 数: ").append(runCount).append('\n');
       sb.append("超链接数: ").append(hyperlinkCount);
     }
+    return sb.toString();
+  }
+
+  /**
+   * 批量修改正文若干段落的水平对齐方式（活对象直写，需 save_docx 落盘）。
+   *
+   * <p><b>OOXML → POI → nondocx 三层</b>:段落对齐写在段落属性 {@code <w:pPr>} 的 {@code <w:jc>} 上,
+   * 例如居中是 {@code <w:jc w:val="center"/>};POI 暴露为 {@code XWPFParagraph#setAlignment};
+   * nondocx 封装为 {@link Paragraph#alignment(Alignment)},并只暴露 {@code LEFT/CENTER/RIGHT/JUSTIFY} 四种常用值。
+   *
+   * <p><b>批量语义（v3）。</b> 入参是对象数组 {@code edits},每个对象含 {@code paragraph_index} 与
+   * {@code alignment}。alignment 大小写不敏感,支持 {@code LEFT}、{@code CENTER}、{@code RIGHT}、{@code JUSTIFY}。
+   */
+  @ToolDef(
+      name = "update_paragraph_alignment",
+      description =
+          "批量修改正文若干段落的水平对齐方式(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
+              + "paragraph_index(int,段落索引 0 起)、alignment(string,LEFT/CENTER/RIGHT/JUSTIFY,大小写不敏感)。"
+              + "部分失败不中断,返回每条成功/失败明细。")
+  public String updateParagraphAlignment(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(
+              name = "edits",
+              description =
+                  "对象数组,每个对象含 paragraph_index(int)、alignment(string),"
+                      + "如 [{\"paragraph_index\":0,\"alignment\":\"CENTER\"}]")
+          List<Map<String, Object>> edits) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    var paragraphs = doc.paragraphs();
+    List<Object> list = coerceList(edits);
+    if (list.isEmpty()) {
+      return "edits 为空";
+    }
+    StringBuilder sb = new StringBuilder();
+    int ok = 0;
+    int fail = 0;
+    for (int i = 0; i < list.size(); i++) {
+      if (i > 0) {
+        sb.append('\n');
+      }
+      Object item = list.get(i);
+      String tag = "[" + i + "] ";
+      if (!(item instanceof Map)) {
+        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
+        fail++;
+        continue;
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> m = (Map<String, Object>) item;
+      int paragraphIndex;
+      Alignment alignment;
+      try {
+        paragraphIndex = getInt(m, "paragraph_index");
+        alignment = parseAlignment(getStr(m, "alignment"));
+      } catch (RuntimeException e) {
+        sb.append(tag).append("错误:").append(e.getMessage());
+        fail++;
+        continue;
+      }
+      if (outOfBounds(paragraphIndex, paragraphs.size())) {
+        sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
+        fail++;
+        continue;
+      }
+      try {
+        paragraphs.get(paragraphIndex).alignment(alignment);
+      } catch (RuntimeException e) {
+        sb.append(tag).append("错误:").append(rootMessage(e));
+        fail++;
+        continue;
+      }
+      sb.append(tag)
+          .append("段落 ")
+          .append(paragraphIndex)
+          .append(" 对齐 → ")
+          .append(alignment)
+          .append(" ✓");
+      ok++;
+    }
+    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
     return sb.toString();
   }
 
@@ -267,6 +352,149 @@ public final class BodyTools extends ToolkitToolContext {
     return sb.toString();
   }
 
+  private static Alignment parseAlignment(String raw) {
+    if (raw == null || raw.isBlank()) {
+      throw new IllegalArgumentException("alignment 不能为空");
+    }
+    try {
+      return Alignment.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+    } catch (IllegalArgumentException e) {
+      throw new IllegalArgumentException("alignment 仅支持 LEFT/CENTER/RIGHT/JUSTIFY:" + raw);
+    }
+  }
+
+  /**
+   * 批量修改正文若干 run 的内联样式（活对象直写，需 save_docx 落盘）。
+   *
+   * <p><b>OOXML → POI → nondocx 三层</b>:run 样式写在 {@code <w:rPr>} 下,例如 {@code <w:b>}、
+   * {@code <w:i>}、{@code <w:u>}、{@code <w:rFonts>}、{@code <w:sz>}、{@code <w:color>}。POI 暴露为
+   * {@code XWPFRun#setBold/setItalic/setUnderline/setFontFamily/setFontSize/setColor}; nondocx 用
+   * {@link Run#bold(boolean)} / {@link Run#italic(boolean)} 等链式方法封装这些写入。
+   *
+   * <p><b>批量语义（v3）。</b> 入参是对象数组 {@code edits},每个对象含 {@code paragraph_index}、
+   * {@code run_index},以及一个或多个样式字段:{@code bold}、{@code italic}、{@code underline}、
+   * {@code font}、{@code font_size}、{@code color}。布尔字段按"是否存在"判断,因此显式传 {@code false}
+   * 可清除对应样式；未传字段不改。
+   */
+  @ToolDef(
+      name = "update_run_style",
+      description =
+          "批量修改正文若干 run 的内联样式(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
+              + "paragraph_index(int)、run_index(int),以及可选样式字段:"
+              + "bold(bool)、italic(bool)、underline(bool)、font(string)、font_size(int)、color(string,十六进制如 FF0000)。"
+              + "布尔字段显式传 false 可清除样式;未传字段不改。部分失败不中断,返回每条成功/失败明细。")
+  public String updateRunStyle(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(
+              name = "edits",
+              description =
+                  "对象数组,每个对象含 paragraph_index(int)、run_index(int),"
+                      + "以及可选 bold/italic/underline/font/font_size/color,"
+                      + "如 [{\"paragraph_index\":0,\"run_index\":0,\"bold\":true,\"color\":\"FF0000\"}]")
+          List<Map<String, Object>> edits) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    var paragraphs = doc.paragraphs();
+    List<Object> list = coerceList(edits);
+    if (list.isEmpty()) {
+      return "edits 为空";
+    }
+    StringBuilder sb = new StringBuilder();
+    int ok = 0;
+    int fail = 0;
+    for (int i = 0; i < list.size(); i++) {
+      if (i > 0) {
+        sb.append('\n');
+      }
+      Object item = list.get(i);
+      String tag = "[" + i + "] ";
+      if (!(item instanceof Map)) {
+        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
+        fail++;
+        continue;
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> m = (Map<String, Object>) item;
+      int paragraphIndex;
+      int runIndex;
+      try {
+        paragraphIndex = getInt(m, "paragraph_index");
+        runIndex = getInt(m, "run_index");
+      } catch (RuntimeException e) {
+        sb.append(tag).append("错误:").append(e.getMessage());
+        fail++;
+        continue;
+      }
+      if (outOfBounds(paragraphIndex, paragraphs.size())) {
+        sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
+        fail++;
+        continue;
+      }
+      var runs = paragraphs.get(paragraphIndex).runs();
+      if (outOfBounds(runIndex, runs.size())) {
+        sb.append(tag).append(indexError("run 索引", runIndex, runs.size()));
+        fail++;
+        continue;
+      }
+      Run run = runs.get(runIndex);
+      List<String> changed = new ArrayList<>();
+      try {
+        if (m.containsKey("bold")) {
+          boolean value = boolVal(m.get("bold"));
+          run.bold(value);
+          changed.add("bold=" + value);
+        }
+        if (m.containsKey("italic")) {
+          boolean value = boolVal(m.get("italic"));
+          run.italic(value);
+          changed.add("italic=" + value);
+        }
+        if (m.containsKey("underline")) {
+          boolean value = boolVal(m.get("underline"));
+          run.underline(value);
+          changed.add("underline=" + value);
+        }
+        if (m.containsKey("font")) {
+          String value = getStr(m, "font");
+          run.font(value);
+          changed.add("font=" + value);
+        }
+        if (m.containsKey("font_size")) {
+          int value = getInt(m, "font_size");
+          run.fontSize(value);
+          changed.add("font_size=" + value);
+        }
+        if (m.containsKey("color")) {
+          String value = getStr(m, "color");
+          run.color(value);
+          changed.add("color=" + value);
+        }
+      } catch (RuntimeException e) {
+        sb.append(tag).append("错误:").append(rootMessage(e));
+        fail++;
+        continue;
+      }
+      if (changed.isEmpty()) {
+        sb.append(tag).append("错误:未提供任何样式字段");
+        fail++;
+        continue;
+      }
+      sb.append(tag)
+          .append("段落 ")
+          .append(paragraphIndex)
+          .append(" run ")
+          .append(runIndex)
+          .append(" 样式 → ")
+          .append(String.join("、", changed))
+          .append(" ✓");
+      ok++;
+    }
+    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
+    return sb.toString();
+  }
+
   /**
    * 按正文 body 顺序批量插入若干单 run 段落。
    *
@@ -433,7 +661,7 @@ public final class BodyTools extends ToolkitToolContext {
    * 在整份文档里搜索 keyword，一次返回所有命中位置的坐标。
    *
    * <p><b>为什么需要这个工具。</b> 现有的 {@code read_paragraph} / {@code read_table_cell} 都是
-   * <em>按索引寻址</em>——知道位置才能读。但 Agent 要改某段文字时，往往不知道它在第几段、第几个单元格， 只能 {@code get_paragraph_count} → 逐个
+   * <em>按索引寻址</em>——知道位置才能读。但 Agent 要改某段文字时，往往不知道它在第几段、第几个单元格， 只能 {@code get_document_overview} → 逐个
    * {@code read_paragraph} 盲读，每步都是一轮 LLM 往返， 定位特别慢。本工具把"线性扫描"从 Agent 循环里搬出来：一次调用遍历正文段落、表格所有单元格、 各
    * section 的页眉页脚段落，直接吐出所有命中坐标。
    *
@@ -633,10 +861,15 @@ public final class BodyTools extends ToolkitToolContext {
 
   /** 段落文本是否命中关键词。 */
   private static boolean matches(String text, String keyword, boolean exact) {
+    if (text == null || keyword == null) {
+      return false;
+    }
     if (exact) {
       return text.equals(keyword);
     }
-    return text.toLowerCase().contains(keyword.toLowerCase());
+    return text
+        .toLowerCase(java.util.Locale.ROOT)
+        .contains(keyword.toLowerCase(java.util.Locale.ROOT));
   }
 
   /**

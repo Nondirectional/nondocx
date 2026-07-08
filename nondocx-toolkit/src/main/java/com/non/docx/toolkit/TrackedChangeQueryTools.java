@@ -138,49 +138,50 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
   }
 
   /**
-   * 批量应用(accept)文本/移动类修订:插入生效、删除生效;移动类两端联动配对。
+   * 批量处理指定 family 的修订 ids。
    *
-   * <p><b>批量语义（v2）。</b> 入参是<b>stable id 数组</b> {@code ids},长度 1 即处理单条,多个即一次处理多条
-   * ——典型场景:list_tracked_changes 后想接受<b>特定几条</b>(非全量 accept_all,也非按作者),目前只能逐条调, 批量版压成一次。
-   *
-   * <p>仅作用于 TEXT(ins/del)与 MOVE(moveFrom/moveTo)family;属性类用 {@code accept_property_change},单元格类用
-   * {@code accept_cell_change}。
-   *
-   * <p><b>失败语义:collect-errors。</b> 逐条尝试,某条 family 不符/id 不存在记错误串不中断整批;末尾汇总成功/失败条数。 移动类 id 在
-   * accept/reject 时由 core 自动联动配对的另一端(moveFrom↔moveTo),无需 Agent 手动配对。
+   * <p>工具面规划：accept/reject 以及 text/property/cell 是同一个「处理修订」意图的两个维度。
+   * 合成一个工具后，Agent 只需选 {@code action=ACCEPT/REJECT} 与 {@code target=TEXT_OR_MOVE/PROPERTY/CELL}，
+   * 不再在 6 个近似工具名之间选择。
    */
   @ToolDef(
-      name = "accept_text_or_move_revision",
+      name = "apply_tracked_changes",
       description =
-          "批量应用(accept)文本/移动类修订(ids 来自 list_tracked_changes)。"
-              + "ins/插入保留、del/删除生效;move 两端联动配对。"
-              + "ids 是 stable id 数组,长度 1 即处理单条。"
-              + "属性类/单元格类请改用对应专用工具;部分失败不中断,返回每条成功/失败明细。")
-  public String acceptTextOrMoveRevision(
+          "批量处理修订(ids 来自 list_tracked_changes)。action 支持 ACCEPT/REJECT;"
+              + "target 支持 TEXT_OR_MOVE/PROPERTY/CELL。部分失败不中断,返回每条成功/失败明细。")
+  public String applyTrackedChanges(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "ids", description = "stable id 数组,如 [\"ins:1\",\"del:2\"];单条传 [\"ins:1\"]")
+      @ToolParam(name = "action", description = "ACCEPT=应用修订,REJECT=撤销修订") String action,
+      @ToolParam(name = "target", description = "TEXT_OR_MOVE/PROPERTY/CELL") String target,
+      @ToolParam(name = "ids", description = "stable id 数组,如 [\"ins:1\",\"rpr_change:...\"]")
           List<String> ids) {
-    return applyRevisionsBatch(docId, ids, /* accept= */ true);
-  }
+    boolean accept;
+    if ("ACCEPT".equalsIgnoreCase(action)) {
+      accept = true;
+    } else if ("REJECT".equalsIgnoreCase(action)) {
+      accept = false;
+    } else {
+      return "错误：action 仅支持 ACCEPT/REJECT";
+    }
 
-  /**
-   * 批量撤销(reject)文本/移动类修订:插入丢弃、删除恢复;移动类两端联动。
-   *
-   * <p><b>批量语义（v2）。</b> 入参是<b>stable id 数组</b> {@code ids},长度 1 即处理单条,多个即一次处理多条。语义、失败语义、 family 限定与
-   * {@link #acceptTextOrMoveRevision} 完全对称,只是动作从 accept 变 reject。
-   */
-  @ToolDef(
-      name = "reject_text_or_move_revision",
-      description =
-          "批量撤销(reject)文本/移动类修订(ids 来自 list_tracked_changes)。"
-              + "ins/插入丢弃、del/删除恢复;move 两端联动。"
-              + "ids 是 stable id 数组,长度 1 即处理单条。"
-              + "属性类/单元格类请改用对应专用工具;部分失败不中断,返回每条成功/失败明细。")
-  public String rejectTextOrMoveRevision(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "ids", description = "stable id 数组,如 [\"ins:1\",\"del:2\"];单条传 [\"ins:1\"]")
-          List<String> ids) {
-    return applyRevisionsBatch(docId, ids, /* accept= */ false);
+    if ("TEXT_OR_MOVE".equalsIgnoreCase(target) || "TEXT".equalsIgnoreCase(target)) {
+      return applyRevisionsBatch(docId, ids, accept);
+    }
+    if ("PROPERTY".equalsIgnoreCase(target)) {
+      return applyRevisionsByIds(
+          docId,
+          ids,
+          accept ? TrackedChanges::acceptProperty : TrackedChanges::rejectProperty,
+          accept ? "应用属性类" : "撤销属性类");
+    }
+    if ("CELL".equalsIgnoreCase(target)) {
+      return applyRevisionsByIds(
+          docId,
+          ids,
+          accept ? TrackedChanges::acceptCell : TrackedChanges::rejectCell,
+          accept ? "应用单元格类" : "撤销单元格类");
+    }
+    return "错误：target 仅支持 TEXT_OR_MOVE/PROPERTY/CELL";
   }
 
   /**
@@ -189,171 +190,75 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
    * <p><b>仅作用于 TEXT+MOVE</b>:属性类(rPrChange 等)与单元格类(cellIns/cellDel/cellMerge)<b>不受影响</b>,不会批量删单元格。
    */
   @ToolDef(
-      name = "accept_all_text_revisions",
-      description = "应用(accept)全部文本/移动类修订,返回处理条数。仅作用于文本(ins/del)与移动类;" + "属性类与单元格类不受影响(不会批量删单元格)。")
-  public String acceptAllTextRevisions(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+      name = "apply_text_revisions",
+      description =
+          "按范围批量处理文本/移动类修订。action=ACCEPT/REJECT。"
+              + "scope=ALL 表示全部文本/移动类修订;scope=AUTHOR 表示只处理指定 author。"
+              + "仅作用于文本(ins/del)与移动类;属性类与单元格类不受影响。")
+  public String applyTextRevisions(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "action", description = "ACCEPT=应用修订,REJECT=撤销修订") String action,
+      @ToolParam(name = "scope", description = "ALL=全部文本/移动类,AUTHOR=指定作者") String scope,
+      @ToolParam(name = "author", description = "scope=AUTHOR 时必填,大小写敏感精确匹配", required = false)
+          String author) {
+    if (action == null || action.isBlank()) {
+      return "错误:action 仅支持 ACCEPT 或 REJECT";
+    }
+    if (scope == null || scope.isBlank()) {
+      return "错误:scope 仅支持 ALL 或 AUTHOR";
+    }
+    String normalizedAction = action.trim().toUpperCase(java.util.Locale.ROOT);
+    String normalizedScope = scope.trim().toUpperCase(java.util.Locale.ROOT);
+    if ("ALL".equals(normalizedScope)) {
+      return applyAllTextRevisions(docId, normalizedAction);
+    }
+    if ("AUTHOR".equals(normalizedScope)) {
+      if (author == null || author.isBlank()) {
+        return "错误:scope=AUTHOR 时 author 必填";
+      }
+      return applyTextRevisionsByAuthor(docId, normalizedAction, author);
+    }
+    return "错误:scope 仅支持 ALL 或 AUTHOR";
+  }
+
+  private String applyAllTextRevisions(String docId, String normalizedAction) {
     Document doc = document(docId);
     if (doc == null) {
       return docNotFound(docId);
     }
     try {
-      int n = doc.trackedChanges().acceptAll();
-      return "已应用 " + n + " 条文本/移动类修订";
+      if ("ACCEPT".equals(normalizedAction)) {
+        int n = doc.trackedChanges().acceptAll();
+        return "已应用 " + n + " 条文本/移动类修订";
+      }
+      if ("REJECT".equals(normalizedAction)) {
+        int n = doc.trackedChanges().rejectAll();
+        return "已撤销 " + n + " 条文本/移动类修订";
+      }
+      return "错误:action 仅支持 ACCEPT 或 REJECT";
     } catch (RuntimeException e) {
       return "错误:" + rootMessage(e);
     }
   }
 
-  /** 撤销(reject)全部文本/移动类修订,返回处理条数。仅作用于 TEXT+MOVE,不动 property/cell。 */
-  @ToolDef(
-      name = "reject_all_text_revisions",
-      description = "撤销(reject)全部文本/移动类修订,返回处理条数。仅作用于文本与移动类;属性类与单元格类不受影响。")
-  public String rejectAllTextRevisions(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+  private String applyTextRevisionsByAuthor(String docId, String normalizedAction, String author) {
     Document doc = document(docId);
     if (doc == null) {
       return docNotFound(docId);
     }
     try {
-      int n = doc.trackedChanges().rejectAll();
-      return "已撤销 " + n + " 条文本/移动类修订";
+      if ("ACCEPT".equals(normalizedAction)) {
+        int n = doc.trackedChanges().acceptByAuthor(author);
+        return "已应用作者「" + author + "」的 " + n + " 条文本/移动类修订";
+      }
+      if ("REJECT".equals(normalizedAction)) {
+        int n = doc.trackedChanges().rejectByAuthor(author);
+        return "已撤销作者「" + author + "」的 " + n + " 条文本/移动类修订";
+      }
+      return "错误:action 仅支持 ACCEPT 或 REJECT";
     } catch (RuntimeException e) {
       return "错误:" + rootMessage(e);
     }
-  }
-
-  /**
-   * 应用(accept)指定作者的全部文本/移动类修订。作者大小写敏感精确匹配。
-   *
-   * <p>仅作用于 TEXT+MOVE;property/cell 不受影响。
-   */
-  @ToolDef(
-      name = "accept_text_revisions_by_author",
-      description = "应用(accept)指定 author 的全部文本/移动类修订(大小写敏感精确匹配),返回处理条数。" + "仅文本与移动类;属性类与单元格类不受影响。")
-  public String acceptTextRevisionsByAuthor(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "author", description = "修订作者(大小写敏感精确匹配)") String author) {
-    Document doc = document(docId);
-    if (doc == null) {
-      return docNotFound(docId);
-    }
-    try {
-      int n = doc.trackedChanges().acceptByAuthor(author);
-      return "已应用作者「" + author + "」的 " + n + " 条文本/移动类修订";
-    } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
-    }
-  }
-
-  /** 撤销(reject)指定作者的全部文本/移动类修订。仅作用于 TEXT+MOVE。 */
-  @ToolDef(
-      name = "reject_text_revisions_by_author",
-      description = "撤销(reject)指定 author 的全部文本/移动类修订(大小写敏感精确匹配),返回处理条数。" + "仅文本与移动类;属性类与单元格类不受影响。")
-  public String rejectTextRevisionsByAuthor(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "author", description = "修订作者(大小写敏感精确匹配)") String author) {
-    Document doc = document(docId);
-    if (doc == null) {
-      return docNotFound(docId);
-    }
-    try {
-      int n = doc.trackedChanges().rejectByAuthor(author);
-      return "已撤销作者「" + author + "」的 " + n + " 条文本/移动类修订";
-    } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
-    }
-  }
-
-  /**
-   * 批量应用(accept)属性类修订(rPrChange 等):保留新(当前)属性树,移除 *PrChange 标记。
-   *
-   * <p><b>批量语义（v2）。</b> 入参是<b>id 数组</b> {@code ids}(来自 list_tracked_changes),长度 1 即处理单条。仅作用于
-   * PROPERTY family;文本/移动类用 {@code accept_text_or_move_revision},单元格类用 {@code accept_cell_change}。
-   *
-   * <p><b>失败语义:collect-errors。</b> 探针验证:id 是路径坐标编码、accept 一条后其余 id 不漂移,故可安全逐条循环。 family 不符/id
-   * 不存在的条目记错误不中断。
-   */
-  @ToolDef(
-      name = "accept_property_change",
-      description =
-          "批量应用(accept)属性类修订(rPrChange:ids 来自 list_tracked_changes)。"
-              + "ids 是 stable id 数组,长度 1 即处理单条。保留新属性树、移除 *PrChange 标记。"
-              + "仅属性类;文本/单元格类请用对应工具。部分失败不中断,返回每条成功/失败明细。")
-  public String acceptPropertyChange(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "ids", description = "stable id 数组,如 [\"rpr:...\"];单条传 [\"rpr:...\"]")
-          List<String> ids) {
-    return applyRevisionsByIds(docId, ids, TrackedChanges::acceptProperty, "应用属性类");
-  }
-
-  /**
-   * 批量撤销(reject)属性类修订:用旧(pristine)属性树覆盖新树,移除 *PrChange 标记。
-   *
-   * <p><b>批量语义（v2）。</b> 与 {@link #acceptPropertyChange} 对称,动作变 reject。仅 PROPERTY family。
-   */
-  @ToolDef(
-      name = "reject_property_change",
-      description =
-          "批量撤销(reject)属性类修订(rPrChange:ids 来自 list_tracked_changes)。"
-              + "ids 是 stable id 数组,长度 1 即处理单条。用旧属性树覆盖新树、移除 *PrChange 标记。"
-              + "仅属性类。部分失败不中断,返回每条成功/失败明细。")
-  public String rejectPropertyChange(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "ids", description = "stable id 数组,如 [\"rpr:...\"];单条传 [\"rpr:...\"]")
-          List<String> ids) {
-    return applyRevisionsByIds(docId, ids, TrackedChanges::rejectProperty, "撤销属性类");
-  }
-
-  /**
-   * 批量应用(accept)单元格结构类修订:作用于<b>整个 {@code <w:tc>} 单元格</b>(不是标记本身)。
-   *
-   * <p><b>批量语义（v2）。</b> 入参是<b>id 数组</b> {@code ids}(来自 list_tracked_changes),长度 1 即处理单条。
-   *
-   * <p>语义:cellIns accept=保留单元格、删标记;cellDel accept=<b>移除整个单元格</b>。
-   *
-   * <p><b>cellMerge 不支持</b>(其 CT 类型在 POI 精简 schema 下缺失),命中 cellMerge 的 id 会返回错误串。仅 CELL family。
-   *
-   * <p><b>失败语义:collect-errors。</b> 探针验证:即使 accept 一条 cellDel 移除了整个单元格,其余修订的 id(路径坐标编码)仍不漂移,
-   * 故可安全逐条循环。family 不符/id 不存在的条目记错误不中断。
-   */
-  @ToolDef(
-      name = "accept_cell_change",
-      description =
-          "批量应用(accept)单元格结构类修订(cellIns/cellDel:ids 来自 list_tracked_changes)。"
-              + "ids 是 stable id 数组,长度 1 即处理单条。作用于整个单元格:"
-              + "cellIns=保留单元格、cellDel=移除整个单元格。"
-              + "cellMerge 的 accept 不支持(会返回错误串)。仅单元格类。"
-              + "部分失败不中断,返回每条成功/失败明细。")
-  public String acceptCellChange(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(
-              name = "ids",
-              description = "stable id 数组,如 [\"cell_ins:...\"];单条传 [\"cell_ins:...\"]")
-          List<String> ids) {
-    return applyRevisionsByIds(docId, ids, TrackedChanges::acceptCell, "应用单元格类");
-  }
-
-  /**
-   * 批量撤销(reject)单元格结构类修订:作用于整个 {@code <w:tc>}。
-   *
-   * <p><b>批量语义（v2）。</b> 与 {@link #acceptCellChange} 对称。语义:cellIns reject=<b>移除整个单元格</b>(插入被撤销);
-   * cellDel reject=保留单元格、删标记。cellMerge 不支持。
-   */
-  @ToolDef(
-      name = "reject_cell_change",
-      description =
-          "批量撤销(reject)单元格结构类修订(cellIns/cellDel:ids 来自 list_tracked_changes)。"
-              + "ids 是 stable id 数组,长度 1 即处理单条。作用于整个单元格:"
-              + "cellIns=移除整个单元格、cellDel=保留单元格。cellMerge 不支持。仅单元格类。"
-              + "部分失败不中断,返回每条成功/失败明细。")
-  public String rejectCellChange(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(
-              name = "ids",
-              description = "stable id 数组,如 [\"cell_ins:...\"];单条传 [\"cell_ins:...\"]")
-          List<String> ids) {
-    return applyRevisionsByIds(docId, ids, TrackedChanges::rejectCell, "撤销单元格类");
   }
 
   // ==================== 组内辅助 ====================

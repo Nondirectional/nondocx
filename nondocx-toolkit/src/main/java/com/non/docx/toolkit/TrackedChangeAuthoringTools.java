@@ -59,7 +59,7 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
    * <p><b>失败语义:collect-errors。</b> 逐条尝试,段落越界/缺字段的条目记错误不中断;末尾汇总成功/失败条数。
    *
    * <p><b>无索引漂移。</b> insert 是"往段末追加新 run",不改既有 run 列表,条目间互不影响。创作出的修订可被 {@code list_tracked_changes}
-   * 读回、{@code accept_text_or_move_revision} 处理。
+   * 读回、{@code apply_tracked_changes} 处理。
    */
   @ToolDef(
       name = "insert_tracked_run",
@@ -437,28 +437,20 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
     }
   }
 
-  /**
-   * 批量把若干表格单元格标记为被插入(tracked cellIns:这些单元格本身是被新增的)。
-   *
-   * <p><b>批量语义（v2）。</b> {@code author} 共享;{@code cells} 是对象数组,每个对象含 {@code table_index}(int)、
-   * {@code row_index}(int)、{@code cell_index}(int)。数组长度 1 即标记单个单元格。
-   *
-   * <p>作用于整个单元格:accept=保留、reject=移除。
-   *
-   * <p><b>无索引漂移。</b> 标记是给单元格加 cellIns 属性,不增删 cell 列表结构,条目间互不影响。
-   *
-   * <p><b>失败语义:collect-errors。</b> 坐标越界/缺字段的条目记错误不中断;末尾汇总。
-   */
   @ToolDef(
-      name = "mark_cell_inserted",
+      name = "mark_tracked_cells",
       description =
-          "批量把表格若干单元格标记为被插入(tracked cellIns:这些单元格本身是被新增的)。"
+          "批量把表格若干单元格标记为被插入或被删除的 tracked cell 修订。"
+              + "change_type=INSERTED 生成 cellIns(accept=保留、reject=移除);"
+              + "change_type=DELETED 生成 cellDel(accept=移除、reject=保留)。"
               + "author 是共享修订作者(必填)。cells 是对象数组,每个对象含 "
               + "table_index(int,表格索引 0 起)、row_index(int,行索引 0 起)、cell_index(int,单元格索引 0 起)。"
-              + "单个对象用长度 1 的数组。accept=保留、reject=移除。"
+              + "单个对象用长度 1 的数组。"
               + "部分失败不中断,返回每条成功/失败明细。")
-  public String markCellInserted(
+  public String markTrackedCells(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "change_type", description = "INSERTED=cellIns,DELETED=cellDel")
+          String changeType,
       @ToolParam(name = "author", description = "修订作者(整批共享)") String author,
       @ToolParam(
               name = "cells",
@@ -466,33 +458,21 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
                   "对象数组,每个对象含 table_index、row_index、cell_index(int),"
                       + "如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0}]")
           List<Map<String, Object>> cells) {
-    return markCellsBatch(docId, author, cells, /* inserter= */ true);
-  }
-
-  /**
-   * 批量把若干表格单元格标记为被删除(tracked cellDel)。
-   *
-   * <p><b>批量语义（v2）。</b> 与 {@link #markCellInserted} 结构对称,只是标记为
-   * cellDel。作用于整个单元格:accept=移除、reject=保留。
-   */
-  @ToolDef(
-      name = "mark_cell_deleted",
-      description =
-          "批量把表格若干单元格标记为被删除(tracked cellDel:这些单元格本身是被删除的)。"
-              + "author 是共享修订作者(必填)。cells 是对象数组,每个对象含 "
-              + "table_index(int)、row_index(int)、cell_index(int)。"
-              + "单个对象用长度 1 的数组。accept=移除、reject=保留。"
-              + "部分失败不中断,返回每条成功/失败明细。")
-  public String markCellDeleted(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "author", description = "修订作者(整批共享)") String author,
-      @ToolParam(
-              name = "cells",
-              description =
-                  "对象数组,每个对象含 table_index、row_index、cell_index(int),"
-                      + "如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0}]")
-          List<Map<String, Object>> cells) {
-    return markCellsBatch(docId, author, cells, /* inserter= */ false);
+    if (changeType == null || changeType.isBlank()) {
+      return "错误:change_type 仅支持 INSERTED 或 DELETED";
+    }
+    String normalized = changeType.trim().toUpperCase(java.util.Locale.ROOT);
+    if ("INSERTED".equals(normalized)
+        || "INSERT".equals(normalized)
+        || "CELL_INS".equals(normalized)) {
+      return markCellsBatch(docId, author, cells, true);
+    }
+    if ("DELETED".equals(normalized)
+        || "DELETE".equals(normalized)
+        || "CELL_DEL".equals(normalized)) {
+      return markCellsBatch(docId, author, cells, false);
+    }
+    return "错误:change_type 仅支持 INSERTED 或 DELETED";
   }
 
   /**

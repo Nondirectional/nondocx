@@ -7,6 +7,8 @@ import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
 import com.non.docx.core.api.text.Paragraph;
 import java.nio.file.Path;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STMerge;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -172,5 +174,56 @@ class TableTest {
     // 实时：修改段落包装器会在重新读取单元格时反映出来
     paragraph.addRun(" world");
     assertThat(cell.text()).isEqualTo("hello world");
+  }
+
+  @Test
+  void noBordersWritesNilTableBorders() {
+    Table table = buildGridTable(Docx.create());
+
+    table.noBorders();
+
+    var borders = table.raw().getCTTbl().getTblPr().getTblBorders();
+    assertThat(borders.getTop().getVal()).isEqualTo(STBorder.NIL);
+    assertThat(borders.getLeft().getVal()).isEqualTo(STBorder.NIL);
+    assertThat(borders.getBottom().getVal()).isEqualTo(STBorder.NIL);
+    assertThat(borders.getRight().getVal()).isEqualTo(STBorder.NIL);
+    assertThat(borders.getInsideH().getVal()).isEqualTo(STBorder.NIL);
+    assertThat(borders.getInsideV().getVal()).isEqualTo(STBorder.NIL);
+  }
+
+  @Test
+  void mergeCellsHorizontalWritesGridSpanAndRemovesCoveredCells() {
+    Table table = buildGridTable(Docx.create());
+
+    table.mergeCellsHorizontal(0, 0, 2);
+
+    assertThat(table.row(0).cells()).hasSize(1);
+    assertThat(table.row(0).cell(0).text()).isEqualTo("A1");
+    assertThat(table.row(0).cell(0).raw().getCTTc().getTcPr().getGridSpan().getVal())
+        .isEqualTo(java.math.BigInteger.valueOf(3));
+  }
+
+  @Test
+  void mergeCellsVerticalWritesRestartAndContinue() {
+    Table table = buildGridTable(Docx.create());
+
+    table.mergeCellsVertical(1, 0, 1);
+
+    assertThat(table.row(0).cell(1).raw().getCTTc().getTcPr().getVMerge().getVal())
+        .isEqualTo(STMerge.RESTART);
+    assertThat(table.row(1).cell(1).raw().getCTTc().getTcPr().getVMerge().getVal())
+        .isEqualTo(STMerge.CONTINUE);
+  }
+
+  @Test
+  void mergeCellsRejectsInvalidRanges() {
+    Table table = buildGridTable(Docx.create());
+
+    assertThatThrownBy(() -> table.mergeCellsHorizontal(0, 1, 1))
+        .isInstanceOf(IndexOutOfBoundsException.class)
+        .hasMessageContaining("横向合并范围无效");
+    assertThatThrownBy(() -> table.mergeCellsVertical(9, 0, 1))
+        .isInstanceOf(IndexOutOfBoundsException.class)
+        .hasMessageContaining("列索引 9");
   }
 }

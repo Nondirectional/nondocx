@@ -3,9 +3,9 @@ package com.non.docx.toolkit;
 import com.non.chain.tool.ToolRegistry;
 
 /**
- * nondocx-toolkit 的聚合门面：一次构造出全部六组工具，并保证它们共享同一份文档会话状态。
+ * nondocx-toolkit 的聚合门面：一次构造出全部七组工具，并保证它们共享同一份文档会话状态。
  *
- * <p><b>为什么需要门面。</b> 工具集按功能域拆成了六个类（{@link SessionTools} / {@link BodyTools} / {@link TableTools} /
+ * <p><b>为什么需要门面。</b> 工具集按功能域拆成了七个类（{@link SessionTools} / {@link BodyTools} / {@link TableTools} /
  * {@link HeaderFooterTocTools} / {@link TrackedChangeQueryTools} / {@link
  * TrackedChangeAuthoringTools}），但它们必须<b>共享同一份</b> {@code sessions}/{@code seq}： Agent 在一轮对话里 {@code
  * open_docx}（SessionTools）打开的文档，紧接着 {@code read_paragraph}（BodyTools）、 {@code
@@ -36,7 +36,7 @@ import com.non.chain.tool.ToolRegistry;
  */
 public final class DocxToolkit {
 
-  /** 会话工具组：open/save/close + 段落/表格计数。本组自建 sessions/seq，是会话状态的「源头」。 */
+  /** 会话工具组：open/save/close + 文档概览。本组自建 sessions/seq，是会话状态的「源头」。 */
   public final SessionTools session;
 
   /** 正文工具组：正文 run / 超链接 / 文本搜索。 */

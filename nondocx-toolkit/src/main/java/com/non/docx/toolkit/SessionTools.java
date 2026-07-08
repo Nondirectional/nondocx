@@ -4,12 +4,13 @@ import com.non.chain.tool.ToolDef;
 import com.non.chain.tool.ToolParam;
 import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 文档会话工具组（原 A 组）：打开 / 保存 / 关闭文档，以及正文段落数、表格数概览。
+ * 文档会话工具组（原 A 组）：打开 / 保存 / 关闭文档，以及文档结构概览。
  *
  * <p><b>会话模型的「源头」。</b> 本类是 toolkit 里<b>唯一</b>自己创建 {@code sessions}/{@code seq} 的工具类 （走 {@link
  * ToolkitToolContext#ToolkitToolContext()} 无参构造）。 {@link DocxToolkit} 门面在构造时先把本类实例化， 再经 {@link
@@ -75,10 +76,13 @@ public final class SessionTools extends ToolkitToolContext {
     }
     try {
       Path out = Path.of(outputPath);
-      out.toFile().getParentFile().mkdirs();
+      Path parent = out.toAbsolutePath().getParent();
+      if (parent != null) {
+        Files.createDirectories(parent);
+      }
       doc.save(out);
       return "已保存到 " + out.toAbsolutePath();
-    } catch (RuntimeException e) {
+    } catch (Exception e) {
       return "错误：无法保存到 " + outputPath + "（" + rootMessage(e) + "）";
     }
   }
@@ -103,23 +107,27 @@ public final class SessionTools extends ToolkitToolContext {
     return "已关闭 " + docId;
   }
 
-  /** 返回正文段落数。 */
-  @ToolDef(name = "get_paragraph_count", description = "返回文档正文的段落数（不含表格内段落）")
-  public String getParagraphCount(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+  /** 返回文档结构概览。 */
+  @ToolDef(
+      name = "get_document_overview",
+      description =
+          "返回文档结构概览：正文段落数、正文表格数、body 元素数、section 数。"
+              + "了解文档规模/判断后续索引范围时优先用它，不要分别调用多个 count 工具。")
+  public String getDocumentOverview(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
     Document doc = sessions.get(docId);
     if (doc == null) {
       return docNotFound(docId);
     }
-    return "段落数: " + doc.paragraphs().size();
+    return "文档概览\n"
+        + "正文段落数: "
+        + doc.paragraphs().size()
+        + "\n正文表格数: "
+        + doc.tables().size()
+        + "\nbody 元素数: "
+        + doc.bodyElements().size()
+        + "\nsection 数: "
+        + doc.sections().size();
   }
 
-  /** 返回正文表格数。 */
-  @ToolDef(name = "get_table_count", description = "返回文档正文的表格数")
-  public String getTableCount(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
-    Document doc = sessions.get(docId);
-    if (doc == null) {
-      return docNotFound(docId);
-    }
-    return "表格数: " + doc.tables().size();
-  }
 }

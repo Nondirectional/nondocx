@@ -276,7 +276,7 @@ class QualityCheckToolsTest {
   }
 
   @Test
-  void checksFilterIgnoresUnknownNames(@TempDir Path tmp) throws Exception {
+  void checksFilterReportsUnknownNames(@TempDir Path tmp) throws Exception {
     DocxToolkit tk = new DocxToolkit();
     Document doc = Docx.create();
     doc.addParagraph("x");
@@ -285,8 +285,10 @@ class QualityCheckToolsTest {
     String report =
         tk.qualityCheck.checkQuality(docId, List.of("blank-pages", "nonexistent-check"));
 
-    // 未知项被忽略，只跑 1 项
-    assertThat(report).contains("通过 1/1");
+    // 未知项保留为可见提示，避免 Agent 以为该检查真的执行过。
+    assertThat(report).contains("✅ [blank-pages]");
+    assertThat(report).contains("✅ [nonexistent-check] 未知检查项，已跳过");
+    assertThat(report).contains("通过 2/2");
   }
 
   // ---------- docNotFound ----------

@@ -75,10 +75,12 @@ function mountEditor(config) {
 async function refreshFromBackend(newKey) {
   if (newKey && baseConfig) {
     // 快速路径:用 doc_changed 帧里的新 key 本地拼 config,省一次 GET
+    const documentUrl = urlWithKey(baseConfig.document.url, newKey);
     const config = {
       ...baseConfig,
-      document: { ...baseConfig.document, key: newKey },
+      document: { ...baseConfig.document, key: newKey, url: documentUrl },
     };
+    baseConfig = config;
     mountEditor(config);
     return;
   }
@@ -96,6 +98,12 @@ function destroyEditorIfAny() {
     }
     docEditor = null;
   }
+}
+
+function urlWithKey(url, key) {
+  const u = new URL(url, window.location.href);
+  u.searchParams.set('key', key);
+  return u.toString();
 }
 
 // ============ Agent 对话(POST + ReadableStream 解析 SSE) ============

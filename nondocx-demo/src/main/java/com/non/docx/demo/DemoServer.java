@@ -113,6 +113,9 @@ public final class DemoServer {
         ctx -> {
           ctx.contentType("application/octet-stream");
           ctx.header("Content-Disposition", "attachment; filename=\"current.docx\"");
+          ctx.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+          ctx.header("Pragma", "no-cache");
+          ctx.header("Expires", "0");
           ctx.result(session.readBytes());
         });
   }
@@ -289,13 +292,14 @@ public final class DemoServer {
    * <p><b>url 用 EXTERNAL_BASE</b>:这个 url 是 OO Server(Docker 容器)去访问的,必须用容器能解析到宿主机的地址。
    */
   private static java.util.Map<String, Object> onlyOfficeConfig(DocSession session) {
+    String key = session.currentKey();
     return java.util.Map.of(
         "document",
         java.util.Map.of(
             "fileType", "docx",
-            "key", session.currentKey(),
+            "key", key,
             "title", session.filename(),
-            "url", EXTERNAL_BASE + "/api/doc/file",
+            "url", EXTERNAL_BASE + "/api/doc/file?key=" + key,
             "permissions", java.util.Map.of("edit", false, "download", true)),
         "documentType",
         "word",

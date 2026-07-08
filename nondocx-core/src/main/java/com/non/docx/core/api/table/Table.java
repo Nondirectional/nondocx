@@ -1,6 +1,7 @@
 package com.non.docx.core.api.table;
 
 import com.non.docx.core.api.BodyElement;
+import com.non.docx.core.internal.poi.TableNodes;
 import com.non.docx.core.internal.poi.TableWidthNodes;
 import com.non.docx.core.internal.util.Objects;
 import java.util.AbstractList;
@@ -71,6 +72,12 @@ public final class Table implements BodyElement {
     return rows().get(index);
   }
 
+  /** 显式设置表格为无边框，并返回 {@code this}。 */
+  public Table noBorders() {
+    TableNodes.applyNoBorders(delegate.getCTTbl());
+    return this;
+  }
+
   /**
    * 向此表格追加一个新的空行，并返回其活跃包装器。
    *
@@ -114,6 +121,60 @@ public final class Table implements BodyElement {
     Objects.requireNonNull(config, "config");
     Row appended = addRow();
     config.accept(appended);
+    return this;
+  }
+
+  /**
+   * 横向合并同一行内从 {@code fromCellIndex} 到 {@code toCellIndex} 的连续单元格。
+   *
+   * <p>OOXML 使用起始单元格的 {@code <w:gridSpan>} 表达横向跨度；被覆盖的右侧单元格会从行中移除。
+   */
+  public Table mergeCellsHorizontal(int rowIndex, int fromCellIndex, int toCellIndex) {
+    Row row = row(rowIndex);
+    int size = row.cells().size();
+    if (fromCellIndex < 0 || toCellIndex >= size || fromCellIndex >= toCellIndex) {
+      throw new IndexOutOfBoundsException(
+          "横向合并范围无效：行 "
+              + rowIndex
+              + " 有 "
+              + size
+              + " 个单元格，范围 "
+              + fromCellIndex
+              + ".."
+              + toCellIndex);
+    }
+    int span = toCellIndex - fromCellIndex + 1;
+    TableNodes.applyGridSpan(row.cell(fromCellIndex).raw().getCTTc(), span);
+    for (int c = toCellIndex; c > fromCellIndex; c--) {
+      row.removeCell(c);
+    }
+    return this;
+  }
+
+  /**
+   * 纵向合并同一列内从 {@code fromRowIndex} 到 {@code toRowIndex} 的连续单元格。
+   *
+   * <p>OOXML 使用每个参与单元格的 {@code <w:vMerge>} 表达：首格 restart，后续格 continue。
+   */
+  public Table mergeCellsVertical(int columnIndex, int fromRowIndex, int toRowIndex) {
+    int rowCount = rows().size();
+    if (fromRowIndex < 0 || toRowIndex >= rowCount || fromRowIndex >= toRowIndex) {
+      throw new IndexOutOfBoundsException(
+          "纵向合并范围无效：表格有 "
+              + rowCount
+              + " 行，范围 "
+              + fromRowIndex
+              + ".."
+              + toRowIndex);
+    }
+    for (int r = fromRowIndex; r <= toRowIndex; r++) {
+      Row row = row(r);
+      if (columnIndex < 0 || columnIndex >= row.cells().size()) {
+        throw new IndexOutOfBoundsException(
+            "列索引 " + columnIndex + " 越界（第 " + r + " 行有 " + row.cells().size() + " 个单元格）");
+      }
+      TableNodes.applyVMerge(row.cell(columnIndex).raw().getCTTc(), r == fromRowIndex);
+    }
     return this;
   }
 
