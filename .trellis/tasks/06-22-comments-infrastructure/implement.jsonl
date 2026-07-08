@@ -1,1 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "POI-free 公共表面、OPC part 自维护模式（N23,people.xml 复用）、XmlCursor 脏活集中 internal/poi、CTDocRsids dangling reference（N16 同型）"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "注入失败防御式降级不阻断主流程（prd R5）、author null/空白校验沿用既有约定"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "注入幂等（people.xml author 去重、RSID 单例）、round-trip 持久化、tracked-changes 隔离不破坏既有契约（AC6）"}

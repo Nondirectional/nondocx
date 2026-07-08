@@ -601,6 +601,24 @@ try (OutputStream os = part.getOutputStream()) { ... 写完整 DOM ... }
 
 **范围**: 回复 + 线程(commentsExtended 四 part 全做)。**不**含:people.xml/RSID(子任务 4)、resolve/done 状态 API、删除回复、跨段批注回复。toolkit/example 扩展留 `comments-docs-spec` 子任务。
 
+### N24 — Comments 基础设施:people.xml 复用 N23 OPC 模式;RSID settings.xml 走 XmlCursor(CTDocRsids dangling);paraId 收敛;beginElement cursor 语义
+
+comments-infrastructure 子任务补齐批注的**现代 Word 兼容元数据**:people.xml(author 注册,@mention 提示)、w14:paraId(收敛 reply-threads 散落实现 + 补到 addComment)、RSID(Document 级单例,Word 合并修订对齐)。三项都是「锦上添花」——缺了批注仍能用(N18/N22/N23 已保证基本可用),但 Word 审阅面板体验打折。三个非显然点:
+
+**1. people.xml 完全复用 N23 的 OPC part 自维护模式(零新机制)。** people.xml 是 `w15` 命名空间的 part(`<w15:people><w15:person w15:author=..><w15:presenceInfo .../></w15:person></w15:people>`),POI 无 Java 类。处理方式与 commentsExtended(N23)**完全同型**:`createPart` 自动注册 [Content_Types].xml Override(people+xml)+ `addRelationship` 手动加关系 + DOM 读-改-写。实现把 N23 的 `CommentExtendedParts` 的 OPC/DOM 工具(`ensurePart`/`readOrCreateDom`/`writeDom`/`readDom`/`AttrBuilder`)从 `private` 提升 **package-private**,供同包的 `AuthoringInfra`(新建,三项基础设施统一入口)复用——避免重复造 OPC 轮子。**幂等**:author 精确字符串匹配去重(不 normalize,prd Q3),`getElementsByTagNameNS` 扫现有 person。**presenceInfo 用占位 `providerId="None"`**(docx skill 同款,真实身份服务集成是 Out of Scope)。content type/relationship type:`application/vnd.openxmlformats-officedocument.wordprocessingml.people+xml` / `.../relationships/people`。
+
+**2. RSID settings.xml 走 XmlCursor——CTDocRsids 是 N16 同型的 dangling reference。** RSID 要写两处:① settings.xml 的 `<w:rsids>` 段(`<w:rsidRoot w:val=../>` + `<w:rsid w:val=../>`);② 节点级(`<w:p w:rsidR=.. w:rsidRDefault=../>`、`<w:r w:rsidR=../>`)。POI 的 `CTSettings.getRsids()`/`addNewRsids()` 声明返回 `CTDocRsids`,但 lite jar 缺该 class 文件(与 N16 的 `CTCellMergeTrackChange` 同型),typed 访问器运行期抛 `ClassNotFoundException`。故 `AuthoringInfra` 用 XmlCursor 操作 `CTSettings` 原始 XML。
+- **Document 级单例(design §5)**:RSID 持久化在 settings.xml 的 `<w:rsidRoot>`——`documentRsid(doc)` 首次调用生成并注册,后续读回。故 `save→reopen` 后仍是同一个 RSID,同一文档多次创作的节点标同一个 RSID(Word「同一编辑会话」语义);不同文档概率上不同。这避免了 `Document` API 层持 RSID 字段(RSID 状态留在 settings.xml,真正的「文档级」)。
+- **`<w:rsids>` 的 schema 位置**:rsids 应在 compat 之后,但 Word 宽容,追加到 settings 末尾也接受。本实现不严格排 schema 顺序。
+
+**3. XmlCursor 的 `beginElement` 停在 END,不是 START(实现期踩的关键坑)。** 往 settings.xml 建嵌套结构(`<w:rsids>` 内含 `<w:rsidRoot>` + `<w:rsid>`)时,`beginElement(QName)` 的语义是「在当前位置之前插入新元素,cursor 移到**新元素的 END**」(实测确认,非直觉的 START)。因此建嵌套子的正确导航是:cursor 在容器 END → `beginElement(child)` 插子(cursor 在 child END)→ 设属性 → **`toNextToken`** 从 child END 移到容器 END → `beginElement(nextChild)` 插第二个子。**误用 `toParent`/`toEndToken` 会插错层级**(`toParent` 从元素 END 回到自身 START 而非父元素,导致子嵌进子)。`insertElement`(在当前之前插、cursor 不动)与 `beginElement`(插并移到 END)语义不同,选用要看是否需要继续操作新节点。凡是要用 XmlCursor 建嵌套结构的场景,都要记住 `beginElement` 后 cursor 在 END。
+
+**paraId 收敛(无新机制)。** reply-threads 子任务已把 `setParagraphParaId`(CommentNodes 私有)用在 reply 路径;本子任务把它提升到 `AuthoringInfra.setParaId`(public),addComment 路径也调用,CommentNodes 删掉私有副本。paraId 不查重(prd Q2:8 位 hex 空间大,冲突可忽略)。paraId/RSID 是**属性**非子元素,故既有 `CommentsAuthoringTest` 的子元素顺序断言(`commentRangeStart, r, commentRangeEnd, r`)不受影响——实现期验证证实。
+
+**与 Rule 1 的关系(无偏离)**: 三项基础设施脏活全收进 `internal/poi/AuthoringInfra`(新建)+ `CommentNodes.stampAuthoringInfrastructure`(私有 helper),公共 API 无感——用户调 `addComment`/`reply` 不变。`AuthoringInfra` 的方法 public 但在 `internal/poi`(内部包,POI-free 表面在 `api/`)。**与 tracked-changes 的隔离(AC6)**:`TrackedChangeNodes` **不**接入 `AuthoringInfra`——基础设施仅作用于 comments 创作路径(父任务 Q4,避免改动已稳定的 track 包)。
+
+**范围**: 覆盖 people.xml(注册 + 幂等)、paraId(收敛 + 补 addComment)、RSID(Document 级单例 + settings.xml + 节点级)。**不**含:w16du:dateUtc(reply-threads 已做)、presenceInfo 真实 providerId/userId、回溯补到 tracked-changes 创作路径(AC6)。回归:`CommentsInfrastructureTest` 11 用例(people.xml 存在/幂等/round-trip + paraId addComment/reply + RSID 节点级/settings.xml rsids/文档级单例/round-trip 持久化/不同文档不同 + tracked-changes 隔离 AC6);全量 332 tests green、spotless clean。
+
 ---
 
 ## Out-of-Scope feature policy

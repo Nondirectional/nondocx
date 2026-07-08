@@ -18,8 +18,8 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP;
 /**
  * 批注(comments)创作侧的验收测试。
  *
- * <p>覆盖单条整段范围批注的显式创作:{@link Paragraph#addComment}。验证创作出的批注能被 {@link Comments#list()}
- * 读回、round-trip 结构完整、参数校验、id 自增、空段边界,以及不污染普通写 API。
+ * <p>覆盖单条整段范围批注的显式创作:{@link Paragraph#addComment}。验证创作出的批注能被 {@link Comments#list()} 读回、round-trip
+ * 结构完整、参数校验、id 自增、空段边界,以及不污染普通写 API。
  *
  * <p>测试用 XmlBeans 手搓 fixture(确定性、不依赖 Word) + nondocx {@link Docx#open} round-trip,覆盖 prd
  * AC1–AC3、AC5。AC4(Word/WPS 人工验收)留作 review gate 的人工项。
@@ -72,8 +72,7 @@ class CommentsAuthoringTest {
       XWPFParagraph p = poi.getParagraphs().get(0);
       List<String> childLocals = childLocalNames(p.getCTP());
       // paragraph(0) 只含"已有文本A"一个 run;期望: start, r(已有文本A), end, r(引用)
-      assertThat(childLocals)
-          .containsExactly("commentRangeStart", "r", "commentRangeEnd", "r");
+      assertThat(childLocals).containsExactly("commentRangeStart", "r", "commentRangeEnd", "r");
       // 锚点 id 一致
       assertThat(p.getCTP().getCommentRangeStartArray(0).getId())
           .isEqualTo(p.getCTP().getCommentRangeEndArray(0).getId());

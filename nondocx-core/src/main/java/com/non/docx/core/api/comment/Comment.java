@@ -57,8 +57,7 @@ public final class Comment {
   /**
    * 包装一个 POI 批注对象(无线程字段)。
    *
-   * <p>等价于 {@code Comment(delegate, null, null)}——paraId/parentId 为 null(根批注或旧文档场景)。保留此构造
-   * 供既有调用方兼容。
+   * <p>等价于 {@code Comment(delegate, null, null)}——paraId/parentId 为 null(根批注或旧文档场景)。保留此构造 供既有调用方兼容。
    *
    * @param delegate 底层的 POI 批注(不能为 {@code null})
    * @throws IllegalArgumentException 如果 {@code delegate} 为 {@code null}
@@ -166,8 +165,8 @@ public final class Comment {
    * 返回父批注的 OOXML {@code w:id}(线程关系),根批注返回 {@link Optional#empty()}。
    *
    * <p>派生自 {@code commentsExtended.xml} 的 {@code w15:paraIdParent}:本批注的 paraId → 父批注 paraId → 父批注
-   * comment id(经 {@code CommentNodes.collect} 的 join 解析)。根批注(无 paraIdParent)、无
-   * {@code commentsExtended.xml} 的旧文档、或 paraId 缺失时返回 {@link Optional#empty()}。
+   * comment id(经 {@code CommentNodes.collect} 的 join 解析)。根批注(无 paraIdParent)、无 {@code
+   * commentsExtended.xml} 的旧文档、或 paraId 缺失时返回 {@link Optional#empty()}。
    *
    * <p><b>线程语义。</b> {@code isPresent()} 为 true 即「本批注是某批注的回复」;为 empty 即「根批注」。
    *
@@ -180,7 +179,8 @@ public final class Comment {
   /**
    * 返回底层的 POI 批注对象。
    *
-   * <p>对返回对象的修改会立即影响文档。请谨慎使用。authoring / reply 子任务经此方法拿到可写委托做创作 与回复(见 {@code internal/poi/CommentNodes})。
+   * <p>对返回对象的修改会立即影响文档。请谨慎使用。authoring / reply 子任务经此方法拿到可写委托做创作 与回复(见 {@code
+   * internal/poi/CommentNodes})。
    *
    * @return 底层的 {@link XWPFComment} 实例(包装器生命周期内同一实例)
    */

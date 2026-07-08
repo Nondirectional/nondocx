@@ -32,7 +32,6 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR;
  *       插入范围批注(锚点 + comments.xml 条目)。
  * </ul>
  *
- *
  * <p><b>OOXML 结构(教学要点)。</b> 批注在 OOXML 里是「正文 + 锚点」分离的两 part 结构:
  *
  * <pre>{@code
@@ -206,10 +205,7 @@ public final class CommentNodes {
     }
   }
 
-  /**
-   * 把一个 {@link XWPFComment} 包装成 {@link Comment} 加入结果列表,注入线程字段(paraId/parentId),防御式:解析失败时
-   * 跳过该条。
-   */
+  /** 把一个 {@link XWPFComment} 包装成 {@link Comment} 加入结果列表,注入线程字段(paraId/parentId),防御式:解析失败时 跳过该条。 */
   private static void produceSafe(XWPFComment c, List<Comment> out, ThreadResolver threads) {
     try {
       String paraId = threads.paraIdOf(c);
@@ -242,18 +238,59 @@ public final class CommentNodes {
             "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}" + localName));
   }
 
+  /**
+   * 给创作产出的批注补现代兼容基础设施(子任务 4):paraId + RSID + people.xml。
+   *
+   * <p>三项注入都委托 {@link AuthoringInfra}(本类的内部 helper,集中 comments 路径的现代 Word 兼容脏活)。
+   *
+   * <ul>
+   *   <li><b>paraId</b>:给 {@code comment} 内首段设 {@code w14:paraId}(若该段无 paraId)。reply 路径已在创作时设过,
+   *       本方法幂等(已设则跳过);addComment 路径靠这里补。
+   *   <li><b>RSID</b>:给 {@code comment} 内首段 + (若给定){@code refRun} 标 Document 级单例 RSID。
+   *   <li><b>people.xml</b>:注册 {@code author}(幂等)。
+   * </ul>
+   *
+   * @param document POI 文档
+   * @param comment 刚创建的批注(paraId/RSID 标在其内首段)
+   * @param refRun 正文引用 run 的 CTR(标 RSID);{@code null} 则跳过(reply 路径的引用 run 结构不同)
+   * @param author 要注册到 people.xml 的 author
+   */
+  private static void stampAuthoringInfrastructure(
+      XWPFDocument document, XWPFComment comment, CTR refRun, String author) {
+    try {
+      java.util.List<XWPFParagraph> paras = comment.getParagraphs();
+      if (!paras.isEmpty()) {
+        XWPFParagraph first = paras.get(0);
+        // paraId 幂等:已设则 setParaId 覆盖也无害,但为保留 reply 路径已设的 paraId,先查再补
+        if (paraIdOfComment(comment) == null) {
+          AuthoringInfra.setParaId(first, AuthoringInfra.newParaId());
+        }
+        // RSID:标批注内首段
+        String rsid = AuthoringInfra.documentRsid(document);
+        AuthoringInfra.stampRsid(first, rsid);
+        // RSID:标正文引用 run(若有)
+        if (refRun != null) {
+          AuthoringInfra.stampRsid(refRun, rsid);
+        }
+      }
+      // people.xml:注册 author(幂等)
+      AuthoringInfra.registerAuthor(document, author);
+    } catch (RuntimeException e) {
+      // 基础设施注入失败不阻断主创作流程:批注正文已完整写出(prd R5 防御式)
+    }
+  }
+
   // ---------- 破坏性写:批注创作 ----------
 
   /**
-   * 计算文档下一个可用的批注 {@code w:id}(扫描 {@code comments.xml} 已有批注的 {@code w:id},取最大值 +1;无任何
-   * 批注时返回 0)。
+   * 计算文档下一个可用的批注 {@code w:id}(扫描 {@code comments.xml} 已有批注的 {@code w:id},取最大值 +1;无任何 批注时返回 0)。
    *
-   * <p>这是底层 OOXML 批注 id,与 {@link TrackedChangeNodes#nextRevisionId 修订 id} <b>不是</b>同一套计数器——批注
-   * 的 {@code CTMarkup} {@code w:id} 与修订的 {@code CTTrackChange} {@code w:id} 在 OOXML 里是两个独立命名空间,互不
+   * <p>这是底层 OOXML 批注 id,与 {@link TrackedChangeNodes#nextRevisionId 修订 id} <b>不是</b>同一套计数器——批注 的
+   * {@code CTMarkup} {@code w:id} 与修订的 {@code CTTrackChange} {@code w:id} 在 OOXML 里是两个独立命名空间,互不
    * 影响(见 design §5)。
    *
-   * <p>扫 {@code comments.xml} 的全部批注取 max(而非扫 {@code document.xml} 的锚点),因为 {@code w:id} 的真源是
-   * {@code comments.xml} 的 {@code <w:comment w:id=..>};锚点只是引用同一个 id。{@code XWPFComment.getId()} 在 POI
+   * <p>扫 {@code comments.xml} 的全部批注取 max(而非扫 {@code document.xml} 的锚点),因为 {@code w:id} 的真源是 {@code
+   * comments.xml} 的 {@code <w:comment w:id=..>};锚点只是引用同一个 id。{@code XWPFComment.getId()} 在 POI
    * 5.2.5 返回 {@code String},本方法解析为 {@code long} 取 max;非数字 id(罕见)跳过。
    *
    * @param document POI 文档(不能为 {@code null})
@@ -306,8 +343,8 @@ public final class CommentNodes {
    * <p><b>POI 的坑(探针验证见 {@code research/insert-position.md} §3.1)。</b> {@link
    * XWPFComments#createComment} 只建 {@code comments.xml} 的条目,<b>不</b>动正文;正文锚点要自己用 {@link
    * org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP#addNewCommentRangeStart} 等建。而 POI 的
-   * {@code addNew}/{@code insertNew} 都<b>不</b>按 OOXML schema 顺序排序——{@code commentRangeStart} 会被追加到段末
-   * (在所有已有 run 之后),导致范围实际为空(包住 0 个 run)。故必须用 {@link XmlCursor} 把 {@code commentRangeStart}
+   * {@code addNew}/{@code insertNew} 都<b>不</b>按 OOXML schema 顺序排序——{@code commentRangeStart}
+   * 会被追加到段末 (在所有已有 run 之后),导致范围实际为空(包住 0 个 run)。故必须用 {@link XmlCursor} 把 {@code commentRangeStart}
    * 手动 move 到 {@code CTP} 第一个子之前。这是批注创作区别于 {@link TrackedChangeNodes#addInsertion}(新建容器包新
    * run,顺序天然正确)的核心脏活。
    *
@@ -364,6 +401,12 @@ public final class CommentNodes {
       pCur.dispose();
       startCur.dispose();
     }
+
+    // 4) 现代兼容基础设施自动注入(子任务 4):
+    //    - paraId:给批注内首段补(POI createParagraph 不写;reply 路径已补,addComment 路径这里补齐)
+    //    - RSID:给批注内首段 + 正文引用 run 标 Document 级单例 RSID
+    //    - people.xml:注册 author(Word @mention 提示)
+    stampAuthoringInfrastructure(document, comment, refRun, author);
     return comment;
   }
 
@@ -374,8 +417,8 @@ public final class CommentNodes {
    *
    * <ol>
    *   <li>comments.xml 加回复条目(同普通批注),给其内首段补 {@code w14:paraId}。
-   *   <li>正文锚点:在父批注 {@code commentRangeStart} 后插新 {@code commentRangeStart};在父批注引用 run 后插 新
-   *       {@code commentRangeEnd} + 引用 run(对照 docx skill {@code reply_to_comment})。
+   *   <li>正文锚点:在父批注 {@code commentRangeStart} 后插新 {@code commentRangeStart};在父批注引用 run 后插 新 {@code
+   *       commentRangeEnd} + 引用 run(对照 docx skill {@code reply_to_comment})。
    *   <li>检查父批注 paraId:无则补(否则 paraIdParent 链断)。
    *   <li>{@link CommentExtendedParts#appendEntries} 四 part 追加线程关系 + durableId/dateUtc。
    * </ol>
@@ -412,28 +455,33 @@ public final class CommentNodes {
     reply.setDate(now);
     reply.setInitials("");
     reply.createParagraph().createRun().setText(text);
-    // 给回复批注内首段补 w14:paraId(POI createParagraph 不写)
-    setParagraphParaId(reply.getParagraphs().get(0), replyParaId);
+    // 给回复批注内首段补 w14:paraId(POI createParagraph 不写)。收敛到 AuthoringInfra.setParaId(子任务 4)。
+    AuthoringInfra.setParaId(reply.getParagraphs().get(0), replyParaId);
 
     // 2) 正文锚点:父 commentRangeStart 后插新 commentRangeStart;父引用 run 后插新 commentRangeEnd + 引用 run
     String parentIdStr = commentIdOf(parent);
-    insertReplyAnchors(document, parentIdStr, replyId);
+    String rsid = AuthoringInfra.documentRsid(document); // Document 级单例 RSID(子任务 4)
+    insertReplyAnchors(document, parentIdStr, replyId, rsid);
 
     // 3) 四 part 追加线程关系(根批注也要在 commentsExtended 里有条目?——docx skill 只在 reply 时给子条目
     //    标 paraIdParent;父批注若无 commentsExtended 条目,Word 仍能按 paraIdParent 显示线程。故只追加回复条目)
     CommentExtendedParts.appendEntries(document, replyParaId, parentParaId, durableId, dateUtc);
 
+    // 4) 现代兼容基础设施(paraId 已在上方设过故幂等跳过;这里补 RSID 标到回复批注内首段 + people.xml 注册 author)。
+    //    正文引用 run 的 RSID 已在 insertReplyAnchors 内就地标(该 run 由 XmlCursor 创建,无 CTR 句柄)。
+    stampAuthoringInfrastructure(document, reply, null, author);
     return reply;
   }
 
   /**
-   * 在正文里插回复批注的锚点:父批注 {@code commentRangeStart(id=parentId)} 后插新 {@code commentRangeStart(id=replyId)};
-   * 父批注引用 run(含 {@code commentReference(id=parentId)}) 后插新 {@code commentRangeEnd(id=replyId)} + 引用 run。
+   * 在正文里插回复批注的锚点:父批注 {@code commentRangeStart(id=parentId)} 后插新 {@code
+   * commentRangeStart(id=replyId)}; 父批注引用 run(含 {@code commentReference(id=parentId)}) 后插新 {@code
+   * commentRangeEnd(id=replyId)} + 引用 run。
    *
    * <p>用 XmlCursor 扫 body 定位父锚点。父锚点位置参考 docx skill {@code reply_to_comment}:回复范围紧跟父范围、几乎重合。
    */
   private static void insertReplyAnchors(
-      XWPFDocument document, String parentIdStr, BigInteger replyId) {
+      XWPFDocument document, String parentIdStr, BigInteger replyId, String rsid) {
     CTBody body = document.getDocument().getBody();
     if (body == null) {
       return;
@@ -496,6 +544,8 @@ public final class CommentNodes {
           cur.beginElement(
               javax.xml.namespace.QName.valueOf(
                   "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r"));
+          // cursor 在新 r 的 START:标 Document 级 RSID(子任务 4,与 addComment 路径的引用 run 对称)
+          stampRsidOnCursor(cur, rsid);
           cur.toFirstChild(); // 进入 r 内
           cur.beginElement(
               javax.xml.namespace.QName.valueOf(
@@ -509,7 +559,7 @@ public final class CommentNodes {
           break;
         }
         cur.push();
-        descendForCommentReference(cur, parentIdStr, replyId, insertedEnd);
+        descendForCommentReference(cur, parentIdStr, replyId, insertedEnd, rsid);
         cur.pop();
       } while (cur.toNextSibling() && !insertedEnd[0]);
     } finally {
@@ -547,7 +597,7 @@ public final class CommentNodes {
 
   /** 深度优先在子树里找父 commentReference 所在 run,找到则在其后插新 commentRangeEnd + 引用 run。 */
   private static void descendForCommentReference(
-      XmlCursor cur, String parentIdStr, BigInteger replyId, boolean[] inserted) {
+      XmlCursor cur, String parentIdStr, BigInteger replyId, boolean[] inserted, String rsid) {
     if (inserted[0] || !cur.toFirstChild()) {
       return;
     }
@@ -566,6 +616,8 @@ public final class CommentNodes {
         cur.beginElement(
             javax.xml.namespace.QName.valueOf(
                 "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r"));
+        // cursor 在新 r 的 START:标 Document 级 RSID(子任务 4)
+        stampRsidOnCursor(cur, rsid);
         cur.toFirstChild();
         cur.beginElement(
             javax.xml.namespace.QName.valueOf(
@@ -579,7 +631,7 @@ public final class CommentNodes {
         return;
       }
       cur.push();
-      descendForCommentReference(cur, parentIdStr, replyId, inserted);
+      descendForCommentReference(cur, parentIdStr, replyId, inserted, rsid);
       cur.pop();
     } while (cur.toNextSibling() && !inserted[0]);
   }
@@ -606,6 +658,21 @@ public final class CommentNodes {
     }
   }
 
+  /**
+   * cursor 指向某元素 START 时,给该元素标 {@code w:rsidR} 属性(子任务 4:reply 路径的引用 run 标 RSID)。 防御式:设失败不抛。w 命名空间
+   * URI 与 {@link #readWAttribute} 同源。
+   */
+  private static void stampRsidOnCursor(XmlCursor cur, String rsid) {
+    try {
+      cur.insertAttributeWithValue(
+          javax.xml.namespace.QName.valueOf(
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rsidR"),
+          rsid);
+    } catch (RuntimeException e) {
+      // RSID 设失败不阻断(reply 锚点已建好,批注正文完整;prd R5 防御式)
+    }
+  }
+
   /** cursor 当前元素的 local name;cursor 在 END_TOKEN 时返回父元素的(回退一格)。 */
   private static String localOf(XmlCursor cur) {
     org.apache.xmlbeans.XmlCursor.TokenType t = cur.currentTokenType();
@@ -615,49 +682,35 @@ public final class CommentNodes {
     return "";
   }
 
-  /** 返回批注内首段的 w14:paraId;无返回 null。 */
+  /**
+   * 返回批注内首段的 w14:paraId;无则补一个并返回(否则 paraIdParent 链断)。
+   *
+   * <p>paraId 生成/设值收敛到 {@link AuthoringInfra}(子任务 4),不再用本类的私有副本。
+   */
   private static String ensureCommentParaId(XWPFComment c) {
     String existing = paraIdOfComment(c);
     if (existing != null) {
       return existing;
     }
     // 补一个
-    String newParaId = CommentExtendedParts.randomHexId();
+    String newParaId = AuthoringInfra.newParaId();
     if (!c.getParagraphs().isEmpty()) {
-      setParagraphParaId(c.getParagraphs().get(0), newParaId);
+      AuthoringInfra.setParaId(c.getParagraphs().get(0), newParaId);
     }
     return newParaId;
-  }
-
-  /** 给段落的 {@code <w:p>} 设 {@code w14:paraId} 属性。 */
-  private static void setParagraphParaId(
-      org.apache.poi.xwpf.usermodel.XWPFParagraph paragraph, String paraId) {
-    try {
-      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP ctp = paragraph.getCTP();
-      XmlCursor cur = ctp.newCursor();
-      try {
-        cur.setAttributeText(
-            javax.xml.namespace.QName.valueOf(
-                "{http://schemas.microsoft.com/office/word/2010/wordml}paraId"),
-            paraId);
-      } finally {
-        cur.dispose();
-      }
-    } catch (RuntimeException e) {
-      // 设失败不致命:paraIdParent 链可能断,但 comments.xml 正文仍完整
-    }
   }
 
   // ---------- 线程读侧解析(reply-threads) ----------
 
   /**
-   * 批注线程解析器:把 {@code commentsExtended.xml} 的 {@code w15:paraIdParent} 线索解析为 {@code parentId}(父批注的 OOXML
-   * {@code w:id}),供 {@link #produceSafe} 注入 {@link Comment}。
+   * 批注线程解析器:把 {@code commentsExtended.xml} 的 {@code w15:paraIdParent} 线索解析为 {@code parentId}(父批注的
+   * OOXML {@code w:id}),供 {@link #produceSafe} 注入 {@link Comment}。
    *
    * <p><b>解析链(两步 join)。</b>
    *
    * <ol>
-   *   <li>{@link CommentExtendedParts#parseParents} 解析 commentsExtended,得 {@code paraId → parentParaId}。
+   *   <li>{@link CommentExtendedParts#parseParents} 解析 commentsExtended,得 {@code paraId →
+   *       parentParaId}。
    *   <li>批注的 paraId(批注内首段的 {@code w14:paraId})经 paraId→parentParaId 得父 paraId,再反查「父 paraId → 父
    *       comment id」得 {@code parentId}。
    * </ol>

@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
 import com.non.docx.core.api.text.Paragraph;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
@@ -17,11 +16,11 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * 批注回复 + 线程(commentsExtended 四 part 自维护)的验收测试。
  *
- * <p>覆盖 {@link Comments#reply} 的回复创作、{@link Comment#parentId()}/{@link Comment#paraId()} 的线程读侧、
- * 四 part 的幂等/round-trip、参数校验、兼容性(无 commentsExtended 的旧文档)。
+ * <p>覆盖 {@link Comments#reply} 的回复创作、{@link Comment#parentId()}/{@link Comment#paraId()} 的线程读侧、 四
+ * part 的幂等/round-trip、参数校验、兼容性(无 commentsExtended 的旧文档)。
  *
- * <p>测试用 nondocx {@link Docx#open} round-trip + XmlBeans/unzip 结构断言(确定性,不依赖 Word)。AC4(Word 线程
- * 显示)留作 review gate 人工项。
+ * <p>测试用 nondocx {@link Docx#open} round-trip + XmlBeans/unzip 结构断言(确定性,不依赖 Word)。AC4(Word 线程 显示)留作
+ * review gate 人工项。
  */
 class CommentsReplyThreadsTest {
 
@@ -60,13 +59,11 @@ class CommentsReplyThreadsTest {
       // 至少 2 条:根 + 回复
       assertThat(list).hasSizeGreaterThanOrEqualTo(2);
       // 找到回复批注,验证 parentId 链完整
-      Comment reply =
-          list.stream().filter(c -> c.parentId().isPresent()).findFirst().orElseThrow();
+      Comment reply = list.stream().filter(c -> c.parentId().isPresent()).findFirst().orElseThrow();
       assertThat(reply.parentId()).hasValue(parentId);
       assertThat(reply.text()).isEqualTo("第一条回复");
       // 根批注 parentId 仍为 empty
-      Comment root =
-          list.stream().filter(c -> c.parentId().isEmpty()).findFirst().orElseThrow();
+      Comment root = list.stream().filter(c -> c.parentId().isEmpty()).findFirst().orElseThrow();
       assertThat(root.id()).isEqualTo(parentId);
     }
   }
@@ -98,8 +95,7 @@ class CommentsReplyThreadsTest {
       assertThat(countOccurrences(contentTypes, "commentsExtensible+xml")).isEqualTo(1);
       // rels 每个 relationship 只 1 个(Target 用相对路径,无前导斜杠)
       String rels =
-          new String(
-              zf.getInputStream(zf.getEntry("word/_rels/document.xml.rels")).readAllBytes());
+          new String(zf.getInputStream(zf.getEntry("word/_rels/document.xml.rels")).readAllBytes());
       assertThat(countOccurrences(rels, "commentsExtended.xml")).isEqualTo(1);
       assertThat(countOccurrences(rels, "commentsIds.xml")).isEqualTo(1);
       assertThat(countOccurrences(rels, "commentsExtensible.xml")).isEqualTo(1);
@@ -189,16 +185,8 @@ class CommentsReplyThreadsTest {
       List<Comment> list = doc.comments().list();
       // 找 A、B、C
       Comment a = findById(list, "0").orElseThrow();
-      Comment c =
-          list.stream()
-              .filter(x -> "回复B".equals(x.text()))
-              .findFirst()
-              .orElseThrow();
-      Comment b =
-          list.stream()
-              .filter(x -> "回复A".equals(x.text()))
-              .findFirst()
-              .orElseThrow();
+      Comment c = list.stream().filter(x -> "回复B".equals(x.text())).findFirst().orElseThrow();
+      Comment b = list.stream().filter(x -> "回复A".equals(x.text())).findFirst().orElseThrow();
       // 链:A←B←C
       assertThat(a.parentId()).isEmpty();
       assertThat(b.parentId()).hasValue(a.id());

@@ -81,10 +81,9 @@ POI 5.2.5 能力：
 - [ ] **R3.2** settings.xml 的 `<w:rsids>` 段注册该 RSID（幂等）。
 - [ ] **R3.3** 批注创作产出的 `<w:p>` 标 `w:rsidR` / `w:rsidRDefault`，`<w:r>` 标 `w:rsidR`。
 
-### R4. w16du:dateUtc（可选）
+### R4. w16du:dateUtc（已由 reply-threads 交付，本子任务跳过）
 
-- [ ] **R4.1** 若子任务 3 未做，本子任务给批注的 `w:ins`/`w:del`（若有）标 `w16du:dateUtc`（与 `w:date` 同值，UTC 时间戳）。
-- [ ] **R4.2** 确保根元素声明 `xmlns:w16du` 命名空间。
+- **已做**：reply-threads 子任务的 commentsExtensible.xml 已注入 `w16du:dateUtc`（N23）。本子任务不重复。
 
 ### R5. 一致性约束
 
@@ -107,9 +106,15 @@ POI 5.2.5 能力：
 - **presenceInfo 的真实 providerId/userId** —— 本子任务用占位 `providerId="None"`（docx skill 同款），不做真实身份服务集成。
 - **w16cex / w16cid 命名空间** —— 子任务 3 的 commentsExtensible.xml 已涉及，本子任务不重复。
 
-## Open Questions（design.md 收敛）
+## Open Questions（已收敛 → 见 design.md）
 
-- **Q1**：RSID 是 `Document` 级单例（一个文档一个 RSID），还是每次创作生成新 RSID？docx skill 用单例（`self.rsid`），倾向单例——Word 的 RSID 语义是「同一编辑会话」标记，一个文档一个 RSID 合理。
-- **Q2**：paraId 生成器是否需要全局唯一性检查（扫描已有 paraId 避免冲突）？docx skill 用纯随机不查重；8 位 hex 空间大，冲突概率极低，倾向不查重。
-- **Q3**：people.xml 的 author 去重——docx skill 用精确字符串匹配；nondocx 沿用，不做 normalize（如大小写/空格）。
-- **Q4**：基础设施注入是作为 `CommentNodes` 的内部步骤，还是抽成独立 `AuthoringInfra` 类？倾向抽独立类（`internal/poi/AuthoringInfra`），便于未来 tracked-changes 也复用。
+- **Q1 ✅ 已收敛**：RSID 用 **Document 级单例**——`Document` 构造时随机生成一个 8 位 hex RSID，所有批注创作路径产出的节点标该 RSID。理由（对照 docx skill `self.rsid`）：Word 的 RSID 语义是「同一编辑会话」标记，一个文档一个 RSID 合理；多 RSID 会让 Word「合并修订」难以对齐。
+- **Q2 ✅ 已收敛**：paraId **不查重**——纯随机 8 位 hex（`< 0x7FFFFFFF`）。理由（对照 docx skill `_generate_hex_id`）：8 位 hex 空间 ~2³¹，单文档批注数远低于此，冲突概率可忽略；查重需全扫文档所有 paraId，成本不值。
+- **Q3 ✅ 已收敛**：people.xml author 去重用**精确字符串匹配**（不做 normalize）。理由：author 是用户显式传入的标识，normalize（大小写/空格）会改变语义；docx skill 同款。
+- **Q4 ✅ 已收敛**：抽独立类 **`internal/poi/AuthoringInfra`**。理由：people.xml/RSID/paraId 是跨创作路径（addComment + reply）的共享基础设施，独立类便于复用 + 未来 tracked-changes 也可能接入；不污染 `CommentNodes` 的批注语义聚焦。
+
+## Scope 说明（前序子任务已交付的部分）
+
+- **w16du:dateUtc（R4）**：reply-threads 子任务**已做**——commentsExtensible.xml 的 commentExtensible 条目带 `w16du:dateUtc`（N23）。**本子任务跳过 R4**，不重复。
+- **w14:paraId（R2）**：reply-threads 子任务**部分做了**——reply 路径的 `setParagraphParaId` + 父批注 paraId 补全。但 **addComment 路径（子任务 2 的 `addWholeParagraphComment`）未补 paraId**。本子任务把 paraId 生成收敛到 `AuthoringInfra`，并补到 addComment 路径。
+- **people.xml / RSID（R1/R3）**：前序子任务**未做**，本子任务核心新工作。

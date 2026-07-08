@@ -28,25 +28,26 @@ import org.w3c.dom.NodeList;
 /**
  * 内部 API——恕不另行通知即可更改。
  *
- * <p>负责批注「线程 + 协作元数据」相关的<b>三个 part</b> 自维护——POI 5.2.5 对这三个 part <b>无 Java 类、无
- * API</b>,nondocx 用 OPC 层从 part 级别白手起家。本类是 nondocx 首个「自维护 OOXML part」模式的实现。
+ * <p>负责批注「线程 + 协作元数据」相关的<b>三个 part</b> 自维护——POI 5.2.5 对这三个 part <b>无 Java 类、无 API</b>,nondocx 用 OPC
+ * 层从 part 级别白手起家。本类是 nondocx 首个「自维护 OOXML part」模式的实现。
  *
  * <p><b>三个 part(探针验证见 {@code research/part-lifecycle.md})。</b>
  *
  * <ul>
- *   <li><b>commentsExtended.xml</b>({@code w15} 命名空间)——线程关系。每条批注一个 {@code <w15:commentEx>},
- *       含 {@code w15:paraId}(本批注 paraId)+ 可选 {@code w15:paraIdParent}(父批注 paraId,缺失=根批注)。
+ *   <li><b>commentsExtended.xml</b>({@code w15} 命名空间)——线程关系。每条批注一个 {@code <w15:commentEx>}, 含
+ *       {@code w15:paraId}(本批注 paraId)+ 可选 {@code w15:paraIdParent}(父批注 paraId,缺失=根批注)。
  *       <b>这是线程关系的唯一真源。</b>
- *   <li><b>commentsIds.xml</b>({@code w16cid})——durableId 映射。{@code <w16cid:commentId w16cid:paraId=..
- *       w16cid:durableId=../>}。协作元数据,与线程结构无关。
- *   <li><b>commentsExtensible.xml</b>({@code w16cex})——w16cex 扩展。{@code
- *       <w16cex:commentExtensible w16cex:durableId=../>},可带 {@code w16du:dateUtc}。协作元数据。
+ *   <li><b>commentsIds.xml</b>({@code w16cid})——durableId 映射。{@code <w16cid:commentId
+ *       w16cid:paraId=.. w16cid:durableId=../>}。协作元数据,与线程结构无关。
+ *   <li><b>commentsExtensible.xml</b>({@code w16cex})——w16cex 扩展。{@code <w16cex:commentExtensible
+ *       w16cex:durableId=../>},可带 {@code w16du:dateUtc}。协作元数据。
  * </ul>
  *
  * <p><b>OPC part 生命周期(探针 §2)。</b>
  *
  * <ol>
- *   <li>{@link OPCPackage#createPart} 创建 part;<b>[Content_Types].xml 的 Override 由 POI 自动注册</b>,无需手写。
+ *   <li>{@link OPCPackage#createPart} 创建 part;<b>[Content_Types].xml 的 Override 由 POI
+ *       自动注册</b>,无需手写。
  *   <li>{@link PackagePart#getOutputStream} 写内容;{@link PackagePart#getInputStream} 读回。
  *   <li>{@link PackagePart#addRelationship} 加 document.xml → part 的关系。
  *   <li><b>幂等坑</b>:重复 createPart(同名)抛 {@code PartAlreadyExistsException};本类先 {@link
@@ -89,8 +90,8 @@ final class CommentExtendedParts {
   // ---------- id / 时间生成 ----------
 
   /**
-   * 生成 8 位大写十六进制 id,范围 {@code [1, 0x7FFFFFFE]}(OOXML paraId/durableId 约束:必须 < 0x7FFFFFFF,
-   * 对照 docx skill {@code _generate_hex_id})。
+   * 生成 8 位大写十六进制 id,范围 {@code [1, 0x7FFFFFFE]}(OOXML paraId/durableId 约束:必须 < 0x7FFFFFFF, 对照 docx
+   * skill {@code _generate_hex_id})。
    */
   static String randomHexId() {
     // ThreadLocalRandom 省去 SecureRandom 开销;paraId/durableId 不要求密码学强度
@@ -119,11 +120,7 @@ final class CommentExtendedParts {
    * @param dateUtc ISO-8601 UTC 时间串(不能为 {@code null})
    */
   static void appendEntries(
-      XWPFDocument document,
-      String paraId,
-      String parentParaId,
-      String durableId,
-      String dateUtc) {
+      XWPFDocument document, String paraId, String parentParaId, String durableId, String dateUtc) {
     java.util.Objects.requireNonNull(document, "document");
     java.util.Objects.requireNonNull(paraId, "paraId");
     java.util.Objects.requireNonNull(durableId, "durableId");
@@ -203,7 +200,8 @@ final class CommentExtendedParts {
       String childLocal,
       java.util.function.Consumer<AttrBuilder> buildChild) {
     try {
-      PackagePart part = ensurePart(document, partName, contentType, relType, prefix, nsUri, rootLocal);
+      PackagePart part =
+          ensurePart(document, partName, contentType, relType, prefix, nsUri, rootLocal);
       Document dom = readOrCreateDom(part, prefix, nsUri, rootLocal);
       Element root = dom.getDocumentElement();
       AttrBuilder b = new AttrBuilder(dom);
@@ -220,18 +218,20 @@ final class CommentExtendedParts {
   }
 
   /**
-   * 幂等获取 part:存在返回,不存在则 createPart + 写空根元素 + addRelationship。 防御 {@code
-   * PartAlreadyExistsException}(探针 §2.3)。
+   * 幂等获取 part:存在返回,不存在则 createPart + addRelationship。 防御 {@code PartAlreadyExistsException}(探针
+   * §2.3)。
+   *
+   * <p><b>package-private</b> 供同包的 {@link AuthoringInfra} 复用(people.xml 自维护同型)。createPart 自动注册
+   * [Content_Types].xml 的 Override(N23);relationship 手动加。
    */
-  private static PackagePart ensurePart(
+  static PackagePart ensurePart(
       XWPFDocument document,
       String partName,
       String contentType,
       String relType,
       String prefix,
       String nsUri,
-      String rootLocal)
-      throws RuntimeException {
+      String rootLocal) {
     OPCPackage pkg = document.getPackage();
     try {
       PackagePartName name = PackagingURIHelper.createPartName(partName);
@@ -254,8 +254,7 @@ final class CommentExtendedParts {
   /**
    * 解析 commentsExtended.xml,返回 {@code paraId → parentParaId} 映射。
    *
-   * <p>根批注(无 paraIdParent)不出现在 Map 中(或值为 null)。part 不存在/解析失败时返回空 Map(防御式,
-   * 不抛)——畸形 part 不破坏读侧。
+   * <p>根批注(无 paraIdParent)不出现在 Map 中(或值为 null)。part 不存在/解析失败时返回空 Map(防御式, 不抛)——畸形 part 不破坏读侧。
    */
   static Map<String, String> parseParents(XWPFDocument document) {
     Map<String, String> parents = new HashMap<>();
@@ -269,7 +268,9 @@ final class CommentExtendedParts {
       NodeList nodes =
           (NodeList)
               xp.evaluate(
-                  "//*[local-name()='commentEx']", dom.getDocumentElement(), XPathConstants.NODESET);
+                  "//*[local-name()='commentEx']",
+                  dom.getDocumentElement(),
+                  XPathConstants.NODESET);
       for (int i = 0; i < nodes.getLength(); i++) {
         Element ex = (Element) nodes.item(i);
         String paraId = ex.getAttributeNS(NS_W15, "paraId");
@@ -302,7 +303,8 @@ final class CommentExtendedParts {
 
   // ---------- DOM 读写工具 ----------
 
-  private static Document readDom(PackagePart part) {
+  /** 读 part 为 DOM;package-private 供 {@link AuthoringInfra} 复用。 */
+  static Document readDom(PackagePart part) {
     try {
       DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
       f.setNamespaceAware(true);
@@ -322,8 +324,8 @@ final class CommentExtendedParts {
    * <p>写侧专用(appendEntry):ensurePart 不预写空根,故首次追加时 part 为空,本方法兜底建空根,供后续追加。 解析失败也建空根
    * (覆盖可能的畸形内容)而非抛——写侧不应被既有畸形内容阻塞。
    */
-  private static Document readOrCreateDom(
-      PackagePart part, String prefix, String nsUri, String rootLocal) {
+  /** package-private 供 {@link AuthoringInfra} 复用(people.xml 同型自维护)。 */
+  static Document readOrCreateDom(PackagePart part, String prefix, String nsUri, String rootLocal) {
     try {
       DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
       f.setNamespaceAware(true);
@@ -350,7 +352,8 @@ final class CommentExtendedParts {
     }
   }
 
-  private static void writeDom(PackagePart part, Document dom) {
+  /** package-private 供 {@link AuthoringInfra} 复用。 */
+  static void writeDom(PackagePart part, Document dom) {
     // POI 的 getOutputStream 在某些实现(MemoryPackagePart)下是「累加」而非「覆盖」语义——多次 writeDom 会让
     // part 内容拼出多份 XML 文档(实测见 research/part-lifecycle.md §7)。故写前先 clear,保证覆盖。
     if (part instanceof org.apache.poi.openxml4j.opc.internal.MemoryPackagePart) {
@@ -368,8 +371,8 @@ final class CommentExtendedParts {
     }
   }
 
-  /** 构造子元素属性的可变收集器(命名空间声明 + 带前缀属性)。 */
-  private static final class AttrBuilder {
+  /** 构造子元素属性的可变收集器(命名空间声明 + 带前缀属性)。package-private 供 {@link AuthoringInfra} 复用。 */
+  static final class AttrBuilder {
     final Document doc;
     final Map<String, String> namespaceDecls = new HashMap<>();
     final List<String[]> attrs = new ArrayList<>(); // [prefix, uri, local, value]
