@@ -43,6 +43,9 @@
              依赖 core + nonchain，与 core 平级。examples 依赖它来演示 Agent 集成。 -->
         <module>nondocx-toolkit</module>
         <module>nondocx-examples</module>
+        <!-- nondocx-demo — 前端 demo：Javalin web 层 + OnlyOffice 实时预览 + Agent 对话驱动 docx。
+             依赖 toolkit（传递 core + nonchain），与 core/toolkit/examples 平级。 -->
+        <module>nondocx-demo</module>
     </modules>
 
     <properties>
@@ -59,6 +62,7 @@
         <junit-jupiter.version>5.10.2</junit-jupiter.version>
         <assertj.version>3.26.3</assertj.version>
         <chain.version>0.8.4</chain.version>
+        <javalin.version>6.6.0</javalin.version>
 
         <!-- Plugin versions -->
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
@@ -127,6 +131,14 @@
                 <groupId>com.non</groupId>
                 <artifactId>chain</artifactId>
                 <version>${chain.version}</version>
+            </dependency>
+
+            <!-- Javalin 轻量 web 框架：仅 nondocx-demo 用（6.x 兼容 JDK 11）。
+                 提供 HTTP 路由 + SSE + 静态资源托管，桥接 nonchain Agent 到浏览器。 -->
+            <dependency>
+                <groupId>io.javalin</groupId>
+                <artifactId>javalin</artifactId>
+                <version>${javalin.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

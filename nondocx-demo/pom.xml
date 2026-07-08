@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.non</groupId>
+        <artifactId>nondocx-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>nondocx-demo</artifactId>
+    <packaging>jar</packaging>
+
+    <name>nondocx-demo</name>
+    <description>
+        前端 demo：Javalin web 层 + OnlyOffice 实时预览 + nonchain Agent 对话驱动 docx。
+        把 nondocx-toolkit 的 Agent 工具集包装成一个可交互的网页——左侧 OnlyOffice 预览，
+        右侧与 Agent 对话，Agent 每次 save_docx 后 OnlyOffice 自动刷新。
+    </description>
+
+    <dependencies>
+        <!-- nondocx-toolkit：提供 DocxToolkit 门面（七组 @ToolDef 工具）。
+             传递引入 nondocx-core + nonchain（Agent 框架）。 -->
+        <dependency>
+            <groupId>com.non</groupId>
+            <artifactId>nondocx-toolkit</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Javalin：轻量 web 框架（6.x 兼容 JDK 11）。
+             承载 HTTP 路由 + SSE（推送 Agent 事件流）+ 静态资源（托管前端 + docx 文件）。 -->
+        <dependency>
+            <groupId>io.javalin</groupId>
+            <artifactId>javalin</artifactId>
+        </dependency>
+
+        <!-- SLF4J simple 实现：Javalin 内部用 slf4j-api，需要一个运行时绑定把日志打到控制台。
+             demo 不接正式日志框架，simple 实现足够。 -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- exec-maven-plugin：让 mvn exec:java 能直接跑 DemoServer.main，启动 web 服务。
+                 demo 不打包成可执行 jar，开发期直接 main 启动最快。 -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.4.1</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

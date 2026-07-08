@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nondocx demo · Agent 对话编辑 docx</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- 左侧:OnlyOffice 预览 -->
+    <div class="pane doc-pane">
+      <div class="pane-header">
+        <span class="pane-title">📄 文档预览</span>
+        <span id="doc-name" class="doc-name">加载中…</span>
+      </div>
+      <div id="oo-placeholder" class="oo-placeholder">
+        正在加载文档预览…
+      </div>
+    </div>
+
+    <!-- 右侧:对话框 -->
+    <div class="pane chat-pane">
+      <div class="pane-header">
+        <span class="pane-title">💬 Agent 对话</span>
+        <div class="toolbar">
+          <button id="upload-btn" type="button" class="tool-btn" title="上传自己的 .docx 编辑">📤 上传文档</button>
+          <button id="reset-btn" type="button" class="tool-btn" title="恢复内置样例">↺ 重置样例</button>
+          <input id="file-input" type="file" accept=".docx" hidden />
+        </div>
+      </div>
+      <div id="messages" class="messages">
+        <div id="api-key-banner" class="banner" hidden>
+          ⚠️ 未配置 <code>DASHSCOPE_API_KEY</code>，OnlyOffice 预览可用，但 Agent 对话不可用。
+        </div>
+        <div class="msg system">
+          欢迎使用 nondocx demo。在下方输入框告诉 Agent 想怎么改文档，改完后 OnlyOffice 会自动刷新。
+        </div>
+      </div>
+      <form id="chat-form" class="chat-input">
+        <input
+          id="chat-input"
+          type="text"
+          placeholder="试试：把第一段第一句话改成「你好，demo」并保存"
+          autocomplete="off"
+        />
+        <button id="send-btn" type="submit">发送</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- OnlyOffice api.js:由 Document Server(localhost:9090)提供 -->
+  <script type="text/javascript" src="http://localhost:9090/web-apps/apps/api/documents/api.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
