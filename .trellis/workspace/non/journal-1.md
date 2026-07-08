@@ -917,3 +917,36 @@ AC move 配对 accept/reject ✅ / AC move 孤立抛异常 ✅ / AC property(rPr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Toolkit tool surface consolidation
+
+**Date**: 2026-07-08
+**Task**: Toolkit tool surface consolidation
+**Branch**: `feat/onlyoffice-demo`
+
+### Summary
+
+Consolidated the nondocx toolkit Agent tool surface into intention-oriented entrypoints, removed pre-production compatibility methods, updated docs/examples/tests, and verified with full mvn test.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48db5f2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

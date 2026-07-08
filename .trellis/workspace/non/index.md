@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 19
 - **Last Active**: 2026-07-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~919 | Active |
+| `journal-1.md` | ~952 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-07-08 | Toolkit tool surface consolidation | `48db5f2` | `feat/onlyoffice-demo` |
 | 18 | 2026-07-08 | OnlyOffice 实时预览的 nondocx Agent 对话 demo | `c2dd76b`, `679f002` | `feat/onlyoffice-demo` |
 | 17 | 2026-07-08 | comments 文档+spec 收尾 — 父任务 06-22-comments 全部完成 | `5bf0b86`, `c656828` | `main` |
 | 16 | 2026-07-08 | comments 基础设施: people.xml/paraId/RSID 自动注入 | `5bf0b86` | `main` |
