@@ -6,7 +6,7 @@
 > - 🔄 = 返回 `this`，可链式
 > - 👁 = 只读 / 不修改文档
 > - ✏️ = 破坏性写（改文档）
-> - 修订（tracked changes）相关方法只列名 + 指 [05 教程](./05-tracked-changes/README.md)，不在这里展开
+> - 修订（tracked changes）/ 批注（comments）相关方法只列名 + 指 [05](./05-tracked-changes/README.md) / [06 教程](./06-comments/README.md)，不在这里展开
 
 ---
 
@@ -47,6 +47,7 @@ Document fresh = Docx.create();
 | `ensureHeader()` / `ensureFooter()` ✏️🔄 | 不存在则**创建**（首次创建补 A4+1inch 兜底） |
 | `toc()` 👁 | 首个目录，无则 null（详见 [09 FAQ](./09-faq-and-boundaries.md#toc)） |
 | `trackedChanges()` 👁 | 修订能力门面（详见 [05 教程](./05-tracked-changes/README.md)） |
+| `comments()` 👁 | 批注能力门面（详见 [06 教程](./06-comments/README.md)） |
 | `save(File/Path/OutputStream)` ✏️ | 保存。`OutputStream` 重载**不关流** |
 | `close()` ✏️ | 释放 POI 资源（try-with-resources 推荐） |
 | `raw()` | 逃生舱 → `XWPFDocument` |
@@ -88,6 +89,12 @@ Document fresh = Docx.create();
 | `addInsertion(author, text)` ✏️🔄 | [05/04](./05-tracked-changes/04-authoring.md) |
 | `addDeletion(author, targetRun)` ✏️🔄 | 同上 |
 | `moveRunsFrom(author, sourceParagraph, runs)` ✏️ | 同上 |
+
+### 批注（comments）创作
+
+| 方法 | 教程位置 |
+|---|---|
+| `addComment(author, text)` ✏️ | [06/03](./06-comments/03-authoring.md)（整段范围批注，返回 `Comment`） |
 
 > 长度单位：twips（`indent`、Section 的 `margins`）。1 inch = 1440 twips。字号 `fontSize` 用磅。
 
@@ -235,6 +242,22 @@ Document fresh = Docx.create();
 | `acceptAll/rejectAll`、`acceptByAuthor/rejectByAuthor`、`accept(id)/reject(id)` | 文本/移动类 accept/reject |
 | `acceptProperty(id)` / `rejectProperty(id)` | 属性类（rPrChange）accept/reject |
 | `acceptCell(id)` / `rejectCell(id)` | 单元格类（cellIns/cellDel）accept/reject |
+
+---
+
+## `Comments` / `Comment`（批注）
+
+入口 `doc.comments()`（只读门面）+ `paragraph.addComment(...)`（创作）。完整 API 与语义见 [06 教程](./06-comments/README.md)，下面只给入口速记。
+
+| 方法 | 类别 |
+|---|---|
+| `doc.comments().list()` / `get(id)` 👁 | 只读枚举（body 顺序）/ 按 id 命中 |
+| `doc.comments().reply(parentId, author, text)` ✏️ | 回复（形成线程），返回 `Comment` |
+| `paragraph.addComment(author, text)` ✏️ | 创作（整段范围），返回 `Comment` |
+| `comment.id()` / `author()` / `text()` 👁 | 基础元数据（id 跨会话稳定） |
+| `comment.date()` / `initials()` 👁 | 时间 / 缩写（可能 null / 空串） |
+| `comment.parentId()` 👁 | `Optional<String>`，回复批注指向父 id |
+| `comment.paraId()` 👁 | 线程 key（可能 null） |
 
 ---
 

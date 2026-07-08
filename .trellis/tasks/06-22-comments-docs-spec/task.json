@@ -3,7 +3,7 @@
   "name": "comments-docs-spec",
   "title": "comments 文档+spec",
   "description": "教学文档(对照 docs/05-tracked-changes/ 四篇结构写 docs/06-comments/)+ spec 更新 + API 速查补全 + 最终收尾。对照 tracked-changes-docs-spec 子任务。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

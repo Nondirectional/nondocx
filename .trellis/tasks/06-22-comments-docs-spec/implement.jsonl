@@ -1,1 +1,4 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "N18-N24 是 comments 全部实现的技术真源(read/authoring/reply-threads/infrastructure),四篇文档的教学素材来源"}
+{"file": "docs/05-tracked-changes/README.md", "reason": "06-comments 的结构模板:章节索引/端到端示例/契约关系表/可运行示例的组织方式"}
+{"file": "docs/05-tracked-changes/01-concepts.md", "reason": "01-concepts 的写作模板:三层递进(OOXML→POI→nondocx)的展开方式、与四大类结构类比的写法"}
+{"file": "docs/03-api-reference.md", "reason": "API 速查补全的位置参照:TrackedChanges/TrackedChange 段落(227行)作 Comments/Comment 段落模板"}

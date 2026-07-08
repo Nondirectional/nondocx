@@ -16,6 +16,7 @@
 | 03 | [API 速查](./03-api-reference.md) | 按类型分组的常用方法表 + 代码片段 |
 | 04 | [往返保真与内容相等性](./04-round-trip-and-equality.md) | 为什么 save→reopen 仍相等，活对象能不能当 HashMap 键 |
 | 05 | [修订（tracked changes）教程](./05-tracked-changes/README.md) | 从 OOXML 模型到读写、accept/reject、创作的完整教程 |
+| 专题 | [批注（comments）教程](./06-comments/README.md) | 批注读取、创作、回复线程、现代兼容基础设施 —— 与 05 对称的完整教程 |
 | 06 | [构建器轨道](./06-builder-track.md) | `DocumentBuilder` 声明式构建 vs 活对象编辑 |
 | 07 | [nondocx-toolkit](./07-toolkit.md) | 把 docx 能力暴露给 LLM Agent 的六组工具 |
 | 08 | [异常与 `raw()` 领地](./08-exceptions-and-raw.md) | `DocxException` 层级、POI 异常何处不包装 |
@@ -31,6 +32,10 @@
 **🔧 路线 B —— 我要做修订（tracked changes）**
 直接进 `05-tracked-changes/`，四篇按「概念 → 读 → accept/reject → 创作」顺序读。
 建议先扫一眼 `02-architecture` 的三层递进范式，TC 教程全程沿用。
+
+**💬 路线 B' —— 我要做批注（comments）**
+直接进 `06-comments/`，四篇按「概念 → 读 → 创作 → 基础设施」顺序读。与路线 B 对称，
+批注没有 accept/reject（不是修订），故创作篇把单条创作与回复线程合并。
 
 **🤖 路线 C —— 我要接 Agent**
 `07-toolkit` 看工具集设计，`nondocx-examples/agent/` 是可运行示例，

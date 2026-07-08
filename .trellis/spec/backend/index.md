@@ -83,7 +83,13 @@ Deferred / out-of-MVP — do not spec prematurely:
   空 pgNumType 走显式清理，其余 tab/装饰线/characterSpacing/titlePage 为 user-guidance。
   新增渲染相关 API 前必查此 spec。
 - Document metadata, footnotes/endnotes (PRD Out of Scope)
-- Tracked changes, fields, OLE, OMML math, watermarks, text boxes, shapes (raw-only via `raw()`)
+- **Tracked changes** — **已落地**（`api/track/*`，见 [poi-bridge.md N12–N17](./poi-bridge.md)）。
+  覆盖文本/移动/属性(rPrChange)/单元格(cellIns/cellDel/cellMerge 只读)的读 + accept/reject + 创作；
+  pPrChange 等更高层属性类（CT 类型缺失）仍 raw-only。
+- **Comments** — **已落地**（`api/comment/*`，见 [poi-bridge.md N18–N24](./poi-bridge.md)）。
+  覆盖只读枚举/查询、整段范围批注创作、回复线程（commentsExtended 四 part 自维护）、
+  现代兼容基础设施（people.xml/paraId/RSID）；resolve/done 状态、删除、跨段范围留 future。
+- fields, OLE, OMML math, watermarks, text boxes, shapes (raw-only via `raw()`)
 - JPMS `module-info.java` (pre-1.0)
 - Logging framework (introduce spec when adopted)
 - Checkstyle / SpotBugs / Error Prone (after library stabilizes)
