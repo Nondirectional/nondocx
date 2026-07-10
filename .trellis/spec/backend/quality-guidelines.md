@@ -150,7 +150,7 @@ run.text("hi").bold().fontSize(12);
 | Catch + return null | Swallows errors; throw `Docx*Exception` instead |
 | `setXxx` on live objects | Use fluent mutator returning `this` |
 | JPMS `module-info.java` | Deferred to pre-1.0; POI JPMS friction |
-| Logging framework in MVP | Carries info via exceptions; PRD defers logging |
+| Logging framework in `nondocx-core` (library) | Carries info via exceptions; demo 层可用日志，见 [logging.md](./logging.md) |
 | Mockito / mocking POI in tests | Round-trip + cross-reference instead |
 
 ---

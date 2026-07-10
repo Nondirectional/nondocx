@@ -288,6 +288,28 @@ When a CLI auto-detects a mode by probing a remote resource (e.g., checking if `
 
 ---
 
+## Toolkit → Orchestration Coverage Gap
+
+When a toolkit method exists (e.g., `TableTools.setTableBorders`) but the orchestration
+executor doesn't wire it, the LLM has no way to reach it. Every new operation kind must be
+covered in **four** places simultaneously.
+
+### Checklist: After Adding A New Operation Kind
+
+- [ ] Added `case "kind":` to the executor's `execute()` switch
+- [ ] Documented the operation + payload fields in `LlmDocxExpert.buildPrompt()`
+- [ ] Added a human-readable case to `OperationDescriptor.describe()`
+- [ ] Added a static `Operation` constructor on the executor class
+
+See [orchestration-layer.md → Four-Point Coverage Rule](../backend/orchestration-layer.md) for
+the full contract, error matrix, and wrong-vs-correct examples.
+
+**Real-world example**: `set_table_borders` existed in `TableTools` but was never wired into
+`TableExecutor`. When the user said "去掉表格边框", the LLM hallucinated `update_table_style`
+(non-existent kind) and commit FAILED. Fix: added all four coverage points.
+
+---
+
 ## When to Create Flow Documentation
 
 Create detailed flow docs when:

@@ -11,12 +11,10 @@ no frontend — it is a docx read/write library (`com.non:nondocx-core`). These 
 how the library is structured, how it bridges POI, how it reports errors, and what it considers
 quality.
 
-> Note: the default Trellis bootstrap ships `database-guidelines.md` / `logging-guidelines.md`
-> and a `frontend/` directory. This project deleted all three:
+> Note: the default Trellis bootstrap ships `database-guidelines.md` and a `frontend/` directory.
+> This project deleted both:
 > - **No database** — it's a library.
-> - **No logging framework in MVP** — diagnostic info travels via exceptions
->   (see `design.md` §9). When a logging layer is introduced later, add a spec then.
-> - **No frontend** — not a web project.
+> - **No frontend** — not a web project (nondocx-demo 是 demo 应用，不单列 frontend spec）。
 
 ---
 
@@ -27,8 +25,10 @@ quality.
 | [Directory Structure](./directory-structure.md) | Maven modules + `com.non.docx.core` package layout | Done |
 | [POI Bridge](./poi-bridge.md) | How `api/` types wrap `XWPF*` (holding wrapper, `raw()`, exception wrapping) | Done |
 | [Error Handling](./error-handling.md) | All-unchecked `DocxException` hierarchy, POI wrapping rules | Done |
+| [Logging](./logging.md) | 库不日志走异常；demo 用 SLF4J；POI 5.x log4j-api 桥接陷阱 | Done |
 | [Quality Guidelines](./quality-guidelines.md) | No Lombok, content-equal semantics, testing, forbidden patterns | Done |
 | [Renderer Compatibility](./renderer-compatibility.md) | WPS/Word 双引擎兼容性陷阱清单（shading/列宽/pgNumType/...），每条带稳定锚点 | Done |
+| [Orchestration Layer](./orchestration-layer.md) | LLM operation → toolkit 桥接：四点覆盖规则、payload 字段容错、快照双索引 | Done |
 
 Also relevant: [../guides/](../guides/) — general thinking guides (code reuse, cross-layer).
 
@@ -91,7 +91,8 @@ Deferred / out-of-MVP — do not spec prematurely:
   现代兼容基础设施（people.xml/paraId/RSID）；resolve/done 状态、删除、跨段范围留 future。
 - fields, OLE, OMML math, watermarks, text boxes, shapes (raw-only via `raw()`)
 - JPMS `module-info.java` (pre-1.0)
-- Logging framework (introduce spec when adopted)
+- **Logging in library core** — 库本身仍不引入日志（诊断走异常）；demo 层日志规范见
+  [logging.md](./logging.md)。若 core 未来需要内部诊断日志，届时新增 spec。
 - Checkstyle / SpotBugs / Error Prone (after library stabilizes)
 
 When any of these lands, add a spec entry and link it here.
