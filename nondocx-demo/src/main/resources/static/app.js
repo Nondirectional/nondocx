@@ -181,45 +181,124 @@ function handleSseFrame(frame, assistantState) {
     return;
   }
   switch (data.type) {
-    case 'text':
-      // 追加到当前助手气泡(打字机效果)；若前一个事件是工具调用，则新建气泡。
-      appendAssistantText(assistantState, data.delta || '');
-      scrollToBottom();
+    case 'step': {
+      // 分阶段进度卡：按 turnId 创建/更新卡片
+      handleStepFrame(data);
       break;
-    case 'tool_start':
-      // 工具调用:在助手气泡后插一条灰条
-      const tcStart = document.createElement('div');
-      tcStart.className = 'tool-call';
-      tcStart.textContent = '🔧 ' + data.name + '(' + (data.arguments || '') + ')';
-      tcStart.dataset.toolName = data.name;
-      messagesEl.appendChild(tcStart);
-      assistantState.currentTextEl = null;
-      scrollToBottom();
-      break;
-    case 'tool_end':
-      // 找到对应的 tool_start 条,补上结果
-      const tcEnd = [...messagesEl.querySelectorAll('.tool-call')].pop();
-      if (tcEnd && tcEnd.dataset.toolName === data.name) {
-        const result = document.createElement('div');
-        result.className = 'tool-result';
-        result.textContent = '→ ' + (data.result || '');
-        tcEnd.appendChild(result);
-      }
-      break;
-    case 'doc_changed':
-      // Phase 5:Agent save_docx 成功,用新 key 刷新 OnlyOffice
-      console.log('[刷新] save_docx 成功,新 key:', data.key);
+    }
+    case 'doc_changed': {
+      // save 成功，用新 key 刷新 OnlyOffice
+      console.log('[刷新] save 成功,新 key:', data.key);
       refreshFromBackend(data.key);
       break;
-    case 'error':
+    }
+    case 'error': {
       appendMsg('error', data.message || '未知错误');
       break;
-    case 'done':
+    }
+    case 'done': {
       break;
+    }
   }
 }
 
 // ============ DOM 辅助 ============
+
+/**
+ * 处理 step 帧：按 turnId 创建或更新进度卡。
+ *
+ * <p>每个 step 帧携带 turnId（关联同一张卡）、phase（analyze/plan/commit）、status、title。
+ * 前端用 turnId 缓存当前卡片引用，收到新 step 时追加或更新对应行。
+ *
+ * <p>进度卡结构：
+ * <pre>
+ * ┌ progress-card ─────────────────────┐
+ * │ ✅ 分析文档结构                     │
+ * │    4 个段落，1 个表格                │
+ * │ ✅ 生成编辑计划                      │
+ * │    └ 插入 H1 标题「项目周报」，居中    │
+ * │ ⏳ 执行中...                        │
+ * └────────────────────────────────────┘
+ * </pre>
+ */
+
+// turnId → 卡片 DOM 元素的缓存
+const progressCards = {};
+
+function handleStepFrame(data) {
+  const turnId = data.turnId;
+  // 首次收到该 turnId 的帧：创建新卡片
+  if (!progressCards[turnId]) {
+    const card = document.createElement('div');
+    card.className = 'progress-card';
+    messagesEl.appendChild(card);
+    progressCards[turnId] = card;
+  }
+  const card = progressCards[turnId];
+
+  // 把上一行的 active 改为 done（视觉收尾）
+  const prevActive = card.querySelector('.step-row.active');
+  if (prevActive) {
+    prevActive.classList.remove('active');
+    prevActive.classList.add('done');
+    const icon = prevActive.querySelector('.step-icon');
+    if (icon) icon.textContent = '✅';
+  }
+
+  // 创建当前阶段行
+  const row = document.createElement('div');
+  const failed = data.status === 'failed';
+  row.className = 'step-row ' + (failed ? 'failed' : 'done');
+  row.dataset.phase = data.phase;
+
+  // 图标
+  const icon = document.createElement('span');
+  icon.className = 'step-icon';
+  icon.textContent = failed ? '❌' : '✅';
+  row.appendChild(icon);
+
+  // 标题
+  const title = document.createElement('span');
+  title.className = 'step-title';
+  title.textContent = failed ? data.title : data.title;
+  row.appendChild(title);
+
+  // detail（分析摘要 / 提交结果）
+  if (data.detail) {
+    const detail = document.createElement('div');
+    detail.className = 'step-detail';
+    detail.textContent = data.detail;
+    row.appendChild(detail);
+  }
+
+  // 操作清单（计划阶段）
+  if (data.operations && data.operations.length > 0) {
+    const opsEl = document.createElement('div');
+    opsEl.className = 'step-ops';
+    for (const op of data.operations) {
+      const opEl = document.createElement('div');
+      opEl.className = 'step-op';
+      const opIcon = op.status === 'approved' ? '▸' :
+                     op.status === 'warned' ? '⚠' :
+                     op.status === 'blocked' ? '✗' :
+                     op.status === 'skipped' ? '⊘' : '▸';
+      opEl.textContent = opIcon + ' ' + op.description;
+      opsEl.appendChild(opEl);
+    }
+    row.appendChild(opsEl);
+  }
+
+  // 失败原因
+  if (failed && data.error) {
+    const errEl = document.createElement('div');
+    errEl.className = 'step-error';
+    errEl.textContent = data.error;
+    row.appendChild(errEl);
+  }
+
+  card.appendChild(row);
+  scrollToBottom();
+}
 
 function appendAssistantText(state, delta) {
   if (!delta) return;

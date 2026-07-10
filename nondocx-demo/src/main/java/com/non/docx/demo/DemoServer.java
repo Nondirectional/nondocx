@@ -3,6 +3,8 @@ package com.non.docx.demo;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import java.nio.file.Path;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * nondocx demo 主入口:启动 Javalin web 服务,装配 OnlyOffice 预览 + (后续)Agent 对话。
@@ -22,6 +24,8 @@ import java.nio.file.Path;
  * OO Server 访问的</b>,不是给浏览器;OO 在 Docker 里,要用 {@code host.docker.internal:8080} 才能拉到宿主机。
  */
 public final class DemoServer {
+
+  private static final Logger log = LoggerFactory.getLogger(DemoServer.class);
 
   /** 后端监听端口。 */
   private static final int PORT = 8080;
@@ -48,7 +52,7 @@ public final class DemoServer {
 
   public static void main(String[] args) throws Exception {
     // 0) DashScope API key(可选:缺失则 Agent 不可用,但预览仍正常)
-//    String apiKey = System.getenv("DASHSCOPE_API_KEY");
+    //    String apiKey = System.getenv("DASHSCOPE_API_KEY");
     String apiKey = "REDACTED_DASHSCOPE_API_KEY";
 
     // 1) 落地样例文档到工作目录
@@ -70,20 +74,22 @@ public final class DemoServer {
                     staticFiles.hostedPath = "/";
                     staticFiles.location = io.javalin.http.staticfiles.Location.CLASSPATH;
                     staticFiles.directory = "/static";
+                    // 开发期禁用静态资源缓存，避免改了 app.js 浏览器仍加载旧版
+                    staticFiles.headers =
+                        java.util.Map.of("Cache-Control", "no-cache, no-store, must-revalidate");
                   });
               // 关掉默认的启动 banner,自己打一条
               config.showJavalinBanner = false;
             });
     app.start(PORT);
 
-    System.out.println("========================================");
-    System.out.println("nondocx demo 已启动");
-    System.out.println("  浏览器:        http://localhost:" + PORT);
-    System.out.println("  当前文档:      " + session.currentFile().toAbsolutePath());
-    System.out.println("  OnlyOffice key: " + session.currentKey());
-    System.out.println(
-        "  Agent:         " + (agentBridge.enabled() ? "可用" : "未配置 DASHSCOPE_API_KEY,对话禁用"));
-    System.out.println("========================================");
+    log.info("========================================");
+    log.info("nondocx demo 已启动");
+    log.info("  浏览器:        http://localhost:{}", PORT);
+    log.info("  当前文档:      {}", session.currentFile().toAbsolutePath());
+    log.info("  OnlyOffice key: {}", session.currentKey());
+    log.info("  Agent:         {}", agentBridge.enabled() ? "可用" : "未配置 DASHSCOPE_API_KEY,对话禁用");
+    log.info("========================================");
 
     // 4) 路由
     registerDocRoutes(app, session, agentBridge);
@@ -111,6 +117,7 @@ public final class DemoServer {
     app.get(
         "/api/doc/file",
         ctx -> {
+          log.debug("OO 拉取 docx (key={})", session.currentKey());
           ctx.contentType("application/octet-stream");
           ctx.header("Content-Disposition", "attachment; filename=\"current.docx\"");
           ctx.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
@@ -137,12 +144,14 @@ public final class DemoServer {
           String body = ctx.body();
           String message = extractMessage(body);
           if (message == null || message.isBlank()) {
+            log.warn("收到空消息,返回 400");
             ctx.status(400);
             ctx.json(java.util.Map.of("ok", false, "error", "消息不能为空"));
             return;
           }
           // 切成 SSE 流
           setupSseResponse(ctx);
+          log.info("收到对话: {}", message);
           // 串行化:Agent 非线程安全
           synchronized (CHAT_LOCK) {
             agentBridge.runStream(message, ctx, session);
@@ -185,8 +194,10 @@ public final class DemoServer {
             session.replaceWith(sampleBytes, SampleDocSeeder.SAMPLE_FILENAME);
             agentBridge.clearMemory();
             String newKey = session.bumpKey();
+            log.info("已重置为样例文档 (newKey={})", newKey);
             ctx.json(java.util.Map.of("ok", true, "key", newKey, "filename", session.filename()));
           } catch (RuntimeException e) {
+            log.error("重置失败", e);
             ctx.status(500);
             ctx.json(java.util.Map.of("ok", false, "error", "重置失败:" + e.getMessage()));
           }
@@ -226,8 +237,9 @@ public final class DemoServer {
             agentBridge.clearMemory();
             String newKey = session.bumpKey();
             ctx.json(java.util.Map.of("ok", true, "key", newKey, "filename", filename));
-            System.out.println("已上传文档:" + filename + "(" + bytes.length + " 字节)");
+            log.info("已上传文档: {} ({} 字节, newKey={})", filename, bytes.length, newKey);
           } catch (RuntimeException e) {
+            log.error("上传保存失败: {}", filename, e);
             ctx.status(500);
             ctx.json(java.util.Map.of("ok", false, "error", "保存失败:" + e.getMessage()));
           }
@@ -296,11 +308,16 @@ public final class DemoServer {
     return java.util.Map.of(
         "document",
         java.util.Map.of(
-            "fileType", "docx",
-            "key", key,
-            "title", session.filename(),
-            "url", EXTERNAL_BASE + "/api/doc/file?key=" + key,
-            "permissions", java.util.Map.of("edit", false, "download", true)),
+            "fileType",
+            "docx",
+            "key",
+            key,
+            "title",
+            session.filename(),
+            "url",
+            EXTERNAL_BASE + "/api/doc/file?key=" + key,
+            "permissions",
+            java.util.Map.of("edit", false, "download", true)),
         "documentType",
         "word",
         "editorConfig",

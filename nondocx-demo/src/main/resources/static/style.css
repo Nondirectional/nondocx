@@ -186,6 +186,97 @@ html, body {
   margin-top: 2px;
 }
 
+/* ============ 进度卡（编排分步） ============ */
+
+.progress-card {
+  align-self: flex-start;
+  max-width: 88%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #f7f8fa;
+  border: 1px solid #e5e6eb;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  line-height: 1.6;
+}
+
+.step-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.step-row.done .step-icon {
+  color: #00b42a;
+}
+
+.step-row.failed .step-icon {
+  color: #f53f3f;
+}
+
+.step-row.active .step-icon {
+  color: #3370ff;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+.step-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  line-height: 1.6;
+}
+
+.step-title {
+  font-weight: 500;
+  color: #1f2329;
+}
+
+.step-row.failed .step-title {
+  color: #f53f3f;
+}
+
+.step-detail {
+  width: 100%;
+  margin-left: 22px;
+  font-size: 12px;
+  color: #86909c;
+}
+
+.step-ops {
+  width: 100%;
+  margin-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.step-op {
+  font-size: 12px;
+  color: #4e5969;
+  padding: 2px 0;
+}
+
+.step-op::before {
+  content: '';
+}
+
+.step-error {
+  width: 100%;
+  margin-left: 22px;
+  font-size: 12px;
+  color: #f53f3f;
+  background: #ffece8;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ============ 输入区 ============ */
 .chat-input {
   display: flex;

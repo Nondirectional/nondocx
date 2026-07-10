@@ -17,8 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <ul>
  *   <li><b>磁盘文件</b>{@code current.docx} —— OnlyOffice 拉取的物理文件,也是 Agent {@code open_docx} 的路径。
  *       本类持有它的 {@link Path}。
- *   <li><b>OnlyOffice 缓存 key</b> —— OO 按 key 缓存转换结果;换 key = 强制 OO 重新拉文件。 本类用「自增版本 + 文件内容指纹」
- *       管理。
+ *   <li><b>OnlyOffice 缓存 key</b> —— OO 按 key 缓存转换结果;换 key = 强制 OO 重新拉文件。 本类用「自增版本 + 文件内容指纹」 管理。
  *   <li><b>文档显示名</b> —— 样例叫「nondocx 样例.docx」,上传时记录用户文件名。前端展示用。
  * </ul>
  *
