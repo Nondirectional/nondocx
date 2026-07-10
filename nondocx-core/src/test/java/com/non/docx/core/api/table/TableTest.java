@@ -7,10 +7,10 @@ import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
 import com.non.docx.core.api.text.Paragraph;
 import java.nio.file.Path;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.STMerge;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STMerge;
 
 /** 验证 {@link Table}、{@link Row} 和 {@link Cell} 的表格往返、 活动行/单元格变更、越界处理和内容相等性。 */
 class TableTest {

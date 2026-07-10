@@ -160,12 +160,7 @@ public final class Table implements BodyElement {
     int rowCount = rows().size();
     if (fromRowIndex < 0 || toRowIndex >= rowCount || fromRowIndex >= toRowIndex) {
       throw new IndexOutOfBoundsException(
-          "纵向合并范围无效：表格有 "
-              + rowCount
-              + " 行，范围 "
-              + fromRowIndex
-              + ".."
-              + toRowIndex);
+          "纵向合并范围无效：表格有 " + rowCount + " 行，范围 " + fromRowIndex + ".." + toRowIndex);
     }
     for (int r = fromRowIndex; r <= toRowIndex; r++) {
       Row row = row(r);
