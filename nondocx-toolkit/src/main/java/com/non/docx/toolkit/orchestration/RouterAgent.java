@@ -9,6 +9,7 @@ import com.non.docx.toolkit.orchestration.review.ReviewResult;
 import com.non.docx.toolkit.orchestration.review.ReviewStatus;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
 import com.non.docx.toolkit.orchestration.snapshot.SnapshotBuilder;
+import com.non.docx.toolkit.ref.ElementRef;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -195,13 +196,13 @@ public final class RouterAgent {
   MergedPlan applyReview(MergedPlan merged) {
     // 检测粗粒度冲突候选（不同 operation 同 target 但不同 kind——可能需要第二层判定）
     // 第一版：对同 target 的多个非去重 operation 标记 POTENTIAL_CONFLICT（WARNED）
-    Map<String, List<Operation>> byTarget = new HashMap<>();
+    Map<ElementRef, List<Operation>> byTarget = new HashMap<>();
     for (Operation op : merged.operations()) {
       if (op.reviewStatus() == ReviewStatus.SKIPPED) continue;
       byTarget.computeIfAbsent(op.conflictKey().targetRef(), k -> new ArrayList<>()).add(op);
     }
-    Set<String> conflictTargets = new HashSet<>();
-    for (Map.Entry<String, List<Operation>> e : byTarget.entrySet()) {
+    Set<ElementRef> conflictTargets = new HashSet<>();
+    for (Map.Entry<ElementRef, List<Operation>> e : byTarget.entrySet()) {
       if (e.getValue().size() > 1) {
         // 同 target 多 operation（且未被去重，说明 kind 不同）——候选冲突
         conflictTargets.add(e.getKey());
@@ -220,7 +221,7 @@ public final class RouterAgent {
             op.withReview(
                 ReviewResult.of(
                     ReviewReason.POTENTIAL_CONFLICT,
-                    "同目标 " + op.conflictKey().targetRef() + " 存在多个操作，需人工确认")));
+                    "同目标 " + op.conflictKey().targetRef().canonical() + " 存在多个操作，需人工确认")));
       } else {
         reviewed.add(op);
       }

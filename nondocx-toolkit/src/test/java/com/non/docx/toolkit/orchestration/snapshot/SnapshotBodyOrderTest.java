@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
 import com.non.docx.toolkit.orchestration.DocumentSnapshot;
+import com.non.docx.toolkit.ref.ElementKind;
+import com.non.docx.toolkit.ref.RefStability;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,12 +39,17 @@ class SnapshotBodyOrderTest {
     assertThat(snap.tables()).hasSize(1);
     assertThat(snap.tables().get(0).index()).isEqualTo(0);
     assertThat(snap.tables().get(0).bodyIndex()).isEqualTo(0);
+    assertThat(snap.tables().get(0).ref().kind()).isEqualTo(ElementKind.TABLE);
+    assertThat(snap.tables().get(0).ref().stability()).isEqualTo(RefStability.SESSION);
+    assertThat(snap.tables().get(0).ref().documentRef().documentKey()).isEqualTo("test-conv");
 
     // 段落A: index=0（第一个段落），bodyIndex=1（在表格之后）
     assertThat(snap.paragraphs()).hasSize(2);
     assertThat(snap.paragraphs().get(0).index()).isEqualTo(0);
     assertThat(snap.paragraphs().get(0).bodyIndex()).isEqualTo(1);
     assertThat(snap.paragraphs().get(0).text()).isEqualTo("段落A");
+    assertThat(snap.paragraphs().get(0).ref().kind()).isEqualTo(ElementKind.PARAGRAPH);
+    assertThat(snap.paragraphs().get(0).ref().documentRef().sessionGeneration()).isEqualTo(1L);
 
     // 段落B: index=1（第二个段落），bodyIndex=2
     assertThat(snap.paragraphs().get(1).index()).isEqualTo(1);

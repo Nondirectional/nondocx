@@ -14,6 +14,7 @@ import com.non.docx.core.api.table.Row;
 import com.non.docx.core.api.table.Table;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
+import com.non.docx.toolkit.ref.ReferenceContext;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -99,6 +100,14 @@ public final class QualityCheckTools extends ToolkitToolContext {
   /** 接收门面注入的共享会话状态（与 SessionTools 共享同一份 sessions/seq）。 */
   QualityCheckTools(Map<String, Document> sharedSessions, AtomicInteger sharedSeq) {
     super(sharedSessions, sharedSeq);
+  }
+
+  QualityCheckTools(
+      Map<String, Document> sharedSessions,
+      AtomicInteger sharedSeq,
+      ReferenceContext sharedReferences,
+      Map<String, Long> sharedGenerations) {
+    super(sharedSessions, sharedSeq, sharedReferences, sharedGenerations);
   }
 
   /**

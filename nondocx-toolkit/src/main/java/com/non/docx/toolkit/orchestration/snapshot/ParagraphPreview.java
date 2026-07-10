@@ -1,5 +1,6 @@
 package com.non.docx.toolkit.orchestration.snapshot;
 
+import com.non.docx.toolkit.ref.ParagraphRef;
 import java.util.Objects;
 
 /**
@@ -23,6 +24,7 @@ import java.util.Objects;
  */
 public final class ParagraphPreview {
 
+  private final ParagraphRef ref;
   private final int index;
   private final int bodyIndex;
   private final String text;
@@ -30,6 +32,7 @@ public final class ParagraphPreview {
   private final boolean listItem;
 
   /**
+   * @param ref 稳定段落引用
    * @param index 段落投影索引（{@code doc.paragraphs()} 列表下标，跳过表格）；replace/update 类操作用
    * @param bodyIndex body 顺序索引（含表格的交错序列位置）；insert 类操作用
    * @param text 截断后的短文本预览（第一版约定 ≤ 80 字符）
@@ -37,12 +40,23 @@ public final class ParagraphPreview {
    * @param listItem 是否为列表项
    */
   public ParagraphPreview(
-      int index, int bodyIndex, String text, String headingLevel, boolean listItem) {
+      ParagraphRef ref,
+      int index,
+      int bodyIndex,
+      String text,
+      String headingLevel,
+      boolean listItem) {
+    this.ref = Objects.requireNonNull(ref, "ref 不能为空");
     this.index = index;
     this.bodyIndex = bodyIndex;
     this.text = Objects.requireNonNull(text, "text 不能为空");
     this.headingLevel = headingLevel;
     this.listItem = listItem;
+  }
+
+  /** 稳定段落引用。 */
+  public ParagraphRef ref() {
+    return ref;
   }
 
   /** 段落投影索引（{@code doc.paragraphs()} 列表下标，跳过表格）。 */
@@ -72,7 +86,8 @@ public final class ParagraphPreview {
     if (this == o) return true;
     if (!(o instanceof ParagraphPreview)) return false;
     ParagraphPreview that = (ParagraphPreview) o;
-    return index == that.index
+    return ref.equals(that.ref)
+        && index == that.index
         && bodyIndex == that.bodyIndex
         && text.equals(that.text)
         && Objects.equals(headingLevel, that.headingLevel)
@@ -81,6 +96,6 @@ public final class ParagraphPreview {
 
   @Override
   public int hashCode() {
-    return Objects.hash(index, bodyIndex, text, headingLevel, listItem);
+    return Objects.hash(ref, index, bodyIndex, text, headingLevel, listItem);
   }
 }

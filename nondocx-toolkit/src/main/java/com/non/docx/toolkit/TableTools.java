@@ -7,10 +7,19 @@ import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.style.HeadingLevel;
 import com.non.docx.core.api.style.ListKind;
 import com.non.docx.core.api.style.VerticalAlign;
+import com.non.docx.core.api.table.Cell;
 import com.non.docx.core.api.table.Row;
 import com.non.docx.core.api.table.Table;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
+import com.non.docx.toolkit.ref.CellRef;
+import com.non.docx.toolkit.ref.ElementRef;
+import com.non.docx.toolkit.ref.ElementRefs;
+import com.non.docx.toolkit.ref.ElementResolver;
+import com.non.docx.toolkit.ref.RefResolutionCode;
+import com.non.docx.toolkit.ref.RefResolutionException;
+import com.non.docx.toolkit.ref.ReferenceContext;
+import com.non.docx.toolkit.ref.RunRef;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -40,6 +49,14 @@ public final class TableTools extends ToolkitToolContext {
   /** 接收门面注入的共享会话状态（与 SessionTools 共享同一份 sessions/seq）。 */
   TableTools(Map<String, Document> sharedSessions, AtomicInteger sharedSeq) {
     super(sharedSessions, sharedSeq);
+  }
+
+  TableTools(
+      Map<String, Document> sharedSessions,
+      AtomicInteger sharedSeq,
+      ReferenceContext sharedReferences,
+      Map<String, Long> sharedGenerations) {
+    super(sharedSessions, sharedSeq, sharedReferences, sharedGenerations);
   }
 
   /**
@@ -290,6 +307,7 @@ public final class TableTools extends ToolkitToolContext {
       return "cells 为空";
     }
     StringBuilder sb = new StringBuilder();
+    ElementResolver resolver = elementResolver(docId);
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -304,23 +322,46 @@ public final class TableTools extends ToolkitToolContext {
       int tableIndex;
       int rowIndex;
       int cellIndex;
+      Cell cell;
       try {
-        tableIndex = getInt(m, "table_index");
-        rowIndex = getInt(m, "row_index");
-        cellIndex = getInt(m, "cell_index");
+        if (m.containsKey("ref")) {
+          ElementRef parsed = ElementRefs.parse(getStr(m, "ref"));
+          if (!(parsed instanceof CellRef)) {
+            throw new RefResolutionException(
+                RefResolutionCode.REF_TYPE_MISMATCH, "read_table_cell 只接受 CellRef");
+          }
+          cell = resolver.resolve((CellRef) parsed);
+          int[] coordinates = cellCoordinates(doc, cell);
+          tableIndex = coordinates[0];
+          rowIndex = coordinates[1];
+          cellIndex = coordinates[2];
+          validateCoordinate(m, "table_index", tableIndex);
+          validateCoordinate(m, "row_index", rowIndex);
+          validateCoordinate(m, "cell_index", cellIndex);
+        } else {
+          tableIndex = getInt(m, "table_index");
+          rowIndex = getInt(m, "row_index");
+          cellIndex = getInt(m, "cell_index");
+          String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
+          if (cellResult.startsWith("错误")) {
+            sb.append("[").append(i).append("] ").append(cellResult);
+            continue;
+          }
+          cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
+        }
       } catch (RuntimeException e) {
-        sb.append("[").append(i).append("] 错误:").append(e.getMessage());
+        sb.append("[").append(i).append("] ");
+        if (e instanceof RefResolutionException) {
+          sb.append(((RefResolutionException) e).render());
+        } else {
+          sb.append("错误:").append(e.getMessage());
+        }
         continue;
       }
       String coord = "(" + tableIndex + "," + rowIndex + "," + cellIndex + ")";
-      String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-      if (cellResult.startsWith("错误")) {
-        sb.append("[").append(i).append("] 单元格 ").append(coord).append(": ").append(cellResult);
-        continue;
-      }
-      var cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
       var paras = cell.paragraphs();
       sb.append("[").append(i).append("] 单元格 ").append(coord).append('\n');
+      sb.append("ref: ").append(resolver.reference(cell).canonical()).append('\n');
       sb.append("文本: ").append(cell.text()).append('\n');
       sb.append("段落数: ").append(paras.size());
       appendCellStyleSummary(sb, cell);
@@ -331,38 +372,80 @@ public final class TableTools extends ToolkitToolContext {
     return sb.toString();
   }
 
-  /** 读取表格某单元格内某段某 run 的文本。 */
+  private static int[] cellCoordinates(Document doc, Cell target) {
+    for (int t = 0; t < doc.tables().size(); t++) {
+      List<Row> rows = doc.tables().get(t).rows();
+      for (int r = 0; r < rows.size(); r++) {
+        List<Cell> cells = rows.get(r).cells();
+        for (int c = 0; c < cells.size(); c++) {
+          if (cells.get(c).raw() == target.raw()) {
+            return new int[] {t, r, c};
+          }
+        }
+      }
+    }
+    throw new RefResolutionException(RefResolutionCode.ELEMENT_REMOVED, "CellRef 目标已从表格中删除");
+  }
+
+  private static void validateCoordinate(Map<String, Object> payload, String field, int actual) {
+    if (payload.containsKey(field) && getInt(payload, field) != actual) {
+      throw new RefResolutionException(RefResolutionCode.STALE_REF, "ref 与 " + field + " 指向不同单元格");
+    }
+  }
+
+  /** 保留旧坐标调用签名。新工具协议优先使用带 {@code ref} 的重载。 */
+  public String readTableCellRun(
+      String docId, int tableIndex, int rowIndex, int cellIndex, int paragraphIndex, int runIndex) {
+    return readTableCellRun(docId, tableIndex, rowIndex, cellIndex, paragraphIndex, runIndex, null);
+  }
+
+  /** 读取表格某单元格内某段某 run 的文本，支持 RunRef 与旧坐标双入口。 */
   @ToolDef(
       name = "read_table_cell_run",
-      description = "读取表格某单元格内 paragraph_index 段 run_index 个 run（均 0 起）的文本")
+      description =
+          "读取表格单元格内 run。优先传 canonical RunRef 字段 ref;也兼容"
+              + " table_index/row_index/cell_index/paragraph_index/run_index 五级坐标。"
+              + "ref 与坐标同时提供时必须指向同一 run。返回实际 ref。")
   public String readTableCellRun(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "table_index", description = "表格索引（0 起）") int tableIndex,
-      @ToolParam(name = "row_index", description = "行索引（0 起）") int rowIndex,
-      @ToolParam(name = "cell_index", description = "单元格索引（0 起）") int cellIndex,
-      @ToolParam(name = "paragraph_index", description = "单元格内段落索引（0 起）") int paragraphIndex,
-      @ToolParam(name = "run_index", description = "run 索引（0 起）") int runIndex) {
+      @ToolParam(name = "table_index", description = "表格索引（0 起）", required = false)
+          Integer tableIndex,
+      @ToolParam(name = "row_index", description = "行索引（0 起）", required = false) Integer rowIndex,
+      @ToolParam(name = "cell_index", description = "单元格索引（0 起）", required = false)
+          Integer cellIndex,
+      @ToolParam(name = "paragraph_index", description = "单元格内段落索引（0 起）", required = false)
+          Integer paragraphIndex,
+      @ToolParam(name = "run_index", description = "run 索引（0 起）", required = false)
+          Integer runIndex,
+      @ToolParam(name = "ref", description = "canonical RunRef", required = false) String ref) {
     Document doc = document(docId);
     if (doc == null) {
       return docNotFound(docId);
     }
-    var cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-    if (cellResult.startsWith("错误")) {
-      return cellResult;
+    TableRunTarget target;
+    try {
+      target =
+          resolveTableRunTarget(
+              docId, doc, ref, tableIndex, rowIndex, cellIndex, paragraphIndex, runIndex);
+    } catch (RuntimeException e) {
+      return renderRefError(e);
     }
-    var cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
-    var paras = cell.paragraphs();
-    if (outOfBounds(paragraphIndex, paras.size())) {
-      return indexError("单元格内段落索引", paragraphIndex, paras.size());
-    }
-    var runs = paras.get(paragraphIndex).runs();
-    if (outOfBounds(runIndex, runs.size())) {
-      return indexError("run 索引", runIndex, runs.size());
-    }
-    Run run = runs.get(runIndex);
     StringBuilder sb = new StringBuilder();
-    sb.append("文本: ").append(run.text());
-    appendRunStyleSummary(sb, run);
+    sb.append("单元格 (")
+        .append(target.tableIndex)
+        .append(',')
+        .append(target.rowIndex)
+        .append(',')
+        .append(target.cellIndex)
+        .append(") 段落 ")
+        .append(target.paragraphIndex)
+        .append(" run ")
+        .append(target.runIndex)
+        .append(" ref=")
+        .append(target.ref.canonical())
+        .append("\n文本: ")
+        .append(target.run.text());
+    appendRunStyleSummary(sb, target.run);
     return sb.toString();
   }
 
@@ -372,11 +455,9 @@ public final class TableTools extends ToolkitToolContext {
    * <p><b>批量语义（v2）。</b> 入参是<b>对象数组</b> {@code edits},每个对象描述一次单元格 run 替换:
    *
    * <ul>
-   *   <li>{@code table_index}:整数,必填,表格索引(0 起)
-   *   <li>{@code row_index}:整数,必填,行索引(0 起)
-   *   <li>{@code cell_index}:整数,必填,单元格索引(0 起)
-   *   <li>{@code paragraph_index}:整数,必填,单元格内段落索引(0 起)
-   *   <li>{@code run_index}:整数,必填,run 索引(0 起)
+   *   <li>{@code ref}:canonical {@code RunRef}，推荐
+   *   <li>{@code table_index}/{@code row_index}/{@code cell_index}/{@code paragraph_index}/{@code
+   *       run_index}:旧五级坐标兼容入口
    *   <li>{@code text}:字符串,必填,新文本
    * </ul>
    *
@@ -391,9 +472,10 @@ public final class TableTools extends ToolkitToolContext {
       name = "replace_table_cell_run_text",
       description =
           "批量替换表格若干单元格内 run 的文本(改完需 save_docx 落盘)。edits 是对象数组,每个对象含字段:"
-              + "table_index(int,表格索引 0 起)、row_index(int,行索引 0 起)、"
+              + "canonical RunRef 字段 ref,或 table_index(int,表格索引 0 起)、row_index(int,行索引 0 起)、"
               + "cell_index(int,单元格索引 0 起)、paragraph_index(int,单元格内段落索引 0 起)、"
               + "run_index(int,run 索引 0 起)、text(string,新文本)。"
+              + "ref 与坐标同时提供时必须指向同一 run。"
               + "单个对象用长度 1 的数组。部分失败不中断,返回每条成功/失败明细。")
   public String replaceTableCellRunText(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
@@ -428,63 +510,171 @@ public final class TableTools extends ToolkitToolContext {
       }
       @SuppressWarnings("unchecked")
       Map<String, Object> m = (Map<String, Object>) item;
-      int tableIndex;
-      int rowIndex;
-      int cellIndex;
-      int paragraphIndex;
-      int runIndex;
+      TableRunTarget target;
       String text;
       try {
-        tableIndex = getInt(m, "table_index");
-        rowIndex = getInt(m, "row_index");
-        cellIndex = getInt(m, "cell_index");
-        paragraphIndex = getInt(m, "paragraph_index");
-        runIndex = getInt(m, "run_index");
+        target =
+            resolveTableRunTarget(
+                docId,
+                doc,
+                m.containsKey("ref") ? getStr(m, "ref") : null,
+                optionalInt(m, "table_index"),
+                optionalInt(m, "row_index"),
+                optionalInt(m, "cell_index"),
+                optionalInt(m, "paragraph_index"),
+                optionalInt(m, "run_index"));
         text = getStr(m, "text");
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
+        sb.append(tag).append(renderRefError(e));
         fail++;
         continue;
       }
-      // 复用 locateCell/locateCellObj 的逐层边界检查(它们返回中文错误串 / 活对象)。
-      String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-      if (cellResult.startsWith("错误")) {
-        sb.append(tag).append(cellResult);
-        fail++;
-        continue;
-      }
-      var cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
-      var paras = cell.paragraphs();
-      if (outOfBounds(paragraphIndex, paras.size())) {
-        sb.append(tag).append(indexError("单元格内段落索引", paragraphIndex, paras.size()));
-        fail++;
-        continue;
-      }
-      var runs = paras.get(paragraphIndex).runs();
-      if (outOfBounds(runIndex, runs.size())) {
-        sb.append(tag).append(indexError("run 索引", runIndex, runs.size()));
-        fail++;
-        continue;
-      }
-      runs.get(runIndex).text(text);
+      target.run.text(text);
       sb.append(tag)
           .append("单元格 (")
-          .append(tableIndex)
+          .append(target.tableIndex)
           .append(',')
-          .append(rowIndex)
+          .append(target.rowIndex)
           .append(',')
-          .append(cellIndex)
+          .append(target.cellIndex)
           .append(") 段落 ")
-          .append(paragraphIndex)
+          .append(target.paragraphIndex)
           .append(" run ")
-          .append(runIndex)
+          .append(target.runIndex)
           .append(" → \"")
           .append(text)
-          .append("\" ✓");
+          .append("\" ref=")
+          .append(target.ref.canonical())
+          .append(" ✓");
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
     return sb.toString();
+  }
+
+  private TableRunTarget resolveTableRunTarget(
+      String docId,
+      Document doc,
+      String ref,
+      Integer tableIndex,
+      Integer rowIndex,
+      Integer cellIndex,
+      Integer paragraphIndex,
+      Integer runIndex) {
+    ElementResolver resolver = elementResolver(docId);
+    if (ref != null && !ref.isBlank()) {
+      ElementRef parsed = ElementRefs.parse(ref);
+      if (!(parsed instanceof RunRef)) {
+        throw new RefResolutionException(RefResolutionCode.REF_TYPE_MISMATCH, "该操作只接受 RunRef");
+      }
+      Run run = resolver.resolve((RunRef) parsed);
+      int[] coordinates = tableRunCoordinates(doc, run);
+      validateCoordinate(tableIndex, "table_index", coordinates[0]);
+      validateCoordinate(rowIndex, "row_index", coordinates[1]);
+      validateCoordinate(cellIndex, "cell_index", coordinates[2]);
+      validateCoordinate(paragraphIndex, "paragraph_index", coordinates[3]);
+      validateCoordinate(runIndex, "run_index", coordinates[4]);
+      return new TableRunTarget(
+          run,
+          coordinates[0],
+          coordinates[1],
+          coordinates[2],
+          coordinates[3],
+          coordinates[4],
+          resolver.reference(run));
+    }
+    requireCoordinates(tableIndex, rowIndex, cellIndex, paragraphIndex, runIndex);
+    String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
+    if (cellResult.startsWith("错误")) {
+      throw new IllegalArgumentException(cellResult);
+    }
+    Cell cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
+    List<Paragraph> paragraphs = cell.paragraphs();
+    if (outOfBounds(paragraphIndex, paragraphs.size())) {
+      throw new IllegalArgumentException(indexError("单元格内段落索引", paragraphIndex, paragraphs.size()));
+    }
+    List<Run> runs = paragraphs.get(paragraphIndex).runs();
+    if (outOfBounds(runIndex, runs.size())) {
+      throw new IllegalArgumentException(indexError("run 索引", runIndex, runs.size()));
+    }
+    Run run = runs.get(runIndex);
+    return new TableRunTarget(
+        run, tableIndex, rowIndex, cellIndex, paragraphIndex, runIndex, resolver.reference(run));
+  }
+
+  private static int[] tableRunCoordinates(Document doc, Run target) {
+    for (int t = 0; t < doc.tables().size(); t++) {
+      List<Row> rows = doc.tables().get(t).rows();
+      for (int r = 0; r < rows.size(); r++) {
+        List<Cell> cells = rows.get(r).cells();
+        for (int c = 0; c < cells.size(); c++) {
+          List<Paragraph> paragraphs = cells.get(c).paragraphs();
+          for (int p = 0; p < paragraphs.size(); p++) {
+            List<Run> runs = paragraphs.get(p).runs();
+            for (int u = 0; u < runs.size(); u++) {
+              if (runs.get(u).raw() == target.raw()) {
+                return new int[] {t, r, c, p, u};
+              }
+            }
+          }
+        }
+      }
+    }
+    throw new RefResolutionException(RefResolutionCode.DOCUMENT_MISMATCH, "RunRef 不属于表格单元格 run");
+  }
+
+  private static void validateCoordinate(Integer provided, String field, int actual) {
+    if (provided != null && provided != actual) {
+      throw new RefResolutionException(RefResolutionCode.STALE_REF, "ref 与 " + field + " 指向不同 run");
+    }
+  }
+
+  private static void requireCoordinates(Integer... coordinates) {
+    for (Integer coordinate : coordinates) {
+      if (coordinate == null) {
+        throw new IllegalArgumentException("未提供 ref 时必须提供完整表格 run 坐标");
+      }
+    }
+  }
+
+  private static Integer optionalInt(Map<String, Object> payload, String field) {
+    return payload.containsKey(field) ? getInt(payload, field) : null;
+  }
+
+  private static String renderRefError(RuntimeException e) {
+    if (e instanceof RefResolutionException) {
+      return ((RefResolutionException) e).render();
+    }
+    return e.getMessage() != null && e.getMessage().startsWith("错误")
+        ? e.getMessage()
+        : "错误:" + e.getMessage();
+  }
+
+  private static final class TableRunTarget {
+    private final Run run;
+    private final int tableIndex;
+    private final int rowIndex;
+    private final int cellIndex;
+    private final int paragraphIndex;
+    private final int runIndex;
+    private final RunRef ref;
+
+    private TableRunTarget(
+        Run run,
+        int tableIndex,
+        int rowIndex,
+        int cellIndex,
+        int paragraphIndex,
+        int runIndex,
+        RunRef ref) {
+      this.run = run;
+      this.tableIndex = tableIndex;
+      this.rowIndex = rowIndex;
+      this.cellIndex = cellIndex;
+      this.paragraphIndex = paragraphIndex;
+      this.runIndex = runIndex;
+      this.ref = ref;
+    }
   }
 
   // ==================== 单元格视觉样式(子任务 1:底纹/垂直对齐/run 样式/段落对齐) ====================

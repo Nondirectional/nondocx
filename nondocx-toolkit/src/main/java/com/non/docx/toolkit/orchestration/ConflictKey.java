@@ -1,5 +1,7 @@
 package com.non.docx.toolkit.orchestration;
 
+import com.non.docx.toolkit.ref.ElementRef;
+import com.non.docx.toolkit.ref.OperationTargetRef;
 import java.util.Objects;
 
 /**
@@ -18,24 +20,34 @@ import java.util.Objects;
  *
  * <p><b>不可变值对象。</b> 实现内容相等（不含任何活对象引用），可在合并/去重时安全用作 Map 键。
  *
- * <p><b>设计取舍。</b> 第一版 {@code targetRef} 是自由字符串（如 {@code "p:3"} 表示第 3 段、 {@code "t:0/r:1/c:2"} 表示表格
- * 0 行 1 列 2、{@code "rev:id-42"} 表示修订 id-42）。 粒度足够识别典型重复修改，又不至于把字段级意图塞进 key——字段级判断留给第二层。
+ * <p><b>强类型目标。</b> {@code targetRef} 使用 {@link ElementRef}。旧字符串构造器只在兼容边界转换成 {@link
+ * OperationTargetRef}，对象内部不保存自由字符串。
  */
 public final class ConflictKey {
 
   private final String toolGroup;
   private final String kind;
-  private final String targetRef;
+  private final ElementRef targetRef;
 
   /**
    * @param toolGroup 工具组（如 {@code "body"} / {@code "table"} / {@code "revision"}）
    * @param kind operation 类型（如 {@code "replace_text"} / {@code "set_cell_text"}）
-   * @param targetRef 目标定位串（如 {@code "p:3"} / {@code "t:0/r:1/c:2"} / {@code "rev:id-42"}）
+   * @param targetRef 规范化目标引用
    */
-  public ConflictKey(String toolGroup, String kind, String targetRef) {
+  public ConflictKey(String toolGroup, String kind, ElementRef targetRef) {
     this.toolGroup = Objects.requireNonNull(toolGroup, "toolGroup 不能为空");
     this.kind = Objects.requireNonNull(kind, "kind 不能为空");
     this.targetRef = Objects.requireNonNull(targetRef, "targetRef 不能为空");
+  }
+
+  /**
+   * 旧字符串目标兼容入口。
+   *
+   * @deprecated 新代码应传入具体 {@link ElementRef}
+   */
+  @Deprecated
+  public ConflictKey(String toolGroup, String kind, String targetRef) {
+    this(toolGroup, kind, OperationTargetRef.compatibility(targetRef));
   }
 
   /** 工具组。 */
@@ -48,8 +60,8 @@ public final class ConflictKey {
     return kind;
   }
 
-  /** 目标定位串。 */
-  public String targetRef() {
+  /** 规范化目标引用。 */
+  public ElementRef targetRef() {
     return targetRef;
   }
 
@@ -81,6 +93,6 @@ public final class ConflictKey {
 
   @Override
   public String toString() {
-    return toolGroup + "/" + kind + "@" + targetRef;
+    return toolGroup + "/" + kind + "@" + targetRef.canonical();
   }
 }

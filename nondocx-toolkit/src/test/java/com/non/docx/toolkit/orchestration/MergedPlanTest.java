@@ -9,6 +9,8 @@ import com.non.docx.toolkit.orchestration.snapshot.ParagraphPreview;
 import com.non.docx.toolkit.orchestration.snapshot.QualitySummary;
 import com.non.docx.toolkit.orchestration.snapshot.RevisionSummary;
 import com.non.docx.toolkit.orchestration.snapshot.SnapshotOverview;
+import com.non.docx.toolkit.ref.DocumentRef;
+import com.non.docx.toolkit.ref.ParagraphRef;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +71,7 @@ class MergedPlanTest {
   void schemaVersionsAreFixedAtOne() {
     assertThat(MergedPlan.SCHEMA_VERSION).isEqualTo(1);
     assertThat(ExpertPlan.SCHEMA_VERSION).isEqualTo(1);
-    assertThat(DocumentSnapshot.SNAPSHOT_VERSION).isEqualTo(1);
+    assertThat(DocumentSnapshot.SNAPSHOT_VERSION).isEqualTo(2);
   }
 
   @Test
@@ -82,7 +84,14 @@ class MergedPlanTest {
             Instant.now(),
             3L,
             new SnapshotOverview(2, 0, 0, 0, false, false, false),
-            List.of(new ParagraphPreview(0, 0, "hi", null, false)),
+            List.of(
+                new ParagraphPreview(
+                    ParagraphRef.session(new DocumentRef("c1", 3L), "p-1"),
+                    0,
+                    0,
+                    "hi",
+                    null,
+                    false)),
             List.of(),
             new RevisionSummary(false, 0, Map.of()),
             new QualitySummary(0, 0, List.of()));

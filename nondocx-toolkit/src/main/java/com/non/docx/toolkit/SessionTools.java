@@ -4,6 +4,8 @@ import com.non.chain.tool.ToolDef;
 import com.non.chain.tool.ToolParam;
 import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
+import com.non.docx.toolkit.ref.ElementResolver;
+import com.non.docx.toolkit.ref.ReferenceContext;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -39,6 +41,16 @@ public final class SessionTools extends ToolkitToolContext {
     return seq;
   }
 
+  /** 暴露共享引用上下文供门面注入给其它工具类。 */
+  ReferenceContext sharedReferences() {
+    return references;
+  }
+
+  /** 暴露共享 generation 状态供门面注入给其它工具类。 */
+  Map<String, Long> sharedGenerations() {
+    return generations;
+  }
+
   /**
    * 按 docId 取活文档（公共 API）。
    *
@@ -50,6 +62,23 @@ public final class SessionTools extends ToolkitToolContext {
    */
   public Document getDocument(String docId) {
     return sessions.get(docId);
+  }
+
+  /** 返回直接 toolkit 会话使用的元素 resolver；句柄不存在返回 {@code null}。 */
+  public ElementResolver getElementResolver(String docId) {
+    return elementResolver(docId);
+  }
+
+  /**
+   * 返回编排层逻辑文档使用的元素 resolver。
+   *
+   * @param docId 底层文档句柄
+   * @param documentKey 稳定逻辑文档 key，通常为 conversationId
+   * @param generation 当前编排会话代次
+   * @return resolver；句柄不存在返回 {@code null}
+   */
+  public ElementResolver getElementResolver(String docId, String documentKey, long generation) {
+    return elementResolver(docId, documentKey, generation);
   }
 
   // ==================== 工具方法 ====================
@@ -66,6 +95,7 @@ public final class SessionTools extends ToolkitToolContext {
       Document doc = Docx.open(Path.of(path));
       String docId = "doc-" + seq.incrementAndGet();
       sessions.put(docId, doc);
+      generations.put(docId, 1L);
       return docId;
     } catch (RuntimeException e) {
       return "错误：无法打开文档 " + path + "（" + rootMessage(e) + "）";
@@ -109,6 +139,8 @@ public final class SessionTools extends ToolkitToolContext {
   @ToolDef(name = "close_docx", description = "关闭并释放指定 docId 的文档会话（幂等：未打开也返回成功）")
   public String closeDocx(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
     Document doc = sessions.remove(docId);
+    generations.remove(docId);
+    references.invalidate(docId);
     if (doc == null) {
       return "文档 " + docId + " 未打开（视为已关闭）";
     }

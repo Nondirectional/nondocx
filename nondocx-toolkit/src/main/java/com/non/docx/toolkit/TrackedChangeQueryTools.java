@@ -9,6 +9,13 @@ import com.non.docx.core.api.track.PropertyChangeDetails;
 import com.non.docx.core.api.track.TextChangeDetails;
 import com.non.docx.core.api.track.TrackedChange;
 import com.non.docx.core.api.track.TrackedChanges;
+import com.non.docx.toolkit.ref.ElementRef;
+import com.non.docx.toolkit.ref.ElementRefs;
+import com.non.docx.toolkit.ref.ElementResolver;
+import com.non.docx.toolkit.ref.RefResolutionCode;
+import com.non.docx.toolkit.ref.RefResolutionException;
+import com.non.docx.toolkit.ref.ReferenceContext;
+import com.non.docx.toolkit.ref.RevisionRef;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -33,14 +40,22 @@ import java.util.function.BiConsumer;
  *       family 分专用方法。
  * </ul>
  *
- * <p><b>id 是寻址凭证。</b> 所有单条 accept/reject 工具都按 stable id 定位。Agent 必须先 list_tracked_changes 拿到
- * id，再调对应 accept/reject（同 search_text 之于 replace_run_text）。
+ * <p><b>RevisionRef 是首选寻址凭证。</b> {@code list_tracked_changes} 同时返回 canonical {@code RevisionRef}
+ * 与兼容 stable id。新调用方应把 ref 传给 get/accept/reject；旧 stable id 路径继续可用。
  */
 public final class TrackedChangeQueryTools extends ToolkitToolContext {
 
   /** 接收门面注入的共享会话状态（与 SessionTools 共享同一份 sessions/seq）。 */
   TrackedChangeQueryTools(Map<String, Document> sharedSessions, AtomicInteger sharedSeq) {
     super(sharedSessions, sharedSeq);
+  }
+
+  TrackedChangeQueryTools(
+      Map<String, Document> sharedSessions,
+      AtomicInteger sharedSeq,
+      ReferenceContext sharedReferences,
+      Map<String, Long> sharedGenerations) {
+    super(sharedSessions, sharedSeq, sharedReferences, sharedGenerations);
   }
 
   /** 读取文档是否开启修订记录（{@code settings.xml} 的 {@code <w:trackChanges/>}）。 */
@@ -97,7 +112,8 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       name = "list_tracked_changes",
       description =
           "按文档顺序枚举全部修订(tracked changes),每条返回 type/family/author/details 摘要与 stable id。"
-              + "accept/reject 前先用它拿到 id。四种 family:TEXT(ins/del)、MOVE(moveFrom/moveTo)、"
+              + "每条同时返回 canonical RevisionRef;accept/reject 优先使用 ref,stable id 继续兼容。"
+              + "四种 family:TEXT(ins/del)、MOVE(moveFrom/moveTo)、"
               + "PROPERTY(rPrChange 等)、CELL(cellIns/cellDel/cellMerge)。")
   public String listTrackedChanges(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
     Document doc = document(docId);
@@ -108,10 +124,15 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
     if (list.isEmpty()) {
       return "无修订";
     }
+    ElementResolver resolver = elementResolver(docId);
     StringBuilder sb = new StringBuilder();
     sb.append("共 ").append(list.size()).append(" 条修订:\n");
     for (int i = 0; i < list.size(); i++) {
-      sb.append('[').append(i).append("] ").append(describeRevision(list.get(i)));
+      TrackedChange change = list.get(i);
+      sb.append('[')
+          .append(i)
+          .append("] ")
+          .append(describeRevision(change, resolver.reference(change)));
       if (i < list.size() - 1) {
         sb.append('\n');
       }
@@ -122,16 +143,21 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
   /** 按稳定 id 取单条修订详情。未命中返回错误串(不要靠它枚举,枚举用 list_tracked_changes)。 */
   @ToolDef(
       name = "get_tracked_change",
-      description = "按 stable id 取单条修订的详情(列表里看到的 id)。枚举请用 list_tracked_changes")
+      description = "按 canonical RevisionRef 或兼容 stable id 取单条修订详情。枚举请用 list_tracked_changes")
   public String getTrackedChange(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "id", description = "list_tracked_changes 返回的 stable id") String id) {
+      @ToolParam(name = "id", description = "list_tracked_changes 返回的 RevisionRef 或 stable id")
+          String id) {
     Document doc = document(docId);
     if (doc == null) {
       return docNotFound(docId);
     }
     try {
-      return describeRevision(doc.trackedChanges().get(id));
+      ElementResolver resolver = elementResolver(docId);
+      TrackedChange change = resolveRevisionInput(docId, doc, id);
+      return describeRevision(change, resolver.reference(change));
+    } catch (RefResolutionException e) {
+      return e.render();
     } catch (RuntimeException e) {
       return "错误:" + rootMessage(e);
     }
@@ -146,7 +172,8 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
   @ToolDef(
       name = "apply_tracked_changes",
       description =
-          "批量处理修订(ids 来自 list_tracked_changes)。action 支持 ACCEPT/REJECT;"
+          "批量处理修订(ids 可传 list_tracked_changes 返回的 RevisionRef 或兼容 stable id)。"
+              + "action 支持 ACCEPT/REJECT;"
               + "target 支持 TEXT_OR_MOVE/PROPERTY/CELL。部分失败不中断,返回每条成功/失败明细。")
   public String applyTrackedChanges(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
@@ -262,13 +289,15 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
 
   // ==================== 组内辅助 ====================
 
-  /** 把一条修订渲染为一行中文摘要(type/family/author/details/id)。 */
-  private static String describeRevision(TrackedChange change) {
+  /** 把一条修订渲染为一行中文摘要(type/family/author/details/id/ref)。 */
+  private static String describeRevision(TrackedChange change, RevisionRef ref) {
     StringBuilder sb = new StringBuilder();
     sb.append("type=").append(change.type());
     sb.append(", family=").append(change.family());
     sb.append(", author=\"").append(change.author()).append("\"");
     appendDetails(sb, change.details());
+    sb.append(", ref=").append(ref.canonical());
+    // 保持 id 在行尾，兼容既有调用方按 "id=" 截取整段 stable id。
     sb.append(", id=").append(change.id());
     return sb.toString();
   }
@@ -326,6 +355,7 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       return "ids 为空";
     }
     TrackedChanges tc = doc.trackedChanges();
+    ElementResolver resolver = elementResolver(docId);
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
@@ -333,16 +363,29 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       if (i > 0) {
         sb.append('\n');
       }
-      String id = String.valueOf(list.get(i));
+      String input = String.valueOf(list.get(i));
       try {
-        action.accept(tc, id);
-        sb.append("[").append(i).append("] ").append(id).append(" 已").append(verb).append(" ✓");
+        TrackedChange change = resolveRevisionInput(docId, doc, input);
+        RevisionRef ref = resolver.reference(change);
+        action.accept(tc, change.id());
+        sb.append("[")
+            .append(i)
+            .append("] ")
+            .append(change.id())
+            .append(" 已")
+            .append(verb)
+            .append(" ref=")
+            .append(ref.canonical())
+            .append(" ✓");
         ok++;
+      } catch (RefResolutionException e) {
+        sb.append("[").append(i).append("] ").append(e.render());
+        fail++;
       } catch (RuntimeException e) {
         sb.append("[")
             .append(i)
             .append("] ")
-            .append(id)
+            .append(input)
             .append(": 错误(")
             .append(rootMessage(e))
             .append(")");
@@ -351,5 +394,20 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
     return sb.toString();
+  }
+
+  private TrackedChange resolveRevisionInput(String docId, Document doc, String input) {
+    if (input == null || input.isBlank()) {
+      throw new IllegalArgumentException("修订 ref/id 不能为空");
+    }
+    String normalized = input.trim();
+    if (!normalized.startsWith("doc:")) {
+      return doc.trackedChanges().get(normalized);
+    }
+    ElementRef parsed = ElementRefs.parse(normalized);
+    if (!(parsed instanceof RevisionRef)) {
+      throw new RefResolutionException(RefResolutionCode.REF_TYPE_MISMATCH, "该操作只接受 RevisionRef");
+    }
+    return elementResolver(docId).resolve((RevisionRef) parsed);
   }
 }

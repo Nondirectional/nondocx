@@ -49,7 +49,7 @@ import java.util.Objects;
 public final class DocumentSnapshot {
 
   /** 快照 schema 版本，第一版固定为 1，与 plan schema 版本独立演进。 */
-  public static final int SNAPSHOT_VERSION = 1;
+  public static final int SNAPSHOT_VERSION = 2;
 
   private final int snapshotVersion;
   private final String conversationId;

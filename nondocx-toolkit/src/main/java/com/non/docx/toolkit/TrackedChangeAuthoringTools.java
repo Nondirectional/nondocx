@@ -6,6 +6,7 @@ import com.non.docx.core.api.Document;
 import com.non.docx.core.api.table.Cell;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
+import com.non.docx.toolkit.ref.ReferenceContext;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,14 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
   /** 接收门面注入的共享会话状态（与 SessionTools 共享同一份 sessions/seq）。 */
   TrackedChangeAuthoringTools(Map<String, Document> sharedSessions, AtomicInteger sharedSeq) {
     super(sharedSessions, sharedSeq);
+  }
+
+  TrackedChangeAuthoringTools(
+      Map<String, Document> sharedSessions,
+      AtomicInteger sharedSeq,
+      ReferenceContext sharedReferences,
+      Map<String, Long> sharedGenerations) {
+    super(sharedSessions, sharedSeq, sharedReferences, sharedGenerations);
   }
 
   /**

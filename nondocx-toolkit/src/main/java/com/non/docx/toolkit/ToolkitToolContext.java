@@ -4,6 +4,9 @@ import com.non.docx.core.api.Document;
 import com.non.docx.core.api.table.Cell;
 import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
+import com.non.docx.toolkit.ref.DocumentRef;
+import com.non.docx.toolkit.ref.ElementResolver;
+import com.non.docx.toolkit.ref.ReferenceContext;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +56,12 @@ abstract class ToolkitToolContext {
   /** docId 自增序号，产出 {@code "doc-1"}、{@code "doc-2"}、… */
   final AtomicInteger seq;
 
+  /** 所有工具共享的元素引用上下文。 */
+  final ReferenceContext references;
+
+  /** docId 对应的 toolkit 会话代次。 */
+  final Map<String, Long> generations;
+
   /**
    * 创建一份<b>独立</b>的会话状态（拥有自己的 sessions/seq）。
    *
@@ -62,6 +71,8 @@ abstract class ToolkitToolContext {
   ToolkitToolContext() {
     this.sessions = new HashMap<>();
     this.seq = new AtomicInteger();
+    this.references = new ReferenceContext();
+    this.generations = new HashMap<>();
   }
 
   /**
@@ -71,8 +82,23 @@ abstract class ToolkitToolContext {
    * SessionTools 那边 {@code open_docx} 放进去的活文档。
    */
   ToolkitToolContext(Map<String, Document> sharedSessions, AtomicInteger sharedSeq) {
+    this(sharedSessions, sharedSeq, new ReferenceContext(), new HashMap<>());
+  }
+
+  /**
+   * 复用既有文档会话、引用上下文与 generation 状态。
+   *
+   * <p>{@link DocxToolkit} 用此构造把 {@link SessionTools} 创建的四个共享对象注入全部工具组。
+   */
+  ToolkitToolContext(
+      Map<String, Document> sharedSessions,
+      AtomicInteger sharedSeq,
+      ReferenceContext sharedReferences,
+      Map<String, Long> sharedGenerations) {
     this.sessions = sharedSessions;
     this.seq = sharedSeq;
+    this.references = sharedReferences;
+    this.generations = sharedGenerations;
   }
 
   // ==================== 状态相关：按 docId 取活文档 / 错误串 ====================
@@ -80,6 +106,29 @@ abstract class ToolkitToolContext {
   /** 按 docId 取活文档；不存在返回 {@code null}（调用方自行决定返回哪个中文错误串）。 */
   Document document(String docId) {
     return sessions.get(docId);
+  }
+
+  /** 按 docId 获取当前 toolkit 会话的 resolver；文档不存在返回 {@code null}。 */
+  ElementResolver elementResolver(String docId) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return null;
+    }
+    long generation = generations.getOrDefault(docId, 1L);
+    return references.resolver(new DocumentRef(docId, generation), doc);
+  }
+
+  /**
+   * 使用上层逻辑文档 key/generation 获取 resolver。
+   *
+   * <p>编排层使用 conversationId 作为逻辑 key，使 PERSISTENT ref 可跨 docId reopen 重新定位。
+   */
+  ElementResolver elementResolver(String docId, String documentKey, long generation) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return null;
+    }
+    return references.resolver(new DocumentRef(documentKey, generation), doc);
   }
 
   /** docId 不存在的统一中文错误串（沿用「不抛异常、返回错误串给 Agent」的约定）。 */

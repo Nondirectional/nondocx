@@ -1,5 +1,6 @@
 package com.non.docx.toolkit.orchestration.snapshot;
 
+import com.non.docx.toolkit.ref.TableRef;
 import java.util.List;
 import java.util.Objects;
 
@@ -22,6 +23,7 @@ import java.util.Objects;
  */
 public final class TablePreview {
 
+  private final TableRef ref;
   private final int index;
   private final int bodyIndex;
   private final int rowCount;
@@ -31,6 +33,7 @@ public final class TablePreview {
   private final List<List<String>> cellSamples;
 
   /**
+   * @param ref 稳定表格引用
    * @param index 表格投影索引（{@code doc.tables()} 列表下标，跳过段落）
    * @param bodyIndex body 顺序索引（含段落的交错序列位置）
    * @param rowCount 行数
@@ -38,12 +41,23 @@ public final class TablePreview {
    * @param cellSamples 关键单元格短文本预览样本
    */
   public TablePreview(
-      int index, int bodyIndex, int rowCount, int columnCount, List<List<String>> cellSamples) {
+      TableRef ref,
+      int index,
+      int bodyIndex,
+      int rowCount,
+      int columnCount,
+      List<List<String>> cellSamples) {
+    this.ref = Objects.requireNonNull(ref, "ref 不能为空");
     this.index = index;
     this.bodyIndex = bodyIndex;
     this.rowCount = rowCount;
     this.columnCount = columnCount;
     this.cellSamples = List.copyOf(cellSamples);
+  }
+
+  /** 稳定表格引用。 */
+  public TableRef ref() {
+    return ref;
   }
 
   /** 表格投影索引（{@code doc.tables()} 列表下标，跳过段落）。 */
@@ -73,7 +87,8 @@ public final class TablePreview {
     if (this == o) return true;
     if (!(o instanceof TablePreview)) return false;
     TablePreview that = (TablePreview) o;
-    return index == that.index
+    return ref.equals(that.ref)
+        && index == that.index
         && bodyIndex == that.bodyIndex
         && rowCount == that.rowCount
         && columnCount == that.columnCount
@@ -82,6 +97,6 @@ public final class TablePreview {
 
   @Override
   public int hashCode() {
-    return Objects.hash(index, bodyIndex, rowCount, columnCount, cellSamples);
+    return Objects.hash(ref, index, bodyIndex, rowCount, columnCount, cellSamples);
   }
 }

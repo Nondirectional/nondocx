@@ -8,6 +8,12 @@ import com.non.docx.core.api.header.Header;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.toc.TableOfContents;
 import com.non.docx.core.api.toc.TocEntry;
+import com.non.docx.toolkit.ref.ElementRef;
+import com.non.docx.toolkit.ref.ElementRefs;
+import com.non.docx.toolkit.ref.ElementResolver;
+import com.non.docx.toolkit.ref.HeaderFooterRef;
+import com.non.docx.toolkit.ref.RefResolutionException;
+import com.non.docx.toolkit.ref.ReferenceContext;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,6 +46,14 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
     super(sharedSessions, sharedSeq);
   }
 
+  HeaderFooterTocTools(
+      Map<String, Document> sharedSessions,
+      AtomicInteger sharedSeq,
+      ReferenceContext sharedReferences,
+      Map<String, Long> sharedGenerations) {
+    super(sharedSessions, sharedSeq, sharedReferences, sharedGenerations);
+  }
+
   // ==================== 页眉 / 页脚（读取） ====================
 
   @ToolDef(
@@ -61,6 +75,48 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
       return "错误：part 仅支持 HEADER/FOOTER";
     }
     return readHeaderFooterParagraph(docId, sectionIndex, paragraphIndex, isHeader);
+  }
+
+  /** 按稳定 HeaderFooterRef 读取整个页眉或页脚，并返回其中段落 ref。 */
+  @ToolDef(
+      name = "read_header_footer_ref",
+      description = "按 canonical HeaderFooterRef 读取整个页眉或页脚，返回文本与内部段落 ref")
+  public String readHeaderFooterRef(
+      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "ref", description = "canonical HeaderFooterRef") String ref) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return docNotFound(docId);
+    }
+    ElementResolver resolver = elementResolver(docId);
+    try {
+      ElementRef parsed = ElementRefs.parse(ref);
+      if (!(parsed instanceof HeaderFooterRef)) {
+        return "错误[ref_type_mismatch]：该工具只接受 HeaderFooterRef";
+      }
+      List<Paragraph> paragraphs;
+      String part;
+      try {
+        paragraphs = resolver.resolveHeader((HeaderFooterRef) parsed).paragraphs();
+        part = "页眉";
+      } catch (RefResolutionException headerError) {
+        paragraphs = resolver.resolveFooter((HeaderFooterRef) parsed).paragraphs();
+        part = "页脚";
+      }
+      StringBuilder sb = new StringBuilder(part).append(" ref=").append(ref);
+      for (int i = 0; i < paragraphs.size(); i++) {
+        Paragraph paragraph = paragraphs.get(i);
+        sb.append("\n段落 ")
+            .append(i)
+            .append(" ref=")
+            .append(resolver.reference(paragraph).canonical())
+            .append("\n文本: ")
+            .append(paragraph.text());
+      }
+      return sb.toString();
+    } catch (RefResolutionException e) {
+      return e.render();
+    }
   }
 
   /**
@@ -90,6 +146,9 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
       return indexError((isHeader ? "页眉" : "页脚") + "内段落索引", paragraphIndex, paras.size());
     }
     Paragraph p = paras.get(paragraphIndex);
+    ElementResolver resolver = elementResolver(docId);
+    HeaderFooterRef partRef =
+        isHeader ? resolver.reference((Header) hf) : resolver.reference((Footer) hf);
     int runCount = p.runs().size();
     long hyperlinkCount = hyperlinkCount(p);
     return (isHeader ? "页眉" : "页脚")
@@ -97,6 +156,10 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
         + sectionIndex
         + " 段落 "
         + paragraphIndex
+        + "\npart ref: "
+        + partRef.canonical()
+        + "\nparagraph ref: "
+        + resolver.reference(p).canonical()
         + "\n文本: "
         + p.text()
         + "\nrun 数: "

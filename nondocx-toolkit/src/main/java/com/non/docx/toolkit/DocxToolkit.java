@@ -62,14 +62,42 @@ public final class DocxToolkit {
     // 先建会话源头：SessionTools 自建 sessions/seq。
     this.session = new SessionTools();
     // 再把这份会话注入给其余六组，保证它们 open 出的文档互相可见。
-    this.body = new BodyTools(session.sharedSessions(), session.sharedSeq());
-    this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
-    this.headerFooterToc = new HeaderFooterTocTools(session.sharedSessions(), session.sharedSeq());
+    this.body =
+        new BodyTools(
+            session.sharedSessions(),
+            session.sharedSeq(),
+            session.sharedReferences(),
+            session.sharedGenerations());
+    this.table =
+        new TableTools(
+            session.sharedSessions(),
+            session.sharedSeq(),
+            session.sharedReferences(),
+            session.sharedGenerations());
+    this.headerFooterToc =
+        new HeaderFooterTocTools(
+            session.sharedSessions(),
+            session.sharedSeq(),
+            session.sharedReferences(),
+            session.sharedGenerations());
     this.trackedChangeQuery =
-        new TrackedChangeQueryTools(session.sharedSessions(), session.sharedSeq());
+        new TrackedChangeQueryTools(
+            session.sharedSessions(),
+            session.sharedSeq(),
+            session.sharedReferences(),
+            session.sharedGenerations());
     this.trackedChangeAuthoring =
-        new TrackedChangeAuthoringTools(session.sharedSessions(), session.sharedSeq());
-    this.qualityCheck = new QualityCheckTools(session.sharedSessions(), session.sharedSeq());
+        new TrackedChangeAuthoringTools(
+            session.sharedSessions(),
+            session.sharedSeq(),
+            session.sharedReferences(),
+            session.sharedGenerations());
+    this.qualityCheck =
+        new QualityCheckTools(
+            session.sharedSessions(),
+            session.sharedSeq(),
+            session.sharedReferences(),
+            session.sharedGenerations());
   }
 
   /**

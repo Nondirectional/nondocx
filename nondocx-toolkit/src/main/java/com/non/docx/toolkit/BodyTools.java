@@ -10,6 +10,13 @@ import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
+import com.non.docx.toolkit.ref.ElementRef;
+import com.non.docx.toolkit.ref.ElementRefs;
+import com.non.docx.toolkit.ref.ElementResolver;
+import com.non.docx.toolkit.ref.ParagraphRef;
+import com.non.docx.toolkit.ref.RefResolutionException;
+import com.non.docx.toolkit.ref.ReferenceContext;
+import com.non.docx.toolkit.ref.RunRef;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +49,14 @@ public final class BodyTools extends ToolkitToolContext {
     super(sharedSessions, sharedSeq);
   }
 
+  BodyTools(
+      Map<String, Document> sharedSessions,
+      AtomicInteger sharedSeq,
+      ReferenceContext sharedReferences,
+      Map<String, Long> sharedGenerations) {
+    super(sharedSessions, sharedSeq, sharedReferences, sharedGenerations);
+  }
+
   // ==================== 正文段落 / run ====================
 
   /**
@@ -59,7 +74,8 @@ public final class BodyTools extends ToolkitToolContext {
       name = "read_paragraph",
       description =
           "读取正文多个段落的结构摘要(文本、run 数、是否含超链接、段落对齐)。"
-              + "paragraph_indexes 是段落索引数组(0 起),长度 1 即单次读,可一次读多段。"
+              + "paragraph_indexes 可混合传段落索引(0 起)或 canonical ParagraphRef 字符串,"
+              + "长度 1 即单次读,可一次读多段。"
               + "越界索引不中断整批,会在结果里标注。")
   public String readParagraph(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
@@ -75,28 +91,61 @@ public final class BodyTools extends ToolkitToolContext {
       return "段落索引数组为空";
     }
     StringBuilder sb = new StringBuilder();
+    ElementResolver resolver = elementResolver(docId);
     for (int i = 0; i < indexes.size(); i++) {
-      int idx = ((Number) indexes.get(i)).intValue();
       if (i > 0) {
         sb.append('\n');
       }
-      if (outOfBounds(idx, paragraphs.size())) {
-        sb.append("段落 ")
-            .append(idx)
-            .append(": ")
-            .append(indexError("段落索引", idx, paragraphs.size()));
+      Object target = indexes.get(i);
+      Paragraph p;
+      int idx;
+      try {
+        if (target instanceof Number) {
+          idx = ((Number) target).intValue();
+          if (outOfBounds(idx, paragraphs.size())) {
+            sb.append("段落 ")
+                .append(idx)
+                .append(": ")
+                .append(indexError("段落索引", idx, paragraphs.size()));
+            continue;
+          }
+          p = paragraphs.get(idx);
+        } else if (target instanceof String) {
+          ElementRef parsed = ElementRefs.parse((String) target);
+          if (!(parsed instanceof ParagraphRef)) {
+            sb.append("错误[ref_type_mismatch]：read_paragraph 只接受 ParagraphRef");
+            continue;
+          }
+          p = resolver.resolve((ParagraphRef) parsed);
+          idx = paragraphIndex(paragraphs, p);
+        } else {
+          sb.append("错误[invalid_ref]：段落目标必须是索引或 ParagraphRef");
+          continue;
+        }
+      } catch (RefResolutionException e) {
+        sb.append(e.render());
         continue;
       }
-      Paragraph p = paragraphs.get(idx);
+      ParagraphRef ref = resolver.reference(p);
       int runCount = p.runs().size();
       long hyperlinkCount = hyperlinkCount(p);
       sb.append("段落 ").append(idx).append('\n');
+      sb.append("ref: ").append(ref.canonical()).append('\n');
       sb.append("文本: ").append(p.text()).append('\n');
       sb.append("对齐: ").append(p.alignment()).append('\n');
       sb.append("run 数: ").append(runCount).append('\n');
       sb.append("超链接数: ").append(hyperlinkCount);
     }
     return sb.toString();
+  }
+
+  private static int paragraphIndex(List<Paragraph> paragraphs, Paragraph target) {
+    for (int i = 0; i < paragraphs.size(); i++) {
+      if (paragraphs.get(i).raw() == target.raw()) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   /**
@@ -148,23 +197,18 @@ public final class BodyTools extends ToolkitToolContext {
       }
       @SuppressWarnings("unchecked")
       Map<String, Object> m = (Map<String, Object>) item;
-      int paragraphIndex;
+      ParagraphTarget target;
       Alignment alignment;
       try {
-        paragraphIndex = getInt(m, "paragraph_index");
+        target = resolveParagraphTarget(docId, paragraphs, m);
         alignment = parseAlignment(getStr(m, "alignment"));
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
-        fail++;
-        continue;
-      }
-      if (outOfBounds(paragraphIndex, paragraphs.size())) {
-        sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
+        sb.append(tag).append(renderError(e));
         fail++;
         continue;
       }
       try {
-        paragraphs.get(paragraphIndex).alignment(alignment);
+        target.paragraph.alignment(alignment);
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(rootMessage(e));
         fail++;
@@ -172,9 +216,11 @@ public final class BodyTools extends ToolkitToolContext {
       }
       sb.append(tag)
           .append("段落 ")
-          .append(paragraphIndex)
+          .append(target.paragraphIndex)
           .append(" 对齐 → ")
           .append(alignment)
+          .append(" ref=")
+          .append(target.ref.canonical())
           .append(" ✓");
       ok++;
     }
@@ -185,22 +231,24 @@ public final class BodyTools extends ToolkitToolContext {
   /**
    * 批量读取正文若干 run 的文本与样式摘要。
    *
-   * <p><b>批量语义（v2）。</b> 入参是<b>对象数组</b> {@code runs},每个对象含 {@code paragraph_index}(int)、{@code
-   * run_index}(int)。 数组长度 1 即读单个 run。读类幂等,越界坐标标注不中断。
+   * <p><b>批量语义。</b> 入参是对象数组 {@code runs}。每个对象优先传 canonical {@code RunRef} 字段 {@code ref}；旧调用方仍可传
+   * {@code paragraph_index}+{@code run_index}。两种寻址同时出现时必须指向同一 run。数组长度 1 即读单个 run；读类幂等，单条失败不影响其它条目。
    */
   @ToolDef(
       name = "read_run",
       description =
           "批量读取正文若干 run 的文本与样式摘要。"
-              + "runs 是对象数组,每个对象含 paragraph_index(int,段落索引 0 起)、run_index(int,run 索引 0 起,不含超链接)。"
+              + "runs 是对象数组,每个对象可传 canonical RunRef 字段 ref,或传"
+              + " paragraph_index(int,段落索引 0 起)+run_index(int,run 索引 0 起,不含超链接)。"
+              + "ref 与索引同时提供时必须指向同一 run。"
               + "单个对象用长度 1 的数组。越界坐标不中断,会在结果里标注。")
   public String readRun(
       @ToolParam(name = "doc_id", description = "文档句柄") String docId,
       @ToolParam(
               name = "runs",
               description =
-                  "对象数组,每个对象含 paragraph_index(int)、run_index(int),"
-                      + "如 [{\"paragraph_index\":0,\"run_index\":0}]")
+                  "对象数组,每个对象含 ref(string),或 paragraph_index(int)+run_index(int),"
+                      + "如 [{\"ref\":\"doc:.../run:session:r-1\"}]")
           List<Map<String, Object>> runs) {
     Document doc = document(docId);
     if (doc == null) {
@@ -224,34 +272,24 @@ public final class BodyTools extends ToolkitToolContext {
       }
       @SuppressWarnings("unchecked")
       Map<String, Object> m = (Map<String, Object>) item;
-      int paragraphIndex;
-      int runIndex;
+      RunTarget target;
       try {
-        paragraphIndex = getInt(m, "paragraph_index");
-        runIndex = getInt(m, "run_index");
+        target = resolveRunTarget(docId, paragraphs, m);
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
+        sb.append(tag).append(renderError(e));
         continue;
       }
-      if (outOfBounds(paragraphIndex, paragraphs.size())) {
-        sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
-        continue;
-      }
-      var paraRuns = paragraphs.get(paragraphIndex).runs();
-      if (outOfBounds(runIndex, paraRuns.size())) {
-        sb.append(tag).append(indexError("run 索引", runIndex, paraRuns.size()));
-        continue;
-      }
-      Run run = paraRuns.get(runIndex);
       sb.append(tag)
           .append("段落 ")
-          .append(paragraphIndex)
+          .append(target.paragraphIndex)
           .append(" run ")
-          .append(runIndex)
+          .append(target.runIndex)
+          .append(" ref=")
+          .append(target.ref.canonical())
           .append("\n文本: ")
-          .append(run.text())
+          .append(target.run.text())
           .append("\n样式: ")
-          .append(run.style());
+          .append(target.run.style());
     }
     return sb.toString();
   }
@@ -262,8 +300,8 @@ public final class BodyTools extends ToolkitToolContext {
    * <p><b>批量语义（v2）。</b> 入参是<b>对象数组</b> {@code edits},每个对象描述一次替换:
    *
    * <ul>
-   *   <li>{@code paragraph_index}:整数,必填,段落索引(0 起)
-   *   <li>{@code run_index}:整数,必填,run 索引(0 起,不含超链接)
+   *   <li>{@code ref}:canonical {@code RunRef}，推荐
+   *   <li>{@code paragraph_index}+{@code run_index}:旧索引兼容入口
    *   <li>{@code text}:字符串,必填,新文本
    * </ul>
    *
@@ -314,38 +352,27 @@ public final class BodyTools extends ToolkitToolContext {
       }
       @SuppressWarnings("unchecked")
       Map<String, Object> m = (Map<String, Object>) item;
-      int paragraphIndex;
-      int runIndex;
+      RunTarget target;
       String text;
       try {
-        paragraphIndex = getInt(m, "paragraph_index");
-        runIndex = getInt(m, "run_index");
+        target = resolveRunTarget(docId, paragraphs, m);
         text = getStr(m, "text");
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
+        sb.append(tag).append(renderError(e));
         fail++;
         continue;
       }
-      if (outOfBounds(paragraphIndex, paragraphs.size())) {
-        sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
-        fail++;
-        continue;
-      }
-      var runs = paragraphs.get(paragraphIndex).runs();
-      if (outOfBounds(runIndex, runs.size())) {
-        sb.append(tag).append(indexError("run 索引", runIndex, runs.size()));
-        fail++;
-        continue;
-      }
-      runs.get(runIndex).text(text);
+      target.run.text(text);
       sb.append(tag)
           .append("段落 ")
-          .append(paragraphIndex)
+          .append(target.paragraphIndex)
           .append(" run ")
-          .append(runIndex)
+          .append(target.runIndex)
           .append(" → \"")
           .append(text)
-          .append("\" ✓");
+          .append("\" ref=")
+          .append(target.ref.canonical())
+          .append(" ✓");
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
@@ -363,6 +390,112 @@ public final class BodyTools extends ToolkitToolContext {
     }
   }
 
+  private ParagraphTarget resolveParagraphTarget(
+      String docId, List<Paragraph> paragraphs, Map<String, Object> payload) {
+    ElementResolver resolver = elementResolver(docId);
+    if (payload.containsKey("ref")) {
+      ElementRef parsed = ElementRefs.parse(getStr(payload, "ref"));
+      if (!(parsed instanceof ParagraphRef)) {
+        throw new RefResolutionException(
+            com.non.docx.toolkit.ref.RefResolutionCode.REF_TYPE_MISMATCH, "该操作只接受 ParagraphRef");
+      }
+      Paragraph paragraph = resolver.resolve((ParagraphRef) parsed);
+      int currentIndex = paragraphIndex(paragraphs, paragraph);
+      if (currentIndex < 0) {
+        throw new RefResolutionException(
+            com.non.docx.toolkit.ref.RefResolutionCode.DOCUMENT_MISMATCH, "ParagraphRef 不属于正文段落");
+      }
+      if (payload.containsKey("paragraph_index")
+          && getInt(payload, "paragraph_index") != currentIndex) {
+        throw new RefResolutionException(
+            com.non.docx.toolkit.ref.RefResolutionCode.STALE_REF, "ref 与 paragraph_index 指向不同段落");
+      }
+      return new ParagraphTarget(paragraph, currentIndex, resolver.reference(paragraph));
+    }
+    int index = getInt(payload, "paragraph_index");
+    if (outOfBounds(index, paragraphs.size())) {
+      throw new IllegalArgumentException(indexError("段落索引", index, paragraphs.size()));
+    }
+    Paragraph paragraph = paragraphs.get(index);
+    return new ParagraphTarget(paragraph, index, resolver.reference(paragraph));
+  }
+
+  private RunTarget resolveRunTarget(
+      String docId, List<Paragraph> paragraphs, Map<String, Object> payload) {
+    ElementResolver resolver = elementResolver(docId);
+    if (payload.containsKey("ref")) {
+      ElementRef parsed = ElementRefs.parse(getStr(payload, "ref"));
+      if (!(parsed instanceof RunRef)) {
+        throw new RefResolutionException(
+            com.non.docx.toolkit.ref.RefResolutionCode.REF_TYPE_MISMATCH, "该操作只接受 RunRef");
+      }
+      Run run = resolver.resolve((RunRef) parsed);
+      for (int p = 0; p < paragraphs.size(); p++) {
+        List<Run> runs = paragraphs.get(p).runs();
+        for (int r = 0; r < runs.size(); r++) {
+          if (runs.get(r).raw() == run.raw()) {
+            if (payload.containsKey("paragraph_index") && getInt(payload, "paragraph_index") != p) {
+              throw new RefResolutionException(
+                  com.non.docx.toolkit.ref.RefResolutionCode.STALE_REF,
+                  "ref 与 paragraph_index 指向不同段落");
+            }
+            if (payload.containsKey("run_index") && getInt(payload, "run_index") != r) {
+              throw new RefResolutionException(
+                  com.non.docx.toolkit.ref.RefResolutionCode.STALE_REF, "ref 与 run_index 指向不同 run");
+            }
+            return new RunTarget(run, p, r, resolver.reference(run));
+          }
+        }
+      }
+      throw new RefResolutionException(
+          com.non.docx.toolkit.ref.RefResolutionCode.DOCUMENT_MISMATCH, "RunRef 不属于正文 run");
+    }
+    int paragraphIndex = getInt(payload, "paragraph_index");
+    if (outOfBounds(paragraphIndex, paragraphs.size())) {
+      throw new IllegalArgumentException(indexError("段落索引", paragraphIndex, paragraphs.size()));
+    }
+    List<Run> runs = paragraphs.get(paragraphIndex).runs();
+    int runIndex = getInt(payload, "run_index");
+    if (outOfBounds(runIndex, runs.size())) {
+      throw new IllegalArgumentException(indexError("run 索引", runIndex, runs.size()));
+    }
+    Run run = runs.get(runIndex);
+    return new RunTarget(run, paragraphIndex, runIndex, resolver.reference(run));
+  }
+
+  private static String renderError(RuntimeException e) {
+    if (e instanceof RefResolutionException) {
+      return ((RefResolutionException) e).render();
+    }
+    return "错误:" + e.getMessage();
+  }
+
+  private static final class ParagraphTarget {
+    private final Paragraph paragraph;
+    private final int paragraphIndex;
+    private final ParagraphRef ref;
+
+    private ParagraphTarget(Paragraph paragraph, int paragraphIndex, ParagraphRef ref) {
+      this.paragraph = paragraph;
+      this.paragraphIndex = paragraphIndex;
+      this.ref = ref;
+    }
+  }
+
+  private static final class RunTarget {
+    private final Run run;
+    private final int paragraphIndex;
+    private final int runIndex;
+    private final RunRef ref;
+
+    private RunTarget(Run run, int paragraphIndex, int runIndex, RunRef ref) {
+      this.run = run;
+      this.paragraphIndex = paragraphIndex;
+      this.runIndex = runIndex;
+      this.ref = ref;
+    }
+  }
+
   /**
    * 批量修改正文若干 run 的内联样式（活对象直写，需 save_docx 落盘）。
    *
@@ -371,15 +504,17 @@ public final class BodyTools extends ToolkitToolContext {
    * XWPFRun#setBold/setItalic/setUnderline/setFontFamily/setFontSize/setColor}; nondocx 用 {@link
    * Run#bold(boolean)} / {@link Run#italic(boolean)} 等链式方法封装这些写入。
    *
-   * <p><b>批量语义（v3）。</b> 入参是对象数组 {@code edits},每个对象含 {@code paragraph_index}、 {@code
-   * run_index},以及一个或多个样式字段:{@code bold}、{@code italic}、{@code underline}、 {@code font}、{@code
-   * font_size}、{@code color}。布尔字段按"是否存在"判断,因此显式传 {@code false} 可清除对应样式；未传字段不改。
+   * <p><b>批量语义。</b> 入参是对象数组 {@code edits}。每个对象优先传 canonical {@code RunRef} 字段 {@code ref}；旧调用方仍可传
+   * {@code paragraph_index}+{@code run_index}。另外提供一个或多个样式字段：{@code bold}、{@code italic}、{@code
+   * underline}、{@code font}、{@code font_size}、{@code color}。布尔字段按"是否存在"判断，因此显式传 {@code false}
+   * 可清除对应样式；未传字段不改。
    */
   @ToolDef(
       name = "update_run_style",
       description =
           "批量修改正文若干 run 的内联样式(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
-              + "paragraph_index(int)、run_index(int),以及可选样式字段:"
+              + "canonical RunRef 字段 ref,或 paragraph_index(int)+run_index(int);"
+              + "ref 与索引同时提供时必须指向同一 run。另含可选样式字段:"
               + "bold(bool)、italic(bool)、underline(bool)、font(string)、font_size(int)、color(string,十六进制如 FF0000)。"
               + "布尔字段显式传 false 可清除样式;未传字段不改。部分失败不中断,返回每条成功/失败明细。")
   public String updateRunStyle(
@@ -387,9 +522,9 @@ public final class BodyTools extends ToolkitToolContext {
       @ToolParam(
               name = "edits",
               description =
-                  "对象数组,每个对象含 paragraph_index(int)、run_index(int),"
+                  "对象数组,每个对象含 ref(string),或 paragraph_index(int)+run_index(int),"
                       + "以及可选 bold/italic/underline/font/font_size/color,"
-                      + "如 [{\"paragraph_index\":0,\"run_index\":0,\"bold\":true,\"color\":\"FF0000\"}]")
+                      + "如 [{\"ref\":\"doc:.../run:session:r-1\",\"bold\":true,\"color\":\"FF0000\"}]")
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -416,28 +551,15 @@ public final class BodyTools extends ToolkitToolContext {
       }
       @SuppressWarnings("unchecked")
       Map<String, Object> m = (Map<String, Object>) item;
-      int paragraphIndex;
-      int runIndex;
+      RunTarget target;
       try {
-        paragraphIndex = getInt(m, "paragraph_index");
-        runIndex = getInt(m, "run_index");
+        target = resolveRunTarget(docId, paragraphs, m);
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
+        sb.append(tag).append(renderError(e));
         fail++;
         continue;
       }
-      if (outOfBounds(paragraphIndex, paragraphs.size())) {
-        sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
-        fail++;
-        continue;
-      }
-      var runs = paragraphs.get(paragraphIndex).runs();
-      if (outOfBounds(runIndex, runs.size())) {
-        sb.append(tag).append(indexError("run 索引", runIndex, runs.size()));
-        fail++;
-        continue;
-      }
-      Run run = runs.get(runIndex);
+      Run run = target.run;
       List<String> changed = new ArrayList<>();
       try {
         if (m.containsKey("bold")) {
@@ -482,11 +604,13 @@ public final class BodyTools extends ToolkitToolContext {
       }
       sb.append(tag)
           .append("段落 ")
-          .append(paragraphIndex)
+          .append(target.paragraphIndex)
           .append(" run ")
-          .append(runIndex)
+          .append(target.runIndex)
           .append(" 样式 → ")
           .append(String.join("、", changed))
+          .append(" ref=")
+          .append(target.ref.canonical())
           .append(" ✓");
       ok++;
     }

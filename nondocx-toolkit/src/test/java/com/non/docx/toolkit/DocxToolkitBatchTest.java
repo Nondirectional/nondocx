@@ -120,6 +120,53 @@ class DocxToolkitBatchTest {
   }
 
   @Test
+  void shouldReadAndEditBodyRunByRefAndRejectMismatchedIndex(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("body-run-ref.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addRun("目标");
+      doc.addParagraph().addRun("保留");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    var document = tk.session.getDocument(docId);
+    String ref =
+        tk.session
+            .getElementResolver(docId)
+            .reference(document.paragraphs().get(0).runs().get(0))
+            .canonical();
+
+    Map<String, Object> edit = new LinkedHashMap<>();
+    edit.put("ref", ref);
+    edit.put("text", "已按 ref 修改");
+    assertThat(tk.body.replaceRunText(docId, List.of(edit)))
+        .contains("已按 ref 修改")
+        .contains("ref=" + ref)
+        .contains("成功 1 条,失败 0 条");
+
+    Map<String, Object> style = new LinkedHashMap<>();
+    style.put("ref", ref);
+    style.put("bold", true);
+    assertThat(tk.body.updateRunStyle(docId, List.of(style)))
+        .contains("bold=true")
+        .contains("ref=" + ref);
+    assertThat(tk.body.readRun(docId, List.of(Map.of("ref", ref))))
+        .contains("已按 ref 修改")
+        .contains("bold=true")
+        .contains("ref=" + ref);
+
+    Map<String, Object> mismatch = new LinkedHashMap<>();
+    mismatch.put("ref", ref);
+    mismatch.put("paragraph_index", 1);
+    mismatch.put("run_index", 0);
+    mismatch.put("text", "不应写入");
+    assertThat(tk.body.replaceRunText(docId, List.of(mismatch)))
+        .contains("错误[stale_ref]")
+        .contains("成功 0 条,失败 1 条");
+    assertThat(tk.body.readParagraph(docId, List.of(1))).contains("保留");
+  }
+
+  @Test
   void shouldUpdateMultipleRunStylesCollectErrors(@TempDir Path tmp) throws Exception {
     Path file = tmp.resolve("style.docx");
     try (Document doc = Docx.create()) {
@@ -214,6 +261,62 @@ class DocxToolkitBatchTest {
     // 读回应验证写入:用 read_table_cell 确认单元格文本。
     assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 0)))).contains("左已改");
     assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 1)))).contains("右已改");
+  }
+
+  @Test
+  void shouldReadAndEditTableRunByRefAndRejectMismatchedCoordinate(@TempDir Path tmp)
+      throws Exception {
+    Path file = tmp.resolve("table-run-ref.docx");
+    try (Document doc = Docx.create()) {
+      var row = doc.addTable().addRow();
+      row.addCell().addParagraph().addRun("左");
+      row.addCell().addParagraph().addRun("右");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    var document = tk.session.getDocument(docId);
+    String ref =
+        tk.session
+            .getElementResolver(docId)
+            .reference(
+                document
+                    .tables()
+                    .get(0)
+                    .rows()
+                    .get(0)
+                    .cells()
+                    .get(0)
+                    .paragraphs()
+                    .get(0)
+                    .runs()
+                    .get(0))
+            .canonical();
+
+    assertThat(tk.table.readTableCellRun(docId, null, null, null, null, null, ref))
+        .contains("左")
+        .contains("ref=" + ref);
+
+    Map<String, Object> edit = new LinkedHashMap<>();
+    edit.put("ref", ref);
+    edit.put("text", "左已按 ref 修改");
+    assertThat(tk.table.replaceTableCellRunText(docId, List.of(edit)))
+        .contains("左已按 ref 修改")
+        .contains("ref=" + ref)
+        .contains("成功 1 条,失败 0 条");
+
+    Map<String, Object> mismatch = new LinkedHashMap<>();
+    mismatch.put("ref", ref);
+    mismatch.put("table_index", 0);
+    mismatch.put("row_index", 0);
+    mismatch.put("cell_index", 1);
+    mismatch.put("paragraph_index", 0);
+    mismatch.put("run_index", 0);
+    mismatch.put("text", "不应写入");
+    assertThat(tk.table.replaceTableCellRunText(docId, List.of(mismatch)))
+        .contains("错误[stale_ref]")
+        .contains("成功 0 条,失败 1 条");
+    assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 1)))).contains("右");
   }
 
   @Test
@@ -467,12 +570,27 @@ class DocxToolkitBatchTest {
     DocxToolkit tk = new DocxToolkit();
     String docId = tk.session.openDocx(file.toAbsolutePath().toString());
 
-    assertThat(tk.headerFooterToc.readHeaderFooter(docId, "HEADER", 0, 0))
+    String headerResult = tk.headerFooterToc.readHeaderFooter(docId, "HEADER", 0, 0);
+    assertThat(headerResult)
         .contains("页眉")
-        .contains("页眉内容");
+        .contains("页眉内容")
+        .contains("part ref: doc:")
+        .contains("paragraph ref: doc:");
     assertThat(tk.headerFooterToc.readHeaderFooter(docId, "footer", 0, 0))
         .contains("页脚")
-        .contains("页脚内容");
+        .contains("页脚内容")
+        .contains("part ref: doc:")
+        .contains("paragraph ref: doc:");
+    var document = tk.session.getDocument(docId);
+    String headerRef =
+        tk.session
+            .getElementResolver(docId)
+            .reference(document.sections().get(0).header())
+            .canonical();
+    assertThat(tk.headerFooterToc.readHeaderFooterRef(docId, headerRef))
+        .contains("页眉 ref=" + headerRef)
+        .contains("页眉内容")
+        .contains("段落 0 ref=doc:");
     assertThat(tk.headerFooterToc.readHeaderFooter(docId, "SIDE", 0, 0)).contains("part 仅支持");
   }
 

@@ -234,6 +234,35 @@ class DocxToolkitTrackedChangesTest {
         .contains("失败 1 条");
   }
 
+  @Test
+  void shouldGetAndAcceptRevisionByRefThenReportRemoved(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("revision-ref.docx");
+    try (Document doc = Docx.create()) {
+      var p = doc.raw().getDocument().getBody().addNewP();
+      var ins = p.addNewIns();
+      ins.setId(java.math.BigInteger.ONE);
+      ins.setAuthor("甲");
+      ins.addNewR().addNewT().setStringValue("新增");
+      doc.save(file);
+    }
+    DocxToolkit tk = new DocxToolkit();
+    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String list = tk.trackedChangeQuery.listTrackedChanges(docId);
+    String ref = extractRef(list);
+
+    assertThat(ref).startsWith("doc:").contains("/revision:session:");
+    assertThat(tk.trackedChangeQuery.getTrackedChange(docId, ref))
+        .contains("text=\"新增\"")
+        .contains("ref=" + ref);
+    assertThat(
+            tk.trackedChangeQuery.applyTrackedChanges(
+                docId, "ACCEPT", "TEXT_OR_MOVE", List.of(ref)))
+        .contains("已应用")
+        .contains("ref=" + ref)
+        .contains("成功 1 条,失败 0 条");
+    assertThat(tk.trackedChangeQuery.getTrackedChange(docId, ref)).contains("错误[element_removed]");
+  }
+
   /** 从 list 输出里抽取首个以 prefix 开头的 id(id 在「id=」之后)。 */
   private static String extractId(String listOutput, String prefix) {
     int i = listOutput.indexOf(prefix);
@@ -245,6 +274,16 @@ class DocxToolkitTrackedChangesTest {
       end = listOutput.length();
     }
     return listOutput.substring(i, end);
+  }
+
+  private static String extractRef(String listOutput) {
+    int start = listOutput.indexOf("ref=");
+    if (start < 0) {
+      return "";
+    }
+    start += "ref=".length();
+    int end = listOutput.indexOf(", id=", start);
+    return end < 0 ? listOutput.substring(start) : listOutput.substring(start, end);
   }
 
   /** 构造 run 操作的 edit 对象(含 paragraph_index、run_index),供 delete/replace_run_tracked 用。 */

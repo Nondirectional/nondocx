@@ -13,6 +13,9 @@ import com.non.docx.core.api.toc.TableOfContents;
 import com.non.docx.core.api.track.TrackedChangeFamily;
 import com.non.docx.core.api.track.TrackedChanges;
 import com.non.docx.toolkit.orchestration.DocumentSnapshot;
+import com.non.docx.toolkit.ref.DocumentRef;
+import com.non.docx.toolkit.ref.ElementResolver;
+import com.non.docx.toolkit.ref.ReferenceContext;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
@@ -47,6 +50,16 @@ public final class SnapshotBuilder {
   /** 表格采样的最大行数（首行优先）。 */
   private static final int TABLE_SAMPLE_ROWS = 1;
 
+  private final ReferenceContext referenceContext;
+
+  public SnapshotBuilder() {
+    this(new ReferenceContext());
+  }
+
+  public SnapshotBuilder(ReferenceContext referenceContext) {
+    this.referenceContext = referenceContext;
+  }
+
   /**
    * 构建文档快照。
    *
@@ -58,7 +71,9 @@ public final class SnapshotBuilder {
   public DocumentSnapshot build(
       Document doc, String conversationId, Path sourcePath, long sessionGeneration) {
     SnapshotOverview overview = buildOverview(doc);
-    BodyPreviews body = buildBodyPreviews(doc);
+    ElementResolver resolver =
+        referenceContext.resolver(new DocumentRef(conversationId, sessionGeneration), doc);
+    BodyPreviews body = buildBodyPreviews(doc, resolver);
     RevisionSummary revision = buildRevision(doc);
     QualitySummary quality = new QualitySummary(0, 0, List.of());
 
@@ -108,7 +123,7 @@ public final class SnapshotBuilder {
    * 里交错排列，各自占一个 slot。分别遍历会丢失交错顺序信息——拿不到表格在 body 里的绝对位置， 导致 LLM 无法正确表达「在表格前/后插入段落」 （见任务
    * 07-10-body-insert-position-table-boundary 的根因分析）。一次遍历让每个段落和表格都带上 bodyIndex， LLM 就能精确表达插入落点。
    */
-  private BodyPreviews buildBodyPreviews(Document doc) {
+  private BodyPreviews buildBodyPreviews(Document doc, ElementResolver resolver) {
     List<ParagraphPreview> paragraphs = new ArrayList<>();
     List<TablePreview> tables = new ArrayList<>();
     int paraIdx = 0;
@@ -121,7 +136,9 @@ public final class SnapshotBuilder {
         HeadingLevel heading = p.heading();
         String headingLevel = heading == null ? null : String.valueOf(heading.ordinal() + 1);
         boolean listItem = p.listLevel() != null;
-        paragraphs.add(new ParagraphPreview(paraIdx, bodyIdx, text, headingLevel, listItem));
+        paragraphs.add(
+            new ParagraphPreview(
+                resolver.reference(p), paraIdx, bodyIdx, text, headingLevel, listItem));
         paraIdx++;
       } else if (be instanceof Table) {
         Table t = (Table) be;
@@ -129,7 +146,9 @@ public final class SnapshotBuilder {
         int rowCount = rows.size();
         int colCount = rowCount == 0 ? 0 : rows.get(0).cells().size();
         List<List<String>> samples = sampleCells(rows);
-        tables.add(new TablePreview(tableIdx, bodyIdx, rowCount, colCount, samples));
+        tables.add(
+            new TablePreview(
+                resolver.reference(t), tableIdx, bodyIdx, rowCount, colCount, samples));
         tableIdx++;
       }
       bodyIdx++;
