@@ -115,8 +115,8 @@ public final class DocxAgentExample {
         Agent.builder(llm, registry)
             .systemPrompt(SYSTEM_PROMPT)
             // 不限制迭代次数：让 Agent 自行跑完所有工具调用直至自然收尾。
-            // Agent 的循环在「迭代数 >= maxIterations」时停止，Integer.MAX_VALUE 实际等同于不设上限
-            // （不会真跑到 21 亿次；Agent 完成任务后自然结束）。
+            // nonchain 0.10.0 起，普通上限用完后会进入 graceful 收尾；这里用 Integer.MAX_VALUE
+            // 实际等同于不设上限（不会真跑到 21 亿次；Agent 完成任务后自然结束）。
             .maxIterations(Integer.MAX_VALUE)
             .callback(loggingCallback())
             .build();

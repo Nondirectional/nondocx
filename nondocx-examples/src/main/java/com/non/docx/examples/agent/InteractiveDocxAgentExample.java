@@ -118,7 +118,8 @@ public final class InteractiveDocxAgentExample {
         Agent.builder(llm, registry)
             .systemPrompt(SYSTEM_PROMPT)
             // 不限制迭代次数：让 Agent 自行跑完所有工具调用直至自然收尾。
-            // Agent 的循环在「迭代数 >= maxIterations」时停止，Integer.MAX_VALUE 实际等同于不设上限。
+            // nonchain 0.10.0 起，普通上限用完后会进入 graceful 收尾；这里用 Integer.MAX_VALUE
+            // 实际等同于不设上限。
             .maxIterations(Integer.MAX_VALUE)
             // ★ 多轮记忆：开启后每轮 user/assistant/tool 消息自动入栈，
             //   下一轮 run 会把历史一起发给 LLM，于是「刚才那个文档」能被理解。
@@ -167,7 +168,8 @@ public final class InteractiveDocxAgentExample {
       try {
         agent.run(input, InteractiveDocxAgentExample::handleEvent);
       } catch (RuntimeException e) {
-        // Agent 内部异常（含超 maxIterations）不应让 REPL 挂掉——打印后继续下一轮。
+        // Agent 内部异常不应让 REPL 挂掉——打印后继续下一轮。
+        // 若需恢复 0.9.x「超 maxIterations 抛异常」语义，可在 Builder 上显式配置 graceTurns(0)。
         System.err.println("[错误] " + rootMessage(e));
       }
     }
