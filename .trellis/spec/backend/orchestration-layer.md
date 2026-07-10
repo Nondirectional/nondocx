@@ -41,9 +41,11 @@ table-style-gap task group), but `TableExecutor` only connects a subset (5 kinds
 cell shading / cell run style / merge / borders). This is a **systematic blind spot** — each missing
 kind is discovered only when a user request hits it. When adding an operation, check whether the
 underlying toolkit method already exists; if so, it's a pure wiring task (4 points above). The
-remaining 20 un-wired kinds (vertical align, paragraph alignment, header row, cant-split, column
-widths, row/cell add-remove, paragraph heading/indent/spacing/list/shading) are tracked as a
-follow-up wiring batch.
+remaining 20 un-wired kinds span three groups: **read/build** (`create_table`, `read_table_cell`,
+`read_table_cell_run` — may not need operation wiring at all, being read-only or whole-table), **new
+table style/structure writes** (vertical align, paragraph alignment, header row, cant-split, column
+percents/widths/read, row/cell add-remove, paragraph heading/indent/spacing/list/shading), and
+`read_table_row`. These are tracked as a follow-up wiring batch.
 
 ### 3. Signature Pattern
 
