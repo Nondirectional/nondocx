@@ -178,6 +178,11 @@ default children (a default row, mirror-grid cells, an empty paragraph). To keep
 `removeParagraph` before returning. Do NOT skip the stripping or content equality and round-trip
 assertions break.
 
+**toolkit 层下游影响**: 此剥离在 toolkit 层产生连锁约束——`add_table_row` / `add_table_cell`
+返回的是**真空结构**（新行 0 单元格、新单元格 0 段落），无法直接被 `replace_table_cell_run_text`
+等 run 文本工具填充（会报段落索引越界）。详见 `orchestration-layer.md` 的「add_table_row /
+add_table_cell 返回空结构」Gotcha。
+
 ### N3 — `XWPFRun.addPicture` width/height are EMU, not pixels
 POI 5.2.5 stores the `width`/`height` args of `addPicture(...)` **verbatim as EMU** on
 `<wp:extent>` (no pixel→EMU conversion). So `Paragraph.addImage(bytes, type, wPx, hPx)` converts
