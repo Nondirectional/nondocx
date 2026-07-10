@@ -151,6 +151,138 @@ only provides `paragraph_index` (not `body_index`), it **throws** rather than si
 
 ---
 
+## Scenario: Stable Semantic References
+
+### 1. Scope / Trigger
+
+当 toolkit、snapshot、plan、review 或 commit 需要在多次读写之间持续指向同一文档元素时，
+必须使用 `com.non.docx.toolkit.ref` 的强类型引用。位置索引只用于展示和旧 payload 兼容，
+不能承担元素身份；在目标前插入新元素后，索引会漂移。
+
+引用协议属于 toolkit/编排适配层，不进入 core 领域 API。core 继续暴露 POI 活对象 wrapper；
+toolkit 负责文档 key、generation、opaque session id、canonical codec 和错误码。
+
+### 2. Signatures
+
+```java
+public interface ElementRef {
+  DocumentRef documentRef();
+  ElementKind kind();
+  RefStability stability();
+  String elementId();
+  String canonical();
+}
+
+public final class DocumentRef {
+  public DocumentRef(String documentKey, long sessionGeneration);
+}
+
+public final class ElementResolver {
+  public ParagraphRef reference(Paragraph paragraph);
+  public RunRef reference(Run run);
+  public TableRef reference(Table table);
+  public CellRef reference(Cell cell);
+  public HeaderFooterRef reference(Header header);
+  public HeaderFooterRef reference(Footer footer);
+  public RevisionRef reference(TrackedChange change);
+
+  public Paragraph resolve(ParagraphRef ref);
+  public Run resolve(RunRef ref);
+  public Table resolve(TableRef ref);
+  public Cell resolve(CellRef ref);
+  public Header resolveHeader(HeaderFooterRef ref);
+  public Footer resolveFooter(HeaderFooterRef ref);
+  public TrackedChange resolve(RevisionRef ref);
+}
+```
+
+具体值对象：`ParagraphRef`、`RunRef`、`TableRef`、`CellRef`、`HeaderFooterRef`、
+`RevisionRef`。规范化字符串统一由 `ElementRefs.parse(String)` 解析；工具不得自行 `split`。
+
+### 3. Contracts
+
+- `SESSION` ref 绑定 `documentKey + sessionGeneration + opaque id`，只保证当前代次可解析。
+- `PERSISTENT` 第一版只用于已有 `w14:paraId` 的正文段落；读取/快照/签发不得自动补 paraId。
+- resolver 每次解析必须重新扫描当前活文档树，确认 delegate identity 仍存在；不得直接返回
+  registry 里保存的旧 wrapper。
+- `ParagraphPreview` / `TablePreview`（snapshot version 2）同时返回 `ref`、投影 `index`、
+  `bodyIndex`；三者来自同一 resolver/document generation。
+- `ConflictKey.targetRef` 必须保存 `ElementRef`。旧字符串构造器只允许在兼容边界转换为
+  `OperationTargetRef`，内部状态不得保存自由字符串。
+- 工具 payload 优先字段为 `ref`。旧 `paragraph_index`、`run_index`、表格五级坐标等继续兼容。
+- ref 与旧索引同时出现时，先解析 ref，再验证索引是否指向同一 delegate；不一致时拒绝执行。
+- 写工具结果必须包含实际 canonical ref，调用方后续继续复用 ref，不复用旧索引。
+- `Operation.targetRef` 可暂时保留 canonical/兼容传输字符串，但冲突比较、去重和同目标判断必须
+  使用 `ConflictKey.targetRef()` 的强类型值语义。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 稳定错误码 | 行为 |
+|---|---|---|
+| canonical 格式非法 | `invalid_ref` | 不执行 |
+| ref 的元素类型与工具不符 | `ref_type_mismatch` | 不执行 |
+| `documentKey` 与当前文档不同 | `document_mismatch` | 不执行 |
+| SESSION ref 的 generation 与当前代次不同 | `generation_mismatch` | 不执行 |
+| 当前 resolver 不认识 opaque id | `stale_ref` | 不执行 |
+| registry 认识目标，但活文档树已找不到 | `element_removed` | 不执行 |
+| ref 与同时提供的索引/坐标不一致 | `stale_ref` | 拒绝写入，原目标不变 |
+| PERSISTENT paraId 重复，无法唯一定位 | `stale_ref` | 不猜第一个 |
+
+字符串工具边界统一渲染为 `错误[code]：message`；内部按 `RefResolutionCode` 分支，
+不得靠中文 message 判断错误类型。
+
+### 5. Good / Base / Bad Cases
+
+- **Good**：先读取 run 得到 `RunRef`，在前方插入新段落，再用旧 ref 修改文本；仍命中原 run。
+- **Base**：旧调用方只传完整索引/坐标；工具先定位活对象、签发 ref、执行并在结果返回 ref。
+- **Bad**：同时传 `ref=左单元格 run` 和 `cell_index=1`（右单元格）；返回 `stale_ref`，不写任一单元格。
+- **Lifecycle**：SESSION ref 在 reopen 后返回 `generation_mismatch`；已有 paraId 的
+  PERSISTENT `ParagraphRef` 在同一逻辑文档 reopen 后仍命中。
+- **Deletion**：段落、run、表格、单元格、页眉页脚 part 或修订被删除后返回
+  `element_removed`，即使旧 wrapper 仍可访问。
+
+### 6. Tests Required
+
+- `ElementRefsTest`：值对象内容相等、canonical round-trip、非法格式。
+- `ElementResolverTest`：
+  - 前方插入后 SESSION ref 仍命中原对象；
+  - 段落/run/表格/单元格删除后为 `element_removed`；
+  - SESSION 跨 generation 为 `generation_mismatch`；
+  - 已有 paraId 的 PERSISTENT 段落 save/reopen 后命中；
+  - 无 paraId 段落签发 ref 前后 XML 完全相同。
+- `SnapshotBodyOrderTest`：段落/表格 ref 与 `index/bodyIndex` 同时正确，snapshot version 为 2。
+- `DocxToolkitBatchTest`：Body/Table ref 读写成功；ref 与索引不一致返回 `stale_ref` 且不写入。
+- `DocxToolkitTrackedChangesTest`：list 返回 `RevisionRef`；按 ref accept/reject；处理后旧 ref 为
+  `element_removed`。
+- `ConflictKeyTest`：规范化相同的强类型 ref 可 `sameTarget`，不同元素不能去重。
+
+### 7. Wrong vs Correct
+
+#### Wrong — 把位置路径当身份
+
+```java
+String target = "paragraph:3";
+ConflictKey key = new ConflictKey("body", "replace_run_text", target);
+// paragraph 0 前插后，paragraph:3 已指向别的元素。
+```
+
+#### Correct — 快照签发 ref，提交前重新解析
+
+```java
+ParagraphRef ref = resolver.reference(paragraph);
+ConflictKey key = new ConflictKey("body", "replace_run_text", ref);
+
+Map<String, Object> edit = new LinkedHashMap<>();
+edit.put("ref", ref.canonical());
+edit.put("text", "新文本");
+bodyTools.replaceRunText(docId, List.of(edit));
+```
+
+`resolver.resolve(ref)` 会校验 document/generation/type，并重扫活文档树；位置变化不影响身份，
+删除则稳定失败。
+
+---
+
 ## Gotcha: insertParagraph bodyIndex Semantics
 
 > **Warning**: `Document.insertParagraph(bodyIndex)` inserts **before** the element at `bodyIndex`.

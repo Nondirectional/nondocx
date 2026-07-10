@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "引用 resolver 需遵守 holding-wrapper、POI 隔离与只读 paraId 访问约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "引用失效错误码和中文边界渲染约束"}
+{"file": ".trellis/spec/backend/orchestration-layer.md", "reason": "快照双索引、ConflictKey 与编排数据流约束"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Java 11、测试、Javadoc 与 POI 泄漏质量约束"}

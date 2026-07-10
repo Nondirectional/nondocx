@@ -28,7 +28,7 @@ quality.
 | [Logging](./logging.md) | 库不日志走异常；demo 用 SLF4J；POI 5.x log4j-api 桥接陷阱 | Done |
 | [Quality Guidelines](./quality-guidelines.md) | No Lombok, content-equal semantics, testing, forbidden patterns | Done |
 | [Renderer Compatibility](./renderer-compatibility.md) | WPS/Word 双引擎兼容性陷阱清单（shading/列宽/pgNumType/...），每条带稳定锚点 | Done |
-| [Orchestration Layer](./orchestration-layer.md) | LLM operation → toolkit 桥接：四点覆盖规则、payload 字段容错、快照双索引 | Done |
+| [Orchestration Layer](./orchestration-layer.md) | LLM operation → toolkit 桥接：四点覆盖、payload 容错、快照双索引、稳定语义引用 | Done |
 
 Also relevant: [../guides/](../guides/) — general thinking guides (code reuse, cross-layer).
 

@@ -96,11 +96,11 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 
 | 工具 | 作用 | 批量 |
 |---|---|---|
-| `read_paragraph` | 读段落（含 run 列表） | ✅ `paragraph_indexes` 数组 |
-| `update_paragraph_alignment` | 改段落对齐（LEFT/CENTER/RIGHT/JUSTIFY） | ✅ `edits` 数组 |
-| `read_run` | 读单个 run | ✅ `runs` 数组 |
-| `replace_run_text` | 改 run 文本 | ✅ `edits` 数组 |
-| `update_run_style` | 改 run 样式（bold/italic/underline/font/font_size/color） | ✅ `edits` 数组 |
+| `read_paragraph` | 读段落（索引或 `ParagraphRef`） | ✅ `paragraph_indexes` 数组 |
+| `update_paragraph_alignment` | 改段落对齐（`ParagraphRef` 或旧索引） | ✅ `edits` 数组 |
+| `read_run` | 读 run（`RunRef` 或旧索引） | ✅ `runs` 数组 |
+| `replace_run_text` | 改 run 文本（`RunRef` 或旧索引） | ✅ `edits` 数组 |
+| `update_run_style` | 改 run 样式（`RunRef` 或旧索引） | ✅ `edits` 数组 |
 | `insert_paragraph` | 按 body 顺序插入段（开头/中间/末尾） | ✅ `paragraphs` 对象数组 |
 | `read_hyperlink` | 读超链接 | 单条 |
 | `update_hyperlink` | 改超链接 text/url（都可选） | 单条 |
@@ -113,15 +113,16 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 | `create_table` | 末尾创建表格并按二维数组填充单元格 | `rows` 二维数组 |
 | `set_table_borders` | 设置表格边框（当前支持 NONE 无边框） | 单条 |
 | `merge_table_cells` | 合并单元格（HORIZONTAL / VERTICAL） | ✅ `merges` 对象数组 |
-| `read_table_cell` | 读单元格 | ✅ `cells` 数组 |
-| `read_table_cell_run` | 读单元格内 run | 单条 |
-| `replace_table_cell_run_text` | 改单元格 run 文本 | ✅ `edits` 数组 |
+| `read_table_cell` | 读单元格（`CellRef` 或旧坐标） | ✅ `cells` 数组 |
+| `read_table_cell_run` | 读单元格内 run（`RunRef` 或旧五级坐标） | 单条 |
+| `replace_table_cell_run_text` | 改单元格 run 文本（`RunRef` 或旧五级坐标） | ✅ `edits` 数组 |
 
 ### HeaderFooterTocTools（页眉页脚 + 目录，只读）
 
 | 工具 | 作用 |
 |---|---|
-| `read_header_footer` | 读页眉/页脚段落（`part=HEADER/FOOTER`） |
+| `read_header_footer` | 按旧 section/paragraph 索引读页眉/页脚，并返回 part/paragraph ref |
+| `read_header_footer_ref` | 按 `HeaderFooterRef` 读整个页眉/页脚及内部段落 ref |
 | `read_toc` | 读首个目录的条目 |
 
 ### TrackedChangeQueryTools（修订查询 + 处理）
@@ -130,9 +131,9 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 |---|---|---|
 | `get_tracked_changes_enabled` | 查修订开关 | — |
 | `set_tracked_changes_enabled` | 改修订开关 | — |
-| `list_tracked_changes` | 枚举修订 | — |
-| `get_tracked_change` | 按 id 取单条 | — |
-| `apply_tracked_changes` | 按 `action=ACCEPT/REJECT`、`target=TEXT_OR_MOVE/PROPERTY/CELL` 处理指定 ids | ✅ `ids` |
+| `list_tracked_changes` | 枚举修订，同时返回 `RevisionRef` 与兼容 stable id | — |
+| `get_tracked_change` | 按 `RevisionRef` 或兼容 stable id 取单条 | — |
+| `apply_tracked_changes` | 按 `action=ACCEPT/REJECT`、`target=TEXT_OR_MOVE/PROPERTY/CELL` 处理指定 refs/ids | ✅ `ids` |
 | `apply_text_revisions` | 按 `action=ACCEPT/REJECT`、`scope=ALL/AUTHOR` 批量处理文本/移动类修订 | — |
 
 > 修订的 family gate / 异常契约 与 core 一致，详见 [05/03 accept-reject](./05-tracked-changes/03-accept-reject.md)。
@@ -194,7 +195,40 @@ check_quality({
 
 ---
 
-## 5. 单次 vs 批量调用（v2 升级）
+## 5. 稳定寻址与批量调用
+
+### 5.1 稳定语义引用（P0-01）
+
+toolkit 现在用强类型 ref 表达元素身份：`ParagraphRef`、`RunRef`、`TableRef`、`CellRef`、
+`HeaderFooterRef`、`RevisionRef`。规范化字符串只用于工具 payload、日志和传输；内部由
+`ElementRefs.parse(...)` 统一解析，不把位置索引当身份。
+
+- **SESSION**：只在当前 `sessionGeneration` 内有效。close/reopen 后解析旧 ref 返回
+  `generation_mismatch`。
+- **PERSISTENT**：第一版支持“原本已有 `w14:paraId`”的正文段落。save/reopen 后仍可按 paraId
+  定位；纯读取和签发 ref 不会自动补写 paraId。
+- **位置变化不漂移**：在目标前插入段落后，旧 ref 仍解析到原对象。
+- **删除明确失效**：段落、run、表格、单元格或修订被删除后，旧 ref 返回
+  `element_removed`，不会返回已脱离文档树的旧 wrapper。
+- **双入口校验**：ref 与旧索引/坐标同时提供时必须指向同一元素，否则返回
+  `stale_ref` 并拒绝写入。
+
+旧索引暂时保留兼容，但新调用方应保存读操作返回的 canonical ref，并在后续 plan/review/commit
+持续复用。索引只用于显示和迁移期兼容，不再承担稳定身份。
+
+```json
+replace_run_text({
+  "doc_id": "doc-1",
+  "edits": [
+    {"ref": "doc:.../run:session:r-3", "text": "新文本"}
+  ]
+})
+```
+
+稳定错误码包括：`stale_ref`、`element_removed`、`generation_mismatch`、
+`document_mismatch`、`ref_type_mismatch`、`invalid_ref`。
+
+### 5.2 单次 vs 批量调用（v2 升级）
 
 核心工具支持**一次操作多个目标**。单次调用时传长度 1 的数组即可，调用方不用区分两套 API。
 
@@ -274,7 +308,7 @@ tk.session.closeDocx(docId);
 | 一个 Agent 持有全部工具，prompt 负担重 | 按工具组拆专家，每个专家只懂本组 |
 | LLM 直接调写工具，无统一提交边界 | 写入经 `CommitCoordinator` 串行提交 |
 | 多轮编辑缺计划/审查层 | 有 `ExpertPlan` → `MergedPlan` → review → commit 显式阶段 |
-| 无冲突检测 | 分层冲突检测（粗粒度 `ConflictKey` + 字段级判断） |
+| 无冲突检测 | 分层冲突检测（强类型 `ConflictKey` + 字段级判断） |
 
 ### 9.2 架构总览
 
@@ -320,6 +354,8 @@ RouterResult result = orch.plan(conv, "...");
 - **切文档新会话**：切换到另一份文档必须新开会话，不复用旧 memory。
 - **reopen 递增代次**：close + reopen 同一文档，`sessionGeneration++`，使旧快照与旧 plan 失效。
 - **docId 不外露**：对外只暴露 `conversationId`；底层 `docId` 只在 orchestrator/coordinator 内部流转。
+- **snapshot version 2**：段落/表格 preview 同时包含强类型 ref、投影索引和 body 索引。
+- **冲突键强类型化**：`ConflictKey.targetRef` 保存 `ElementRef`；plan/review/commit 沿用同一 canonical ref。
 
 ### 9.5 提交与失败语义
 
@@ -335,11 +371,20 @@ RouterResult result = orch.plan(conv, "...");
 
 | 示例 | 演示 |
 |---|---|
+| [`StableSemanticReferenceExample.java`](../nondocx-examples/src/main/java/com/non/docx/examples/StableSemanticReferenceExample.java) | P0-01：前插不漂移、删除 `element_removed`、SESSION 跨代失效、PERSISTENT reopen 后仍命中 |
 | [`DocxOrchestratorExample.java`](../nondocx-examples/src/main/java/com/non/docx/examples/agent/DocxOrchestratorExample.java) | 编排层高层 run / 低层 plan / debug 三条路径（启发式专家，无需 API key） |
 | [`DocxAgentExample.java`](../nondocx-examples/src/main/java/com/non/docx/examples/agent/DocxAgentExample.java) | LLM 直连工具的两段流程：读结构 → 执行编辑（直接编辑 + 修订模式） |
 | [`InteractiveDocxAgentExample.java`](../nondocx-examples/src/main/java/com/non/docx/examples/agent/InteractiveDocxAgentExample.java) | LLM 交互式对话，不限迭代次数 |
 
 `DocxAgentExample` / `InteractiveDocxAgentExample` 需 `DASHSCOPE_API_KEY` 环境变量；`DocxOrchestratorExample` 用启发式专家，无需 key 即可运行。
+
+稳定语义引用示例无需 API key：
+
+```bash
+rtk mvn -q -pl nondocx-examples -am -DskipTests install
+rtk mvn -q -pl nondocx-examples \
+  -Dexec.mainClass=com.non.docx.examples.StableSemanticReferenceExample exec:java
+```
 
 ---
 
