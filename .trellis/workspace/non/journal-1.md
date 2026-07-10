@@ -950,3 +950,37 @@ Consolidated the nondocx toolkit Agent tool surface into intention-oriented entr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: 完成 P0-01 稳定语义寻址
+
+**Date**: 2026-07-10
+**Task**: 完成 P0-01 稳定语义寻址
+**Branch**: `main`
+
+### Summary
+
+完成稳定语义引用协议、工具接线、回归测试、Example、文档与 spec 更新，并通过全量 verify。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7b1e52b` | (see git log) |
+| `1891ea2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
