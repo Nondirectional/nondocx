@@ -1,0 +1,32 @@
+{
+  "id": "toolkit-router-subagents",
+  "name": "toolkit-router-subagents",
+  "title": "规划 toolkit RouterAgent 多子代理落地",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "non",
+  "assignee": "non",
+  "createdAt": "2026-07-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "feat/onlyoffice-demo",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-09-toolkit-router-subagents-foundation",
+    "07-09-toolkit-router-subagents-runtime",
+    "07-09-toolkit-router-subagents-body-table",
+    "07-09-toolkit-router-subagents-demo-validation",
+    "07-09-toolkit-router-subagents-specialists"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
