@@ -1018,3 +1018,38 @@ Consolidated the nondocx toolkit Agent tool surface into intention-oriented entr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: P0-03 机器可读能力契约
+
+**Date**: 2026-07-12
+**Task**: P0-03 机器可读能力契约
+**Branch**: `main`
+
+### Summary
+
+为 nondocx-toolkit 建立机器可读能力契约：新增 capability 包（@ToolCapability/@ParamCapability/@NestedParamCapability 伴生注解 + CapabilityCollector 反射收集器 + CapabilityManifest 模型 + digest/jsonio），55 个 @ToolDef 工具全部标注能力元数据；describe_capabilities 工具支持 element/operation/level 过滤；exec-maven-plugin 在 process-classes 阶段生成 capabilities.json+digest；CapabilityContractTest 强制缺注解构建失败/声明工具须有测试/ENUM 须有 enumValues/digest 稳定。真实来源为 Java 代码+注解，不手写 schema。mvn verify 全绿（208 测试）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b6d25cf` | (see git log) |
+| `5e7b13d` | (see git log) |
+| `5eb682b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
