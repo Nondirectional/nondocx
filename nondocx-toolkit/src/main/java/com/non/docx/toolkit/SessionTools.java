@@ -4,6 +4,10 @@ import com.non.chain.tool.ToolDef;
 import com.non.chain.tool.ToolParam;
 import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
+import com.non.docx.toolkit.capability.CapabilityOperation;
+import com.non.docx.toolkit.capability.ParamCapability;
+import com.non.docx.toolkit.capability.ParamType;
+import com.non.docx.toolkit.capability.ToolCapability;
 import com.non.docx.toolkit.ref.ElementResolver;
 import com.non.docx.toolkit.ref.ReferenceContext;
 import com.non.docx.toolkit.result.ToolResult;
@@ -94,7 +98,10 @@ public final class SessionTools extends ToolkitToolContext {
    * @return 形如 {@code "doc-1"} 的句柄；打开失败返回中文错误串
    */
   @ToolDef(name = "open_docx", description = "打开一个 .docx 文件，返回文档句柄 docId，后续工具用它定位文档")
-  public String openDocx(@ToolParam(name = "path", description = "文档路径（绝对路径）") String path) {
+  @ToolCapability(operation = CapabilityOperation.SESSION)
+  public String openDocx(
+      @ToolParam(name = "path", description = "文档路径（绝对路径）") @ParamCapability(type = ParamType.PATH)
+          String path) {
     try {
       Document doc = Docx.open(Path.of(path));
       String docId = "doc-" + seq.incrementAndGet();
@@ -117,9 +124,13 @@ public final class SessionTools extends ToolkitToolContext {
    * @return 保存结果（含输出路径）；失败返回中文错误串
    */
   @ToolDef(name = "save_docx", description = "把指定 docId 的文档保存到 output_path（覆盖写），返回保存结果")
+  @ToolCapability(operation = CapabilityOperation.SESSION)
   public String saveDocx(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "output_path", description = "输出文件路径（绝对路径）") String outputPath) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "output_path", description = "输出文件路径（绝对路径）")
+          @ParamCapability(type = ParamType.PATH)
+          String outputPath) {
     Document doc = sessions.get(docId);
     if (doc == null) {
       ToolResult<Void> result =
@@ -151,7 +162,10 @@ public final class SessionTools extends ToolkitToolContext {
    * @return 关闭结果；句柄不存在视为已关闭
    */
   @ToolDef(name = "close_docx", description = "关闭并释放指定 docId 的文档会话（幂等：未打开也返回成功）")
-  public String closeDocx(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+  @ToolCapability(operation = CapabilityOperation.SESSION)
+  public String closeDocx(
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId) {
     Document doc = sessions.remove(docId);
     generations.remove(docId);
     references.invalidate(docId);
@@ -175,8 +189,10 @@ public final class SessionTools extends ToolkitToolContext {
       name = "get_document_overview",
       description =
           "返回文档结构概览：正文段落数、正文表格数、body 元素数、section 数。" + "了解文档规模/判断后续索引范围时优先用它，不要分别调用多个 count 工具。")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "document")
   public String getDocumentOverview(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId) {
     Document doc = sessions.get(docId);
     if (doc == null) {
       ToolResult<Void> result =

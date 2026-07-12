@@ -14,6 +14,10 @@ import com.non.docx.core.api.table.Row;
 import com.non.docx.core.api.table.Table;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
+import com.non.docx.toolkit.capability.CapabilityOperation;
+import com.non.docx.toolkit.capability.ParamCapability;
+import com.non.docx.toolkit.capability.ParamType;
+import com.non.docx.toolkit.capability.ToolCapability;
 import com.non.docx.toolkit.ref.ReferenceContext;
 import com.non.docx.toolkit.result.ToolResult;
 import com.non.docx.toolkit.result.ToolResultCode;
@@ -131,9 +135,18 @@ public final class QualityCheckTools extends ToolkitToolContext {
               + "可选 checks 数组指定跑哪些（空则全量）：blank-pages, line-spacing, table-pagination, "
               + "image-overflow, font-fallback, cjk-indent, heading-levels, shading-solid, toc, cleanliness。"
               + "兼容性问题会引用 renderer-compatibility.md 锚点。只报告不修复。")
+  @ToolCapability(operation = CapabilityOperation.QUALITY, element = "document")
   public String checkQuality(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(name = "checks", description = "检查项数组（空则全量）", required = false)
+          @ParamCapability(
+              type = ParamType.STRING_ARRAY,
+              enumValues = {
+                "blank-pages", "line-spacing", "table-pagination", "image-overflow",
+                "font-fallback", "cjk-indent", "heading-levels", "shading-solid",
+                "toc", "cleanliness"
+              })
           List<String> checks) {
     Document doc = document(docId);
     if (doc == null) {

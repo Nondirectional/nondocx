@@ -10,6 +10,11 @@ import com.non.docx.core.api.style.Alignment;
 import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
+import com.non.docx.toolkit.capability.CapabilityOperation;
+import com.non.docx.toolkit.capability.NestedParamCapability;
+import com.non.docx.toolkit.capability.ParamCapability;
+import com.non.docx.toolkit.capability.ParamType;
+import com.non.docx.toolkit.capability.ToolCapability;
 import com.non.docx.toolkit.ref.ElementRef;
 import com.non.docx.toolkit.ref.ElementRefs;
 import com.non.docx.toolkit.ref.ElementResolver;
@@ -80,9 +85,12 @@ public final class BodyTools extends ToolkitToolContext {
               + "paragraph_indexes 可混合传段落索引(0 起)或 canonical ParagraphRef 字符串,"
               + "长度 1 即单次读,可一次读多段。"
               + "越界索引不中断整批,会在结果里标注。")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "paragraph")
   public String readParagraph(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(name = "paragraph_indexes", description = "段落索引数组(0 起),如 [0,1,2];单次传 [0]")
+          @ParamCapability(type = ParamType.OBJECT_ARRAY)
           List<Integer> paragraphIndexes) {
     Document doc = document(docId);
     if (doc == null) {
@@ -170,13 +178,20 @@ public final class BodyTools extends ToolkitToolContext {
           "批量修改正文若干段落的水平对齐方式(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "paragraph_index(int,段落索引 0 起)、alignment(string,LEFT/CENTER/RIGHT/JUSTIFY,大小写不敏感)。"
               + "部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
   public String updateParagraphAlignment(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 paragraph_index(int)、alignment(string),"
                       + "如 [{\"paragraph_index\":0,\"alignment\":\"CENTER\"}]")
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(
+              path = "edits.alignment",
+              type = ParamType.ENUM,
+              enumValues = {"LEFT", "CENTER", "RIGHT", "JUSTIFY"})
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -257,13 +272,18 @@ public final class BodyTools extends ToolkitToolContext {
               + " paragraph_index(int,段落索引 0 起)+run_index(int,run 索引 0 起,不含超链接)。"
               + "ref 与索引同时提供时必须指向同一 run。"
               + "单个对象用长度 1 的数组。越界坐标不中断,会在结果里标注。")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "run")
   public String readRun(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "runs",
               description =
                   "对象数组,每个对象含 ref(string),或 paragraph_index(int)+run_index(int),"
                       + "如 [{\"ref\":\"doc:.../run:session:r-1\"}]")
+          @NestedParamCapability(path = "runs.ref", type = ParamType.REF)
+          @NestedParamCapability(path = "runs.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "runs.run_index", type = ParamType.INTEGER)
           List<Map<String, Object>> runs) {
     Document doc = document(docId);
     if (doc == null) {
@@ -337,13 +357,18 @@ public final class BodyTools extends ToolkitToolContext {
               + "paragraph_index(整数,段落索引 0 起)、run_index(整数,run 索引 0 起,不含超链接)、"
               + "text(字符串,新文本)。单个对象用长度 1 的数组。可一次改多处;部分失败不中断,"
               + "返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "run")
   public String replaceRunText(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 paragraph_index(int)、run_index(int)、text(string),"
                       + "如 [{\"paragraph_index\":0,\"run_index\":0,\"text\":\"新文本\"}]")
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.text", type = ParamType.STRING)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -544,14 +569,25 @@ public final class BodyTools extends ToolkitToolContext {
               + "ref 与索引同时提供时必须指向同一 run。另含可选样式字段:"
               + "bold(bool)、italic(bool)、underline(bool)、font(string)、font_size(int)、color(string,十六进制如 FF0000)。"
               + "布尔字段显式传 false 可清除样式;未传字段不改。部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "run")
   public String updateRunStyle(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 ref(string),或 paragraph_index(int)+run_index(int),"
                       + "以及可选 bold/italic/underline/font/font_size/color,"
                       + "如 [{\"ref\":\"doc:.../run:session:r-1\",\"bold\":true,\"color\":\"FF0000\"}]")
+          @NestedParamCapability(path = "edits.ref", type = ParamType.REF)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.bold", type = ParamType.BOOLEAN)
+          @NestedParamCapability(path = "edits.italic", type = ParamType.BOOLEAN)
+          @NestedParamCapability(path = "edits.underline", type = ParamType.BOOLEAN)
+          @NestedParamCapability(path = "edits.font", type = ParamType.STRING)
+          @NestedParamCapability(path = "edits.font_size", type = ParamType.INTEGER, unit = "pt")
+          @NestedParamCapability(path = "edits.color", type = ParamType.STRING)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -679,13 +715,17 @@ public final class BodyTools extends ToolkitToolContext {
               + "paragraphs 是对象数组,每个对象含 body_index(int,正文 body 顺序索引 0 起;body 元素总数表示末尾)、"
               + "text(string,新段落文本)。body_index=0 可在文档开头插入;中间索引可插在段落或表格前。"
               + "部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.ADD, element = "paragraph")
   public String insertParagraph(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "paragraphs",
               description =
                   "对象数组,每个对象含 body_index(int)、text(string),"
                       + "如 [{\"body_index\":0,\"text\":\"标题\"},{\"body_index\":3,\"text\":\"中间段\"}]")
+          @NestedParamCapability(path = "paragraphs.body_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "paragraphs.text", type = ParamType.STRING)
           List<Map<String, Object>> paragraphs) {
     Document doc = document(docId);
     if (doc == null) {
@@ -768,10 +808,16 @@ public final class BodyTools extends ToolkitToolContext {
   @ToolDef(
       name = "read_hyperlink",
       description = "读取正文第 paragraph_index 段第 hyperlink_index 个超链接（0 起）的显示文本与目标 URL")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "hyperlink")
   public String readHyperlink(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "paragraph_index", description = "段落索引（0 起）") int paragraphIndex,
-      @ToolParam(name = "hyperlink_index", description = "超链接索引（0 起）") int hyperlinkIndex) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "paragraph_index", description = "段落索引（0 起）")
+          @ParamCapability(type = ParamType.INTEGER)
+          int paragraphIndex,
+      @ToolParam(name = "hyperlink_index", description = "超链接索引（0 起）")
+          @ParamCapability(type = ParamType.INTEGER)
+          int hyperlinkIndex) {
     Hyperlink link = locateHyperlink(docId, paragraphIndex, hyperlinkIndex);
     if (link == null) {
       ToolResult<Void> failed = locateHyperlinkFailed(docId, paragraphIndex, hyperlinkIndex);
@@ -797,12 +843,22 @@ public final class BodyTools extends ToolkitToolContext {
           "修改正文第 paragraph_index 段第 hyperlink_index 个超链接(均 0 起)的显示文本和/或目标 URL。"
               + "text 与 url 都可选,至少传一个:只传 text 改显示文本、只传 url 改地址、都传则一次改齐。"
               + "改完需 save_docx 落盘。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "hyperlink")
   public String updateHyperlink(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "paragraph_index", description = "段落索引（0 起）") int paragraphIndex,
-      @ToolParam(name = "hyperlink_index", description = "超链接索引（0 起）") int hyperlinkIndex,
-      @ToolParam(name = "text", description = "新的显示文本(可选,不传则不改)", required = false) String text,
-      @ToolParam(name = "url", description = "新的目标 URL(可选,不传则不改)", required = false) String url) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "paragraph_index", description = "段落索引（0 起）")
+          @ParamCapability(type = ParamType.INTEGER)
+          int paragraphIndex,
+      @ToolParam(name = "hyperlink_index", description = "超链接索引（0 起）")
+          @ParamCapability(type = ParamType.INTEGER)
+          int hyperlinkIndex,
+      @ToolParam(name = "text", description = "新的显示文本(可选,不传则不改)", required = false)
+          @ParamCapability(type = ParamType.STRING)
+          String text,
+      @ToolParam(name = "url", description = "新的目标 URL(可选,不传则不改)", required = false)
+          @ParamCapability(type = ParamType.STRING)
+          String url) {
     if ((text == null || text.isEmpty()) && (url == null || url.isEmpty())) {
       ToolResult<Void> result =
           ToolResult.fail(
@@ -883,11 +939,17 @@ public final class BodyTools extends ToolkitToolContext {
               + "一次返回所有命中位置坐标（段落级匹配，标注含命中的 run）。"
               + "max_results 控制上限：>0 为上限，0 或负数=不限（默认 50）。"
               + "按文本改内容前优先用它定位，不要逐段 read 盲读。")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "document")
   public String searchText(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "keyword", description = "要查找的文本") String keyword,
-      @ToolParam(name = "exact", description = "true=精确相等；false（默认）=忽略大小写的子串包含") boolean exact,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "keyword", description = "要查找的文本") @ParamCapability(type = ParamType.STRING)
+          String keyword,
+      @ToolParam(name = "exact", description = "true=精确相等；false（默认）=忽略大小写的子串包含")
+          @ParamCapability(type = ParamType.BOOLEAN, defaultValue = "false")
+          boolean exact,
       @ToolParam(name = "max_results", description = "命中数上限：>0 为上限，0 或负数=不限（默认 50）。命中很多时可调大或传 0")
+          @ParamCapability(type = ParamType.INTEGER, defaultValue = "50")
           Integer maxResults) {
     Document doc = document(docId);
     if (doc == null) {

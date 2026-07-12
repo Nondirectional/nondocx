@@ -1,11 +1,12 @@
 package com.non.docx.toolkit;
 
 import com.non.chain.tool.ToolRegistry;
+import com.non.docx.toolkit.capability.CapabilityTools;
 
 /**
- * nondocx-toolkit 的聚合门面：一次构造出全部七组工具，并保证它们共享同一份文档会话状态。
+ * nondocx-toolkit 的聚合门面：一次构造出全部八组工具（七组文档工具 + 一组能力契约工具），并保证文档工具共享同一份会话状态。
  *
- * <p><b>为什么需要门面。</b> 工具集按功能域拆成了七个类（{@link SessionTools} / {@link BodyTools} / {@link TableTools} /
+ * <p><b>为什么需要门面。</b> 文档工具按功能域拆成了七个类（{@link SessionTools} / {@link BodyTools} / {@link TableTools} /
  * {@link HeaderFooterTocTools} / {@link TrackedChangeQueryTools} / {@link
  * TrackedChangeAuthoringTools}），但它们必须<b>共享同一份</b> {@code sessions}/{@code seq}： Agent 在一轮对话里 {@code
  * open_docx}（SessionTools）打开的文档，紧接着 {@code read_paragraph}（BodyTools）、 {@code
@@ -57,6 +58,9 @@ public final class DocxToolkit {
   /** 文档质量自检工具组：版式/兼容性自检（空白页、行距、表格分页、图片溢出、SOLID 底纹等 10 项）。 */
   public final QualityCheckTools qualityCheck;
 
+  /** 能力契约工具组：提供 describe_capabilities，让 Agent 查询机器可读能力清单。 */
+  public final CapabilityTools capability;
+
   /** 构造全部七组工具，共享同一份文档会话状态。 */
   public DocxToolkit() {
     // 先建会话源头：SessionTools 自建 sessions/seq。
@@ -98,6 +102,16 @@ public final class DocxToolkit {
             session.sharedSeq(),
             session.sharedReferences(),
             session.sharedGenerations());
+    // 能力契约工具无会话状态，持有 7 个文档工具实例用于反射收集能力元数据。
+    this.capability =
+        new CapabilityTools(
+            session,
+            body,
+            table,
+            headerFooterToc,
+            trackedChangeQuery,
+            trackedChangeAuthoring,
+            qualityCheck);
   }
 
   /**
@@ -117,6 +131,7 @@ public final class DocxToolkit {
         .scan(headerFooterToc)
         .scan(trackedChangeQuery)
         .scan(trackedChangeAuthoring)
-        .scan(qualityCheck);
+        .scan(qualityCheck)
+        .scan(capability);
   }
 }

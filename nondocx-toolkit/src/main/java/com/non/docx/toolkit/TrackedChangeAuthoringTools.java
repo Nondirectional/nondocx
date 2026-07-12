@@ -6,6 +6,11 @@ import com.non.docx.core.api.Document;
 import com.non.docx.core.api.table.Cell;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
+import com.non.docx.toolkit.capability.CapabilityOperation;
+import com.non.docx.toolkit.capability.NestedParamCapability;
+import com.non.docx.toolkit.capability.ParamCapability;
+import com.non.docx.toolkit.capability.ParamType;
+import com.non.docx.toolkit.capability.ToolCapability;
 import com.non.docx.toolkit.ref.ReferenceContext;
 import com.non.docx.toolkit.result.ToolResult;
 import com.non.docx.toolkit.result.ToolResultCode;
@@ -82,15 +87,24 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
               + "paragraph_index(int,目标段落索引 0 起)、text(string,插入文本),"
               + "以及可选 bold(bool)、italic(bool)、color(string,十六进制如 FF0000)。"
               + "单个对象用长度 1 的数组。部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.ADD, element = "tracked_change")
   public String insertTrackedRun(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "author", description = "修订作者(整批共享)") String author,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "author", description = "修订作者(整批共享)")
+          @ParamCapability(type = ParamType.STRING)
+          String author,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 paragraph_index(int)、text(string),"
                       + "可选 bold(bool)、italic(bool)、color(string),"
                       + "如 [{\"paragraph_index\":0,\"text\":\"插入\",\"bold\":true}]")
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.text", type = ParamType.STRING)
+          @NestedParamCapability(path = "edits.bold", type = ParamType.BOOLEAN)
+          @NestedParamCapability(path = "edits.italic", type = ParamType.BOOLEAN)
+          @NestedParamCapability(path = "edits.color", type = ParamType.STRING)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -184,14 +198,20 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
               + "paragraph_index(int,段落索引 0 起)、run_index(int,run 索引 0 起)。"
               + "单个对象用长度 1 的数组。不是立即删除,accept 后才真正消失。"
               + "部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.REMOVE, element = "tracked_change")
   public String deleteRunTracked(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "author", description = "修订作者(整批共享)") String author,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "author", description = "修订作者(整批共享)")
+          @ParamCapability(type = ParamType.STRING)
+          String author,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 paragraph_index(int)、run_index(int),"
                       + "如 [{\"paragraph_index\":0,\"run_index\":0}]")
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -299,14 +319,21 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
               + "author 是共享修订作者(必填)。edits 是对象数组,每个对象含 "
               + "paragraph_index(int,段落索引 0 起)、run_index(int,run 索引 0 起)、new_text(string,新文本)。"
               + "新文本复制原 run 样式。单个对象用长度 1 的数组。部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String replaceRunTracked(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "author", description = "修订作者(整批共享)") String author,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "author", description = "修订作者(整批共享)")
+          @ParamCapability(type = ParamType.STRING)
+          String author,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 paragraph_index(int)、run_index(int)、new_text(string),"
                       + "如 [{\"paragraph_index\":0,\"run_index\":0,\"new_text\":\"新文本\"}]")
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.new_text", type = ParamType.STRING)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -408,14 +435,27 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       description =
           "把一个 run 的样式变更记为被追踪的属性修订(rPrChange)。"
               + "内部:快照改前样式→应用目标样式→commitStyleAsTracked。reject 会回到旧样式。仅改你显式提供的样式参数。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String markStyleChangeTracked(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "paragraph_index", description = "段落索引(0 起)") int paragraphIndex,
-      @ToolParam(name = "run_index", description = "run 索引(0 起)") int runIndex,
-      @ToolParam(name = "author", description = "修订作者") String author,
-      @ToolParam(name = "bold", description = "目标是否粗体(可选)", required = false) boolean bold,
-      @ToolParam(name = "italic", description = "目标是否斜体(可选)", required = false) boolean italic,
-      @ToolParam(name = "color", description = "目标颜色十六进制(可选)", required = false) String color) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "paragraph_index", description = "段落索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int paragraphIndex,
+      @ToolParam(name = "run_index", description = "run 索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int runIndex,
+      @ToolParam(name = "author", description = "修订作者") @ParamCapability(type = ParamType.STRING)
+          String author,
+      @ToolParam(name = "bold", description = "目标是否粗体(可选)", required = false)
+          @ParamCapability(type = ParamType.BOOLEAN)
+          boolean bold,
+      @ToolParam(name = "italic", description = "目标是否斜体(可选)", required = false)
+          @ParamCapability(type = ParamType.BOOLEAN)
+          boolean italic,
+      @ToolParam(name = "color", description = "目标颜色十六进制(可选)", required = false)
+          @ParamCapability(type = ParamType.STRING)
+          String color) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
@@ -459,16 +499,26 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
               + "table_index(int,表格索引 0 起)、row_index(int,行索引 0 起)、cell_index(int,单元格索引 0 起)。"
               + "单个对象用长度 1 的数组。"
               + "部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String markTrackedCells(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(name = "change_type", description = "INSERTED=cellIns,DELETED=cellDel")
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"INSERTED", "DELETED"})
           String changeType,
-      @ToolParam(name = "author", description = "修订作者(整批共享)") String author,
+      @ToolParam(name = "author", description = "修订作者(整批共享)")
+          @ParamCapability(type = ParamType.STRING)
+          String author,
       @ToolParam(
               name = "cells",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index(int),"
                       + "如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0}]")
+          @NestedParamCapability(path = "cells.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "cells.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "cells.cell_index", type = ParamType.INTEGER)
           List<Map<String, Object>> cells) {
     if (changeType == null || changeType.isBlank()) {
       return renderInvalidArgument("change_type 仅支持 INSERTED 或 DELETED");
@@ -498,14 +548,21 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
           "把源段(source_paragraph_index)的第 run_index 个 run 移动到目标段(target_paragraph_index),"
               + "产出配对的 tracked move 修订(moveFrom + moveTo)。author 必填。"
               + "可被 list 读回为 MOVE_FROM/MOVE_TO、accept/reject 联动处理。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String moveRunTracked(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(name = "source_paragraph_index", description = "源段索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
           int sourceParagraphIndex,
-      @ToolParam(name = "run_index", description = "源段中要移动的 run 索引(0 起)") int runIndex,
+      @ToolParam(name = "run_index", description = "源段中要移动的 run 索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int runIndex,
       @ToolParam(name = "target_paragraph_index", description = "目标段索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
           int targetParagraphIndex,
-      @ToolParam(name = "author", description = "修订作者") String author) {
+      @ToolParam(name = "author", description = "修订作者") @ParamCapability(type = ParamType.STRING)
+          String author) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);

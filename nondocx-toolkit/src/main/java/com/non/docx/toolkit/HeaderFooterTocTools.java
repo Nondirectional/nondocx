@@ -8,6 +8,10 @@ import com.non.docx.core.api.header.Header;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.toc.TableOfContents;
 import com.non.docx.core.api.toc.TocEntry;
+import com.non.docx.toolkit.capability.CapabilityOperation;
+import com.non.docx.toolkit.capability.ParamCapability;
+import com.non.docx.toolkit.capability.ParamType;
+import com.non.docx.toolkit.capability.ToolCapability;
 import com.non.docx.toolkit.ref.ElementRef;
 import com.non.docx.toolkit.ref.ElementRefs;
 import com.non.docx.toolkit.ref.ElementResolver;
@@ -64,11 +68,21 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
       description =
           "读取第 section_index 个 section 的默认页眉或页脚里第 paragraph_index 段的结构摘要。"
               + "part 支持 HEADER/FOOTER（大小写不敏感）。")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "header_footer")
   public String readHeaderFooter(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "part", description = "HEADER=页眉,FOOTER=页脚") String part,
-      @ToolParam(name = "section_index", description = "section 索引（0 起）") int sectionIndex,
-      @ToolParam(name = "paragraph_index", description = "页眉/页脚内段落索引（0 起）") int paragraphIndex) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "part", description = "HEADER=页眉,FOOTER=页脚")
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"HEADER", "FOOTER"})
+          String part,
+      @ToolParam(name = "section_index", description = "section 索引（0 起）")
+          @ParamCapability(type = ParamType.INTEGER)
+          int sectionIndex,
+      @ToolParam(name = "paragraph_index", description = "页眉/页脚内段落索引（0 起）")
+          @ParamCapability(type = ParamType.INTEGER)
+          int paragraphIndex) {
     boolean isHeader;
     if ("HEADER".equalsIgnoreCase(part)) {
       isHeader = true;
@@ -86,9 +100,13 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
   @ToolDef(
       name = "read_header_footer_ref",
       description = "按 canonical HeaderFooterRef 读取整个页眉或页脚，返回文本与内部段落 ref")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "header_footer")
   public String readHeaderFooterRef(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "ref", description = "canonical HeaderFooterRef") String ref) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "ref", description = "canonical HeaderFooterRef")
+          @ParamCapability(type = ParamType.REF)
+          String ref) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
@@ -198,7 +216,10 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
       name = "read_toc",
       description =
           "读取文档的目录(TOC),一次返回所有条目:每条含标题、层级(1-9)、页码、内部锚点。" + "无目录时返回提示。需要看文档结构/目录时优先用它,不要逐段 read 盲读。")
-  public String readToc(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+  @ToolCapability(operation = CapabilityOperation.READ, element = "toc")
+  public String readToc(
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);

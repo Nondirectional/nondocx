@@ -46,4 +46,32 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 构建期生成 capabilities.json + capabilities.digest：
+                 process-classes 阶段调用 CapabilityManifestGenerator，反射收集全部工具能力，
+                 输出到 target/classes（打入 classpath，供 Agent 离线读取）。
+                 单一真实来源 = Java 代码 + @ToolCapability 注解，不手写 schema。 -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>generate-capabilities</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>com.non.docx.toolkit.capability.CapabilityManifestGenerator</mainClass>
+                            <arguments>
+                                <argument>${project.build.outputDirectory}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

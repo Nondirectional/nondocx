@@ -9,6 +9,10 @@ import com.non.docx.core.api.track.PropertyChangeDetails;
 import com.non.docx.core.api.track.TextChangeDetails;
 import com.non.docx.core.api.track.TrackedChange;
 import com.non.docx.core.api.track.TrackedChanges;
+import com.non.docx.toolkit.capability.CapabilityOperation;
+import com.non.docx.toolkit.capability.ParamCapability;
+import com.non.docx.toolkit.capability.ParamType;
+import com.non.docx.toolkit.capability.ToolCapability;
 import com.non.docx.toolkit.ref.ElementRef;
 import com.non.docx.toolkit.ref.ElementRefs;
 import com.non.docx.toolkit.ref.ElementResolver;
@@ -65,8 +69,10 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
   @ToolDef(
       name = "get_tracked_changes_enabled",
       description = "返回文档是否开启了修订记录(Word 里勾选「修订」开关)。true=已开启")
+  @ToolCapability(operation = CapabilityOperation.QUERY, element = "tracked_change")
   public String getTrackedChangesEnabled(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
@@ -90,9 +96,13 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       description =
           "开启或关闭修订模式开关(enabled=true 写入 <w:trackChanges/>,=false 移除)。"
               + "用于文档交还人接力编辑时让后续手动改动也被追踪;对 Agent 已创作的修订无影响。幂等。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "document")
   public String setTrackedChangesEnabled(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "enabled", description = "true=开启修订模式,false=关闭") boolean enabled) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "enabled", description = "true=开启修订模式,false=关闭")
+          @ParamCapability(type = ParamType.BOOLEAN)
+          boolean enabled) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
@@ -125,7 +135,10 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
               + "每条同时返回 canonical RevisionRef;accept/reject 优先使用 ref,stable id 继续兼容。"
               + "四种 family:TEXT(ins/del)、MOVE(moveFrom/moveTo)、"
               + "PROPERTY(rPrChange 等)、CELL(cellIns/cellDel/cellMerge)。")
-  public String listTrackedChanges(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
+  @ToolCapability(operation = CapabilityOperation.READ, element = "tracked_change")
+  public String listTrackedChanges(
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
@@ -156,9 +169,12 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
   @ToolDef(
       name = "get_tracked_change",
       description = "按 canonical RevisionRef 或兼容 stable id 取单条修订详情。枚举请用 list_tracked_changes")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "tracked_change")
   public String getTrackedChange(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(name = "id", description = "list_tracked_changes 返回的 RevisionRef 或 stable id")
+          @ParamCapability(type = ParamType.REF)
           String id) {
     Document doc = document(docId);
     if (doc == null) {
@@ -191,11 +207,22 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
           "批量处理修订(ids 可传 list_tracked_changes 返回的 RevisionRef 或兼容 stable id)。"
               + "action 支持 ACCEPT/REJECT;"
               + "target 支持 TEXT_OR_MOVE/PROPERTY/CELL。部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String applyTrackedChanges(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "action", description = "ACCEPT=应用修订,REJECT=撤销修订") String action,
-      @ToolParam(name = "target", description = "TEXT_OR_MOVE/PROPERTY/CELL") String target,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "action", description = "ACCEPT=应用修订,REJECT=撤销修订")
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"ACCEPT", "REJECT"})
+          String action,
+      @ToolParam(name = "target", description = "TEXT_OR_MOVE/PROPERTY/CELL")
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"TEXT_OR_MOVE", "PROPERTY", "CELL"})
+          String target,
       @ToolParam(name = "ids", description = "stable id 数组,如 [\"ins:1\",\"rpr_change:...\"]")
+          @ParamCapability(type = ParamType.STRING_ARRAY)
           List<String> ids) {
     boolean accept;
     if ("ACCEPT".equalsIgnoreCase(action)) {
@@ -241,11 +268,22 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
           "按范围批量处理文本/移动类修订。action=ACCEPT/REJECT。"
               + "scope=ALL 表示全部文本/移动类修订;scope=AUTHOR 表示只处理指定 author。"
               + "仅作用于文本(ins/del)与移动类;属性类与单元格类不受影响。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String applyTextRevisions(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "action", description = "ACCEPT=应用修订,REJECT=撤销修订") String action,
-      @ToolParam(name = "scope", description = "ALL=全部文本/移动类,AUTHOR=指定作者") String scope,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "action", description = "ACCEPT=应用修订,REJECT=撤销修订")
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"ACCEPT", "REJECT"})
+          String action,
+      @ToolParam(name = "scope", description = "ALL=全部文本/移动类,AUTHOR=指定作者")
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"ALL", "AUTHOR"})
+          String scope,
       @ToolParam(name = "author", description = "scope=AUTHOR 时必填,大小写敏感精确匹配", required = false)
+          @ParamCapability(type = ParamType.STRING)
           String author) {
     if (action == null || action.isBlank()) {
       ToolResult<Void> r =

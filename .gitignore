@@ -35,6 +35,9 @@ pom.xml.versionsBackup
 pom.xml.next
 release.properties
 dependency-reduced-pom.xml
+# 构建期生成的能力清单（process-classes 阶段从注解反射生成，不入版本库）
+capabilities.json
+capabilities.digest
 buildNumber.properties
 .mvn/timing.properties
 .mvn/wrapper/maven-wrapper.jar

@@ -12,6 +12,11 @@ import com.non.docx.core.api.table.Row;
 import com.non.docx.core.api.table.Table;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
+import com.non.docx.toolkit.capability.CapabilityOperation;
+import com.non.docx.toolkit.capability.NestedParamCapability;
+import com.non.docx.toolkit.capability.ParamCapability;
+import com.non.docx.toolkit.capability.ParamType;
+import com.non.docx.toolkit.capability.ToolCapability;
 import com.non.docx.toolkit.ref.CellRef;
 import com.non.docx.toolkit.ref.ElementRef;
 import com.non.docx.toolkit.ref.ElementRefs;
@@ -77,11 +82,14 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "在正文末尾创建一个表格(改完需 save_docx 落盘)。rows 是二维数组,外层为行、内层为单元格文本,"
               + "如 [[\"姓名\",\"分数\"],[\"张三\",\"95\"]]。各行列数可不同。返回新表格的 table_index。")
+  @ToolCapability(operation = CapabilityOperation.ADD, element = "table")
   public String createTable(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "rows",
               description = "二维数组,外层为行、内层为单元格文本," + "如 [[\"姓名\",\"分数\"],[\"张三\",\"95\"]]")
+          @ParamCapability(type = ParamType.OBJECT_ARRAY)
           List<List<String>> rows) {
     Document doc = document(docId);
     if (doc == null) {
@@ -135,10 +143,18 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "设置表格边框(改完需 save_docx 落盘)。当前 border_style 仅支持 NONE,即显式无边框。"
               + "参数:table_index(int,表格索引 0 起)、border_style(string,NONE)。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "table")
   public String setTableBorders(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex,
-      @ToolParam(name = "border_style", description = "边框样式,当前仅支持 NONE") String borderStyle) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int tableIndex,
+      @ToolParam(name = "border_style", description = "边框样式,当前仅支持 NONE")
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"NONE"})
+          String borderStyle) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
@@ -176,8 +192,10 @@ public final class TableTools extends ToolkitToolContext {
               + "direction=HORIZONTAL 时还需 row_index/from_cell_index/to_cell_index;"
               + "direction=VERTICAL 时还需 cell_index/from_row_index/to_row_index。索引均 0 起。"
               + "部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "cell")
   public String mergeTableCells(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "merges",
               description =
@@ -185,6 +203,17 @@ public final class TableTools extends ToolkitToolContext {
                       + "\"from_cell_index\":0,\"to_cell_index\":2}];纵向示例:"
                       + "[{\"table_index\":0,\"direction\":\"VERTICAL\",\"cell_index\":1,"
                       + "\"from_row_index\":0,\"to_row_index\":2}]")
+          @NestedParamCapability(path = "merges.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(
+              path = "merges.direction",
+              type = ParamType.ENUM,
+              enumValues = {"HORIZONTAL", "VERTICAL"})
+          @NestedParamCapability(path = "merges.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "merges.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "merges.from_cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "merges.to_cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "merges.from_row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "merges.to_row_index", type = ParamType.INTEGER)
           Map<String, Object>[] merges) {
     Document doc = document(docId);
     if (doc == null) {
@@ -602,13 +631,18 @@ public final class TableTools extends ToolkitToolContext {
               + "cells 是对象数组,每个对象含 table_index(int,表格索引 0 起)、"
               + "row_index(int,行索引 0 起)、cell_index(int,单元格索引 0 起)。"
               + "单个对象用长度 1 的数组。越界坐标不中断,会在结果里标注。")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "cell")
   public String readTableCell(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "cells",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index(int),"
                       + "如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0}]")
+          @NestedParamCapability(path = "cells.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "cells.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "cells.cell_index", type = ParamType.INTEGER)
           List<Map<String, Object>> cells) {
     Document doc = document(docId);
     if (doc == null) {
@@ -719,18 +753,28 @@ public final class TableTools extends ToolkitToolContext {
           "读取表格单元格内 run。优先传 canonical RunRef 字段 ref;也兼容"
               + " table_index/row_index/cell_index/paragraph_index/run_index 五级坐标。"
               + "ref 与坐标同时提供时必须指向同一 run。返回实际 ref。")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "run")
   public String readTableCellRun(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(name = "table_index", description = "表格索引（0 起）", required = false)
+          @ParamCapability(type = ParamType.INTEGER)
           Integer tableIndex,
-      @ToolParam(name = "row_index", description = "行索引（0 起）", required = false) Integer rowIndex,
+      @ToolParam(name = "row_index", description = "行索引（0 起）", required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer rowIndex,
       @ToolParam(name = "cell_index", description = "单元格索引（0 起）", required = false)
+          @ParamCapability(type = ParamType.INTEGER)
           Integer cellIndex,
       @ToolParam(name = "paragraph_index", description = "单元格内段落索引（0 起）", required = false)
+          @ParamCapability(type = ParamType.INTEGER)
           Integer paragraphIndex,
       @ToolParam(name = "run_index", description = "run 索引（0 起）", required = false)
+          @ParamCapability(type = ParamType.INTEGER)
           Integer runIndex,
-      @ToolParam(name = "ref", description = "canonical RunRef", required = false) String ref) {
+      @ToolParam(name = "ref", description = "canonical RunRef", required = false)
+          @ParamCapability(type = ParamType.REF)
+          String ref) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
@@ -790,14 +834,23 @@ public final class TableTools extends ToolkitToolContext {
               + "run_index(int,run 索引 0 起)、text(string,新文本)。"
               + "ref 与坐标同时提供时必须指向同一 run。"
               + "单个对象用长度 1 的数组。部分失败不中断,返回每条成功/失败明细。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "run")
   public String replaceTableCellRunText(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index、paragraph_index、run_index(int)"
                       + "与 text(string),如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,"
                       + "\"paragraph_index\":0,\"run_index\":0,\"text\":\"已完成\"}]")
+          @NestedParamCapability(path = "edits.ref", type = ParamType.REF)
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.text", type = ParamType.STRING)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1035,13 +1088,19 @@ public final class TableTools extends ToolkitToolContext {
           "批量给表格单元格设置纯色背景底纹(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int)、cell_index(int)、fill(string,十六进制 RGB 如 F1F5F9,不带 #)。"
               + "强制纯色填充(跨 Word/WPS 安全,不为黑块)。单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "cell")
   public String updateTableCellShading(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index(int)与 fill(string),"
                       + "如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,\"fill\":\"F1F5F9\"}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.fill", type = ParamType.STRING)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1073,13 +1132,22 @@ public final class TableTools extends ToolkitToolContext {
           "批量设置表格单元格内容的垂直对齐(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int)、cell_index(int)、vertical_align(string,TOP/CENTER/BOTTOM,大小写不敏感)。"
               + "注意:固定(exact)行高时 CENTER/BOTTOM 在 WPS 可能不生效。单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "cell", needsRecalc = true)
   public String updateTableCellVerticalAlign(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index(int)与 vertical_align(string),"
                       + "如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,\"vertical_align\":\"CENTER\"}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(
+              path = "edits.vertical_align",
+              type = ParamType.ENUM,
+              enumValues = {"TOP", "CENTER", "BOTTOM"})
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1109,14 +1177,27 @@ public final class TableTools extends ToolkitToolContext {
               + "table_index(int)、row_index(int)、cell_index(int)、paragraph_index(int,单元格内段落 0 起)、run_index(int,run 0 起),"
               + "以及可选样式字段:bold(bool)、italic(bool)、underline(bool)、font(string)、font_size(int)、color(string,十六进制如 FF0000)。"
               + "布尔字段显式传 false 可清除样式;未传字段不改。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "run")
   public String updateTableCellRunStyle(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index、paragraph_index、run_index(int)"
                       + "与可选 bold/italic/underline/font/font_size/color,"
                       + "如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,\"paragraph_index\":0,\"run_index\":0,\"bold\":true}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.bold", type = ParamType.BOOLEAN)
+          @NestedParamCapability(path = "edits.italic", type = ParamType.BOOLEAN)
+          @NestedParamCapability(path = "edits.underline", type = ParamType.BOOLEAN)
+          @NestedParamCapability(path = "edits.font", type = ParamType.STRING)
+          @NestedParamCapability(path = "edits.font_size", type = ParamType.INTEGER, unit = "pt")
+          @NestedParamCapability(path = "edits.color", type = ParamType.STRING)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1233,13 +1314,23 @@ public final class TableTools extends ToolkitToolContext {
           "批量改表格单元格内段落的水平对齐(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int)、cell_index(int)、paragraph_index(int,单元格内段落 0 起)、"
               + "alignment(string,LEFT/CENTER/RIGHT/JUSTIFY,大小写不敏感)。单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
   public String updateTableCellParagraphAlignment(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index、paragraph_index(int)与 alignment(string),"
                       + "如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,\"paragraph_index\":0,\"alignment\":\"CENTER\"}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(
+              path = "edits.alignment",
+              type = ParamType.ENUM,
+              enumValues = {"LEFT", "CENTER", "RIGHT", "JUSTIFY"})
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1448,13 +1539,18 @@ public final class TableTools extends ToolkitToolContext {
           "批量标记/取消表格表头行(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int,0 起)、header_row(bool,true=标记表头行跨页重复、false=取消)。"
               + "单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "row")
   public String updateTableHeaderRow(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index(int)与 header_row(bool),"
                       + "如 [{\"table_index\":0,\"row_index\":0,\"header_row\":true}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.header_row", type = ParamType.BOOLEAN)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1488,13 +1584,18 @@ public final class TableTools extends ToolkitToolContext {
           "批量标记/取消行的禁止跨页拆分(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int,0 起)、cant_split(bool,true=禁止跨页拆分、false=允许)。"
               + "单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "row")
   public String updateTableRowCantSplit(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index(int)与 cant_split(bool),"
                       + "如 [{\"table_index\":0,\"row_index\":0,\"cant_split\":true}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cant_split", type = ParamType.BOOLEAN)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1527,13 +1628,17 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "批量读取表格若干行的属性摘要(header_row、cant_split)。rows 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int,0 起)。单个对象用长度 1 的数组。越界坐标不中断,会在结果里标注。")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "row")
   public String readTableRow(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "rows",
               description =
                   "对象数组,每个对象含 table_index、row_index(int),"
                       + "如 [{\"table_index\":0,\"row_index\":0}]")
+          @NestedParamCapability(path = "rows.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "rows.row_index", type = ParamType.INTEGER)
           List<Map<String, Object>> rows) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1605,10 +1710,15 @@ public final class TableTools extends ToolkitToolContext {
           "按百分比设置表格各列宽度(改完需 save_docx 落盘)。百分比(PCT)是跨 Word/WPS 安全的主推路径。"
               + "参数:table_index(int,表格索引 0 起)、percents(int 数组,每列 0-100 的整数百分比,数组长度即列数)。"
               + "若需绝对宽度用 set_table_column_widths。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "table")
   public String setTableColumnPercents(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int tableIndex,
       @ToolParam(name = "percents", description = "各列百分比数组(0-100 整数,长度即列数),如 [50,50]")
+          @ParamCapability(type = ParamType.INTEGER_ARRAY, unit = "percent")
           List<Integer> percents) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1647,10 +1757,15 @@ public final class TableTools extends ToolkitToolContext {
           "按 twips 绝对宽度设置表格各列宽度(改完需 save_docx 落盘)。1 twip = 1/20 点。"
               + "参数:table_index(int,表格索引 0 起)、widths(int 数组,每列 twips 宽度,长度即列数)。"
               + "注意:纯 DXA 在 WPS 某些版本触发 tblGrid 错位,跨引擎优先用 set_table_column_percents。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "table")
   public String setTableColumnWidths(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int tableIndex,
       @ToolParam(name = "widths", description = "各列 twips 宽度数组,长度即列数,如 [4513,4513]")
+          @ParamCapability(type = ParamType.INTEGER_ARRAY, unit = "twip")
           List<Integer> widths) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1687,9 +1802,13 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "读取指定表格各列宽度(twips)列表。PCT 类型按 A4 可用宽度(9026 twips)近似换算,DXA 原样返回。"
               + "参数:table_index(int,表格索引 0 起)。")
+  @ToolCapability(operation = CapabilityOperation.READ, element = "table")
   public String readTableColumnWidths(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int tableIndex) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
@@ -1753,9 +1872,13 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "在指定表格末尾追加一个空行(改完需 save_docx 落盘)。返回新行索引。"
               + "新行是空行(0 个单元格),需用 add_table_cell 逐个追加单元格。参数:table_index(int,表格索引 0 起)。")
+  @ToolCapability(operation = CapabilityOperation.ADD, element = "row")
   public String addTableRow(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int tableIndex) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
@@ -1785,10 +1908,16 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "删除指定表格的某行(改完需 save_docx 落盘)。参数:table_index(int,表格索引 0 起)、row_index(int,行索引 0 起)。"
               + "注意:删行后后续行索引前移,批量删建议从大到小删或删后重读行数。")
+  @ToolCapability(operation = CapabilityOperation.REMOVE, element = "row")
   public String removeTableRow(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex,
-      @ToolParam(name = "row_index", description = "行索引(0 起)") int rowIndex) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int tableIndex,
+      @ToolParam(name = "row_index", description = "行索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int rowIndex) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
@@ -1825,10 +1954,16 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "在指定行末尾追加一个空单元格(改完需 save_docx 落盘)。返回新单元格索引。"
               + "参数:table_index(int)、row_index(int)。新单元格是空的,需后续填充内容(可配合 add_table_row 先加空行再加单元格)。")
+  @ToolCapability(operation = CapabilityOperation.ADD, element = "cell")
   public String addTableCell(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex,
-      @ToolParam(name = "row_index", description = "行索引(0 起)") int rowIndex) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int tableIndex,
+      @ToolParam(name = "row_index", description = "行索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int rowIndex) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
@@ -1863,11 +1998,19 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "删除指定单元格(改完需 save_docx 落盘)。参数:table_index(int)、row_index(int)、cell_index(int,单元格索引 0 起)。"
               + "注意:删单元格后同行后续单元格索引前移。")
+  @ToolCapability(operation = CapabilityOperation.REMOVE, element = "cell")
   public String removeTableCell(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
-      @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex,
-      @ToolParam(name = "row_index", description = "行索引(0 起)") int rowIndex,
-      @ToolParam(name = "cell_index", description = "单元格索引(0 起)") int cellIndex) {
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "table_index", description = "表格索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int tableIndex,
+      @ToolParam(name = "row_index", description = "行索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int rowIndex,
+      @ToolParam(name = "cell_index", description = "单元格索引(0 起)")
+          @ParamCapability(type = ParamType.INTEGER)
+          int cellIndex) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
@@ -1911,14 +2054,25 @@ public final class TableTools extends ToolkitToolContext {
               + "table_index(int)、row_index(int)、cell_index(int)、paragraph_index(int,单元格内段落 0 起),"
               + "以及 heading(string,H1/H2/H3/H4/H5/H6,大小写不敏感)。"
               + "清除标题用 clear=true(bool,此时忽略 heading)。单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
   public String updateTableCellParagraphHeading(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index、paragraph_index(int)"
                       + "与 heading(string)或 clear(bool),如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,"
                       + "\"paragraph_index\":0,\"heading\":\"H2\"}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(
+              path = "edits.heading",
+              type = ParamType.ENUM,
+              enumValues = {"H1", "H2", "H3", "H4", "H5", "H6"})
+          @NestedParamCapability(path = "edits.clear", type = ParamType.BOOLEAN)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1953,14 +2107,25 @@ public final class TableTools extends ToolkitToolContext {
               + "table_index(int)、row_index(int)、cell_index(int)、paragraph_index(int),"
               + "以及 left_twips(int,左缩进)、first_line_twips(int,首行缩进,可负数表示悬挂缩进)。单位 twips(1 twip = 1/20 点)。"
               + "单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
   public String updateTableCellParagraphIndent(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index、paragraph_index(int)"
                       + "与 left_twips、first_line_twips(int),如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,"
                       + "\"paragraph_index\":0,\"left_twips\":720,\"first_line_twips\":360}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.left_twips", type = ParamType.INTEGER, unit = "twip")
+          @NestedParamCapability(
+              path = "edits.first_line_twips",
+              type = ParamType.INTEGER,
+              unit = "twip")
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -1990,14 +2155,21 @@ public final class TableTools extends ToolkitToolContext {
           "批量设单元格内段落行距(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int)、cell_index(int)、paragraph_index(int)、line_spacing(number,单倍行高的倍数,如 1.5)。"
               + "单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
   public String updateTableCellParagraphSpacing(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index、paragraph_index(int)"
                       + "与 line_spacing(number),如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,"
                       + "\"paragraph_index\":0,\"line_spacing\":1.5}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.line_spacing", type = ParamType.NUMBER)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -2028,14 +2200,26 @@ public final class TableTools extends ToolkitToolContext {
               + "table_index(int)、row_index(int)、cell_index(int)、paragraph_index(int),"
               + "以及 list_kind(string,BULLET/NUMBERED)与 level(int,0-8 嵌套层级)。"
               + "清除列表用 clear=true(bool,此时忽略 list_kind/level)。单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
   public String updateTableCellParagraphList(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index、paragraph_index(int)"
                       + "与 list_kind(string)、level(int)或 clear(bool),如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,"
                       + "\"paragraph_index\":0,\"list_kind\":\"BULLET\",\"level\":0}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(
+              path = "edits.list_kind",
+              type = ParamType.ENUM,
+              enumValues = {"BULLET", "NUMBERED"})
+          @NestedParamCapability(path = "edits.level", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.clear", type = ParamType.BOOLEAN)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
@@ -2070,14 +2254,21 @@ public final class TableTools extends ToolkitToolContext {
           "批量设单元格内段落底纹(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int)、cell_index(int)、paragraph_index(int)、fill(string,十六进制 RGB 如 F1F5F9,不带 #)。"
               + "强制纯色填充(跨 Word/WPS 安全)。单个对象用长度 1 的数组。部分失败不中断。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
   public String updateTableCellParagraphShading(
-      @ToolParam(name = "doc_id", description = "文档句柄") String docId,
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
       @ToolParam(
               name = "edits",
               description =
                   "对象数组,每个对象含 table_index、row_index、cell_index、paragraph_index(int)"
                       + "与 fill(string),如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0,"
                       + "\"paragraph_index\":0,\"fill\":\"F1F5F9\"}]")
+          @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.fill", type = ParamType.STRING)
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
