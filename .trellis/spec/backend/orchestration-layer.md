@@ -448,6 +448,67 @@ return ToolResultChecks.checkResult(result, "body", operation.kind());
 
 ---
 
+## Scenario: Router Plan / Review Protocol
+
+### 1. Scope / Trigger
+
+当新增专家、合并 operation、接入 review 或提交 coordinator 时，必须经
+`DocumentSnapshot -> ExpertPlan -> MergedPlan -> CommitCoordinator` 强类型边界；不得让
+LLM JSON 直接驱动写操作。
+
+### 2. Signatures
+
+```java
+new DocumentSnapshot(conversationId, sourcePath, createdAt, sourceLastModified,
+    sessionGeneration, overview, paragraphs, tables, revisionSummary, qualitySummary);
+new ExpertPlan(agentName, planId, conversationId, snapshotVersion, sessionGeneration, operations);
+new MergedPlan(conversationId, mergedPlanId, sourcePlanIds, operations);
+Operation.of(id, toolGroup, kind, targetRef, payload, conflictKey, intent, reason, riskNote);
+```
+
+### 3. Contracts
+
+- `ExpertPlan` / `MergedPlan.schemaVersion` 为 1；快照版本独立演进，当前 `DocumentSnapshot.SNAPSHOT_VERSION=2`。
+- `conversationId + snapshotVersion + sessionGeneration` 绑定计划基线；generation 不一致的快照不得继续产生或提交 plan。
+- `ConflictKey` 内部保存 `ElementRef`，只以 `(toolGroup, targetRef)` 判断候选同目标；`kind` 与 payload 由第二层规则判定能否合并。
+- `Operation` 保留稳定 `operationId`、review、`ruleCode` 与可选 `mergedIntoOperationId`；去重吸收项必须为 `SKIPPED/DUPLICATE_MERGED`。
+- 状态只允许 `ANALYZE -> PLAN -> REVIEW? -> COMMIT -> DONE`，或从 REVIEW/COMMIT 到 `FAILED`。`FAILED` 后必须 close + reopen，不能在同一 session 直接重试。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+|---|---|
+| 任一 operation 为 `BLOCKED` | 整批不进入 CommitCoordinator，Router 进入 `FAILED` |
+| `WARNED` | 允许提交，结果必须保留 warning/review 信息 |
+| `SKIPPED` | 不执行，保留原因与来源链 |
+| 任一 executor 失败 | 非事务：已完成写入不回滚；会话失败并要求 reopen |
+| 非法状态跃迁 | `IllegalStateException` |
+
+### 5. Good / Base / Bad Cases
+
+- Good：专家只输出本 `toolGroup` 的 `ExpertPlan`，Router 合并、排序、review 后再串行提交。
+- Base：无需 review 的低风险计划可从 `PLAN` 直接到 `COMMIT`。
+- Bad：把自由字符串 target 当身份，或在出现 `BLOCKED` 后仍调用 executor。
+
+### 6. Tests Required
+
+- `MergedPlanTest`：版本、generation 有效性、`BLOCKED/WARNED/SKIPPED` 汇总。
+- `OperationTest` / `ReviewResultTest`：不可变 review 更新、`ruleCode`、去重来源。
+- `ConflictKeyTest`：强类型 ref 值相等与同目标判定。
+- `RouterStateTest`：所有合法和非法跃迁。
+- `DocxOrchestratorTest`：成功提交与失败后不可原会话重试。
+
+### 7. Wrong vs Correct
+
+```java
+// Wrong: LLM operation 绕过 review，直接写文档
+executor.execute(session, llmOperation);
+
+// Correct: review 闸门先阻断，只有可提交视图进入 coordinator
+if (mergedPlan.hasBlocked()) return RouterState.FAILED;
+commitCoordinator.commit(session, mergedPlan);
+```
+
 ## Convention: Demo Observability for FAILED State
 
 **What**: `AgentBridge` must log failure details when `state=FAILED`, not just `state=FAILED`.
