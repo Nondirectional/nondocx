@@ -517,3 +517,92 @@ public enum HeadingLevel { H1, H2, H3, H4, H5, H6, NONE }  // NONE 不是 OOXML 
 **当前测试如何处理**: `TableStyleToolsTest` 的结构编辑用例只断言「行数/单元格数变化 + 返回新索引 + 删除后索引前移」，不强行给空单元格写 run（那会踩此坑）。
 
 **Related**: poi-bridge.md N2（core 层剥离预填的语义）。
+
+---
+
+## Scenario: Machine-Readable Capability Contract (P0-03)
+
+> 每个 `@ToolDef` 工具必须声明能力元数据，构建期反射生成机器可读能力清单，CI 强制声明与实现一致。
+> Agent 通过 `describe_capabilities` 或 `capabilities.json` 得知全部参数名/类型/枚举值，不再猜测。
+
+### 1. Scope / Trigger
+
+新增或修改任何 `@ToolDef` 工具方法时，必须同步标注 `@ToolCapability` + `@ParamCapability`。
+未标注的 `@ToolDef` 方法会让 `CapabilityCollector` 在收集期抛 `CapabilityDeclarationException`，
+导致构建期 `capabilities.json` 生成失败、CI 契约测试失败。
+
+### 2. 单一真实来源（硬契约）
+
+- **真实来源 = Java 代码 + 项目伴生注解**，不是手写 JSON schema。
+- `capabilities.json` / `capabilities.digest` 是构建期派生产物（`process-classes` 阶段由
+  `CapabilityManifestGenerator` 反射生成），**不入版本库**（.gitignore 忽略），可随时重新生成。
+- **禁止**手编 `capabilities.json` 或维护第二套与注解并行同步的能力说明。
+
+### 3. 注解契约
+
+每个 `@ToolDef` 方法必须配 `@ToolCapability`（method 级），每个 `@ToolParam` 配 `@ParamCapability`（param 级）：
+
+```java
+@ToolDef(name = "update_paragraph_alignment", description = "...")
+@ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
+public String updateParagraphAlignment(
+    @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+        String docId,
+    @ToolParam(name = "edits", description = "对象数组...") @NestedParamCapability(
+            path = "edits.alignment", type = ParamType.ENUM,
+            enumValues = {"LEFT", "CENTER", "RIGHT", "JUSTIFY"})
+        List<Map<String, Object>> edits) {
+```
+
+- `@ToolCapability`：`operation`（READ/ADD/UPDATE/REMOVE/QUERY/SESSION/QUALITY）、`element`（小写字符串，如
+  `"paragraph"`/`"table"`/`"run"`；会话元工具留空）、`level`（STABLE/WORD_ONLY/EXPERIMENTAL）、
+  `needsRecalc`（是否需 Word/WPS 重新计算）。
+- `@ParamCapability`：`type`（STRING/INTEGER/ENUM/BOOLEAN/REF/...）、`enumValues`（仅 ENUM 或数组类型可配）、
+  `unit`（如 `"twip"`/`"pt"`/`"percent"`）。
+- `@NestedParamCapability`（可重复）：声明 `List<Map>` 嵌套参数的子字段（如 `edits.alignment`）。
+  `path` 首段必须与同位 `@ToolParam(name=X)` 的 X 一致。
+
+### 4. 校验规则（收集期抛异常 = 构建失败）
+
+`CapabilityCollector` 收集时强制：
+- `@ToolDef` 方法无 `@ToolCapability` → 失败。
+- `@ParamCapability.enumValues` 非空但 `type` 不在 `{ENUM, STRING_ARRAY, INTEGER_ARRAY, OBJECT_ARRAY}` → 失败。
+- `@ParamCapability` 标在非 `@ToolParam` 参数上 → 失败。
+- `@NestedParamCapability.path` 首段与 `@ToolParam.name` 不一致 → 失败。
+
+### 5. CI 契约测试（`CapabilityContractTest`）
+
+- `每个_tooldef都有_toolcapability`：计数断言 ≥54。
+- `声明的工具都有测试调用或显式豁免`：按 camelCase 方法名扫描测试源码；无调用且不在
+  `TEST_COVERAGE_ALLOWLIST` 的工具失败。新增工具必须配套测试。
+- `枚举参数都声明了enumValues`：每个 type=ENUM 的参数/nested 字段必须有 enumValues。
+- `digest在能力未变时稳定`：digest 排除 generatedAt，能力不变则值不变（Agent 据此判断缓存复用）。
+
+### 6. Wrong vs Correct
+
+```java
+// Wrong —— 新增 @ToolDef 但忘记标注能力，CI 会失败
+@ToolDef(name = "new_tool", description = "...")
+public String newTool(@ToolParam(name = "doc_id", description = "x") String docId) { ... }
+
+// Wrong —— 手编 capabilities.json 试图绕过注解
+// （capabilities.json 是构建产物，下次构建会被反射结果覆盖）
+
+// Correct —— 同步标注 method + param + nested
+@ToolDef(name = "new_tool", description = "...")
+@ToolCapability(operation = CapabilityOperation.READ, element = "paragraph")
+public String newTool(
+    @ToolParam(name = "doc_id", description = "x") @ParamCapability(type = ParamType.STRING)
+        String docId) { ... }
+```
+
+### 7. 兼容与迁移
+
+- `@ToolCapability` / `@ParamCapability` / `@NestedParamCapability` 是纯新增注解，零运行时开销
+  （反射只在收集时发生，结果惰性缓存）。
+- nonchain `@ToolDef` / `@ToolParam` 语义不变；项目注解只补 nonchain 缺失的维度
+  （operation/element/level/type/enumValues/unit），不重复 name/description/required。
+- 新增工具时，`describe_capabilities` 自动纳入完整 manifest（含自身），无循环。
+
+**Related**: 本文档 P0-01（Stable Semantic References）、P0-02（Structured Tool Results）；
+`capabilities.json` 字段形状见 `CapabilityJsonIo`。
