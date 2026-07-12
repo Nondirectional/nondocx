@@ -77,21 +77,27 @@ calling toolkit. This is the established pattern (see `BodyExecutor.parseHeading
 | `merge_table_cells` | `start_row_index`/`end_row_index` | `from_row_index`/`to_row_index` |
 | `merge_table_cells` | missing `direction` | infer from fields (row range → VERTICAL, cell range → HORIZONTAL) |
 
-### 5. Error Detection: checkResult
+### 5. Error Detection: ToolResultChecks (双模式)
 
-Toolkit batch methods return a `String` summary. A single-item failure format `[0] 错误:...` does
-**not** start with `错误`, so `startsWith("错误")` alone misses it. Both checks are required:
+P0-02 后，toolkit 的 `@ToolDef` 方法返回**双段格式** String（中文消息 + JSON envelope）。
+executor 的 `checkResult` 统一委托 `ToolResultChecks.checkResult(result, domain, kind)`，
+**双模式**：优先解析 JSON envelope 的 `success`/`code` 字段；解析失败回退旧中文前缀（safety-net）。
 
 ```java
+// BodyExecutor / TableExecutor 的 checkResult
 private static String checkResult(String result, Operation operation)
     throws OperationExecutionException {
-  if (result == null) throw new OperationExecutionException("返回 null");
-  if (result.startsWith("错误")) throw new OperationExecutionException(result);
-  if (result.contains("错误:") || result.contains("错误："))  // single-item failure
-    throw new OperationExecutionException("执行失败: " + result);
-  return result;
+  return ToolResultChecks.checkResult(result, "body", operation.kind());
 }
 ```
+
+`ToolResultChecks` 内部：
+1. `ToolResultParser.parse(result)` 提取 JSON envelope 的 `success`/`code`/`message`。
+2. 解析成功 → 按 `success` 判定；`success=false` 抛 `OperationExecutionException`。
+3. 解析失败（无 envelope）→ 回退旧 `startsWith("错误")`/`contains("错误:")`（兼容期 safety-net）。
+
+**禁止**在 executor 或工具内部新增 `startsWith("错误")` / `contains("错误")` 判断。
+所有状态判定必须走 `ToolResultChecks` 或 `ToolResultParser`。
 
 ### 6. Tests Required
 
@@ -294,16 +300,151 @@ bodyTools.replaceRunText(docId, List.of(edit));
 
 ---
 
-## Common Mistake: Silent Failure on checkResult
+## Common Mistake: Silent Failure on checkResult (Historical)
 
 **Symptom**: Orchestrator reports `state=DONE, executed=1`, but OnlyOffice reload shows no change.
 
-**Cause**: Toolkit batch method single-item failure `[0] 错误:缺少必填字段 X` does not start with
-`错误`, so `startsWith("错误")` misses it. The executor treats failure as success.
+**Historical Cause**: Toolkit batch method single-item failure `[0] 错误:缺少必填字段 X` does not start
+with `错误`, so `startsWith("错误")` missed it. The executor treated failure as success.
 
-**Fix**: `checkResult` must check both `startsWith("错误")` AND `contains("错误:")` / `contains("错误：")`.
+**Resolution (P0-02)**: `checkResult` 现统一委托 `ToolResultChecks`，解析 JSON envelope 的
+`success`/`code` 字段判定成败，不再嗅探中文前缀。批量部分失败用 `PARTIAL_FAILURE` code。
+旧 `startsWith`/`contains` 路径仅作为 safety-net 保留（envelope 不存在时回退）。
 
-**Prevention**: Always run the full `checkResult` pattern (see §5 above), not just a prefix check.
+---
+
+## Scenario: Structured Tool Results (ToolResult envelope)
+
+### 1. Scope / Trigger
+
+当 toolkit 的 `@ToolDef` 方法需要向 LLM 和 executor 同时提供结果时，必须使用 `ToolResult`
+双段格式。P0-02 后，所有 55 个 `@ToolDef` 方法已迁移。
+
+**框架硬约束**：nonchain `chain-0.10.0.jar` 的 `ToolRegistry.doExecute()` 对返回值只做
+`Object.toString()`（bytecode offset 156），**不会** JSON 序列化 POJO。因此 `@ToolDef` 方法
+**必须**返回 `String`，在方法内部构建 `ToolResult` 后经 `ToolResultRenderer.render()` 序列化。
+
+### 2. Signatures
+
+```java
+// @ToolDef 方法——String 边界
+@ToolDef(name = "open_docx")
+public String openDocx(@ToolParam(name = "path") String path) {
+    try {
+        ...
+        ToolResult<String> result = ToolResult.ok(docId, "已打开文档 " + path);
+        return ToolResultRenderer.render(result);  // 双段 String
+    } catch (RuntimeException e) {
+        ToolResult<Void> result = ToolResult.fail(ToolResultCode.DOCUMENT_CORRUPT, msg);
+        return ToolResultRenderer.render(result);
+    }
+}
+
+// 内部 private helper——可直接返回 ToolResult，不走 String 边界
+private ToolResult<Void> locateCellResult(...) {
+    if (cell == null) {
+        return ToolResult.fail(ToolResultCode.INDEX_OUT_OF_RANGE, msg);
+    }
+    return ToolResult.ok(null, "定位成功");
+}
+// 调用方检查 result.success()，不嗅探字符串
+```
+
+### 3. Contracts
+
+**双段格式**：
+
+```
+<中文人类可读消息>
+```json
+{"success":true,"code":"ok","data":{...},"matchedCount":1,"changedRefs":[...]}
+```
+```
+
+失败时消息尾部追加 `[code]`，并输出 `suggestion`：
+
+```
+run 索引 5 越界（共 2）[index_out_of_range]
+```json
+{"success":false,"code":"index_out_of_range","message":"...","suggestion":"使用 0..1"}
+```
+```
+
+**ToolResult<T> 字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `success` | boolean | 成功/失败 |
+| `code` | ToolResultCode | `OK` 或错误码 |
+| `message` | String | 中文人类可读消息（第一段） |
+| `data` | T | 机器可读负载（docId、ref、统计等），null 时不输出 |
+| `warnings` | List\<ToolWarning\> | 非致命提示 |
+| `changedRefs` | List\<String\> | 写操作影响的 canonical ref |
+| `matchedCount` | Integer | 多目标匹配数 |
+| `suggestion` | String | 可重试建议 |
+
+**ToolResultCode 目录**（`com.non.docx.toolkit.result.ToolResultCode`）：
+`OK`、`INVALID_ARGUMENT`、`INDEX_OUT_OF_RANGE`、`STALE_REF`、`ELEMENT_REMOVED`、
+`GENERATION_MISMATCH`、`DOCUMENT_MISMATCH`、`REF_TYPE_MISMATCH`、`INVALID_REF`、
+`UNSUPPORTED_FEATURE`、`NO_CHANGES_APPLIED`、`PARTIAL_FAILURE`、`DOCUMENT_CLOSED`、
+`DOCUMENT_CORRUPT`、`COMPATIBILITY_RISK`。
+
+ref 域错误码经 `RefResolutionCode.toToolResultCode()` 映射，共享同一 value 字符串。
+
+### 4. Validation & Error Matrix
+
+| 条件 | code | 行为 |
+|---|---|---|
+| 成功 | `OK` | 返回 data + message |
+| docId 不存在 | `DOCUMENT_CLOSED` | 不执行 |
+| 索引越界 | `INDEX_OUT_OF_RANGE` | 不执行，附 suggestion |
+| 参数错误/缺失 | `INVALID_ARGUMENT` | 不执行 |
+| ref 解析失败 | 映射自 `RefResolutionCode` | 不执行 |
+| 不支持的能力 | `UNSUPPORTED_FEATURE` | 不执行 |
+| 批量部分失败 | `PARTIAL_FAILURE` | data 含单项明细 |
+| 文档损坏 | `DOCUMENT_CORRUPT` | open 失败 |
+| 兼容性风险 | `COMPATIBILITY_RISK` | 附 warning |
+
+### 5. Good / Base / Bad Cases
+
+- **Good**：`@ToolDef` 方法构建 `ToolResult` → `ToolResultRenderer.render` → 返回双段 String。
+  executor 经 `ToolResultChecks.checkResult` 解析 envelope 判定 `success`。
+- **Base**：内部 helper 直接返回 `ToolResult`，调用方检查 `result.success()`，
+  只有 `@ToolDef` public 方法走 String 边界。
+- **Bad**：在 executor 或工具内部 `result.startsWith("错误")` / `contains("错误")` 嗅探状态。
+  **禁止**——所有状态判定走 `ToolResultChecks` 或 `ToolResult.success()`。
+- **批量**：全成功 → `OK` + `matchedCount`；有失败 → `PARTIAL_FAILURE` + 逐条明细。
+  旧中文 `成功 N 条,失败 M 条` 汇总行保留在 message 段供 LLM 阅读。
+
+### 6. Tests Required
+
+- `ToolResultTest`：值对象不可变、内容相等、工厂方法。
+- `ToolResultCodeTest`：枚举目录、`fromValue` round-trip、`RefResolutionCode` 映射一致。
+- `ToolResultRendererTest`：双段格式、JSON fence、序列化兜底、中文 message 保留。
+- `ToolResultParserTest`：双模式解析、旧格式回退 null、round-trip。
+- 现有 toolkit 测试：`DocxToolkitBatchTest`、`DocxToolkitTrackedChangesTest` 用
+  `ToolTestSupport.parse(result).code()` 断言结构化结果，不再 `contains("错误")`。
+
+### 7. Wrong vs Correct
+
+#### Wrong — 嗅探中文字符串判定状态
+
+```java
+String result = body.replaceRunText(docId, List.of(edit));
+if (result.startsWith("错误") || result.contains("错误:")) {
+    throw new OperationExecutionException(result);
+}
+// 单条失败 [0] 错误:... 不以「错误」开头 → 漏判 → 报告成功但文档没改
+```
+
+#### Correct — 解析结构化 envelope
+
+```java
+String result = body.replaceRunText(docId, List.of(edit));
+return ToolResultChecks.checkResult(result, "body", operation.kind());
+// 内部：ToolResultParser.parse(result) → snapshot.success() 判定
+// 批量部分失败：code=PARTIAL_FAILURE → 抛 OperationExecutionException
+```
 
 ---
 
