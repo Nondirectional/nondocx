@@ -15,9 +15,13 @@ import com.non.docx.core.api.table.Table;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
 import com.non.docx.toolkit.ref.ReferenceContext;
+import com.non.docx.toolkit.result.ToolResult;
+import com.non.docx.toolkit.result.ToolResultCode;
+import com.non.docx.toolkit.result.ToolResultRenderer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -133,7 +137,10 @@ public final class QualityCheckTools extends ToolkitToolContext {
           List<String> checks) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      ToolResult<Void> result =
+          ToolResult.fail(
+              ToolResultCode.DOCUMENT_CLOSED, "文档句柄 " + docId + " 不存在（未 open_docx 或已 close_docx）");
+      return ToolResultRenderer.render(result);
     }
     List<String> selected = resolveChecks(checks);
     List<CheckResult> results = new ArrayList<>();
@@ -552,7 +559,7 @@ public final class QualityCheckTools extends ToolkitToolContext {
     return s.endsWith("、") ? s.substring(0, s.length() - 1) : s;
   }
 
-  /** 拼装最终报告字符串。 */
+  /** 拼装最终报告字符串，渲染为双段格式。 */
   private String formatReport(String docId, List<CheckResult> results) {
     StringBuilder sb = new StringBuilder();
     sb.append("📋 文档质量自检报告: ").append(docId).append('\n');
@@ -579,7 +586,13 @@ public final class QualityCheckTools extends ToolkitToolContext {
         .append(" errors | ⚠️ ")
         .append(warnings)
         .append(" warnings");
-    return sb.toString();
+    Map<String, Integer> data = new LinkedHashMap<>();
+    data.put("passed", passed);
+    data.put("errors", errors);
+    data.put("warnings", warnings);
+    data.put("total", results.size());
+    ToolResult<Map<String, Integer>> result = ToolResult.ok(data, sb.toString());
+    return ToolResultRenderer.render(result);
   }
 
   /** 单项检查结果（toolkit 内部值对象）。 */

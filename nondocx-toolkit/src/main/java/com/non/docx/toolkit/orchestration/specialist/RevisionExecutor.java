@@ -66,8 +66,7 @@ public final class RevisionExecutor implements OperationExecutor {
     try {
       String result =
           trackedChangeQuery.applyTrackedChanges(docId, action, target, new ArrayList<>(ids));
-      if (result != null
-          && (result.startsWith("错误") || result.contains("错误:") || result.contains("错误："))) {
+      if (com.non.docx.toolkit.orchestration.commit.ToolResultChecks.isFailure(result)) {
         throw new OperationExecutionException(result);
       }
       return result;

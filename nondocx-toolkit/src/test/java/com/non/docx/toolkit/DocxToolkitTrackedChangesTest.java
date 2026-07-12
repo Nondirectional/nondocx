@@ -48,7 +48,9 @@ class DocxToolkitTrackedChangesTest {
     }
 
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     assertThat(docId).startsWith("doc-");
 
     // enabled:文档未显式开开关 → 未开启
@@ -79,12 +81,15 @@ class DocxToolkitTrackedChangesTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     String id = extractId(tk.trackedChangeQuery.listTrackedChanges(docId), "cell_merge:");
 
     // cellMerge 的 accept 应返回含错误的明细串(而非抛异常),整批失败 1 条
     String result = tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "CELL", List.of(id));
-    assertThat(result).contains("错误");
+    assertThat(com.non.docx.toolkit.ToolTestSupport.parse(result).code())
+        .isEqualTo(com.non.docx.toolkit.result.ToolResultCode.PARTIAL_FAILURE);
     assertThat(result).contains("失败 1 条");
     // 文档未变,cellMerge 仍在
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 1 条修订");
@@ -108,7 +113,9 @@ class DocxToolkitTrackedChangesTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 初始未开启
     assertThat(tk.trackedChangeQuery.getTrackedChangesEnabled(docId)).contains("未开启");
@@ -133,7 +140,9 @@ class DocxToolkitTrackedChangesTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     String result = tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(runEdit(0, 0)));
     assertThat(result).contains("tracked del").contains("要删的文字");
     // 读回应有一条 DEL
@@ -148,7 +157,9 @@ class DocxToolkitTrackedChangesTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     Map<String, Object> edit = runEdit(0, 0);
     edit.put("new_text", "新文字");
     String result = tk.trackedChangeAuthoring.replaceRunTracked(docId, "甲", List.of(edit));
@@ -166,7 +177,9 @@ class DocxToolkitTrackedChangesTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     Map<String, Object> edit = new LinkedHashMap<>();
     edit.put("paragraph_index", 0);
     edit.put("text", "插入文字");
@@ -187,7 +200,9 @@ class DocxToolkitTrackedChangesTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     String result =
         tk.trackedChangeAuthoring.markTrackedCells(
             docId, "INSERTED", "甲", List.of(cellCoord(0, 0, 0)));
@@ -205,7 +220,9 @@ class DocxToolkitTrackedChangesTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     String result = tk.trackedChangeAuthoring.moveRunTracked(docId, 0, 0, 1, "甲");
     assertThat(result).contains("moveFrom");
     // 读回应有配对的 MOVE_FROM + MOVE_TO
@@ -226,12 +243,18 @@ class DocxToolkitTrackedChangesTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     String id = extractId(tk.trackedChangeQuery.listTrackedChanges(docId), "ins:");
     // family 不符 → 该条记错误不中断
     assertThat(tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "PROPERTY", List.of(id)))
-        .contains("错误")
-        .contains("失败 1 条");
+        .satisfies(
+            r -> {
+              assertThat(com.non.docx.toolkit.ToolTestSupport.parse(r).code())
+                  .isEqualTo(com.non.docx.toolkit.result.ToolResultCode.PARTIAL_FAILURE);
+              assertThat(r).contains("失败 1 条");
+            });
   }
 
   @Test
@@ -246,7 +269,9 @@ class DocxToolkitTrackedChangesTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     String list = tk.trackedChangeQuery.listTrackedChanges(docId);
     String ref = extractRef(list);
 

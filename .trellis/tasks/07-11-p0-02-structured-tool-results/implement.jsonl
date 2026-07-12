@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/orchestration-layer.md", "reason": "编排层 checkResult/checkResult 双路径消费模式——P0-02 要替换的字符串解析协议"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "统一错误码目录须与现有 DocxException 体系一致"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "不可变值对象、手写 equals、零 POI 泄露约束"}

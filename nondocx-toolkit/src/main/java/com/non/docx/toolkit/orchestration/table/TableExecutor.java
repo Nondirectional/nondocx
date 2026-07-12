@@ -202,21 +202,13 @@ public final class TableExecutor implements OperationExecutor {
   /**
    * 检查 TableTools 返回串是否表示执行失败。
    *
-   * <p>同 {@link BodyExecutor} 的 checkResult：TableTools 批量方法的单条失败格式为 {@code "[N] 错误:..."}，
-   * 不以「错误」开头，需额外检测「错误:」/「错误：」子串。
+   * <p>委托 {@link com.non.docx.toolkit.orchestration.commit.ToolResultChecks#checkResult}，
+   * 双模式：优先解析结构化 envelope，回退旧中文前缀（混合期，切片 8 移除）。
    */
   private static String checkResult(String result, Operation operation)
       throws OperationExecutionException {
-    if (result == null) {
-      throw new OperationExecutionException("table/" + operation.kind() + " 返回 null");
-    }
-    if (result.startsWith("错误")) {
-      throw new OperationExecutionException(result);
-    }
-    if (result.contains("错误:") || result.contains("错误：")) {
-      throw new OperationExecutionException("table/" + operation.kind() + " 执行失败: " + result);
-    }
-    return result;
+    return com.non.docx.toolkit.orchestration.commit.ToolResultChecks.checkResult(
+        result, "table", operation.kind());
   }
 
   // ==================== Operation 构造便捷方法 ====================

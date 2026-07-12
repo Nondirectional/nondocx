@@ -14,6 +14,9 @@ import com.non.docx.toolkit.ref.ElementResolver;
 import com.non.docx.toolkit.ref.HeaderFooterRef;
 import com.non.docx.toolkit.ref.RefResolutionException;
 import com.non.docx.toolkit.ref.ReferenceContext;
+import com.non.docx.toolkit.result.ToolResult;
+import com.non.docx.toolkit.result.ToolResultCode;
+import com.non.docx.toolkit.result.ToolResultRenderer;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -72,7 +75,9 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
     } else if ("FOOTER".equalsIgnoreCase(part)) {
       isHeader = false;
     } else {
-      return "错误：part 仅支持 HEADER/FOOTER";
+      ToolResult<Void> r =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "part 仅支持 HEADER/FOOTER");
+      return ToolResultRenderer.render(r);
     }
     return readHeaderFooterParagraph(docId, sectionIndex, paragraphIndex, isHeader);
   }
@@ -86,13 +91,15 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
       @ToolParam(name = "ref", description = "canonical HeaderFooterRef") String ref) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     ElementResolver resolver = elementResolver(docId);
     try {
       ElementRef parsed = ElementRefs.parse(ref);
       if (!(parsed instanceof HeaderFooterRef)) {
-        return "错误[ref_type_mismatch]：该工具只接受 HeaderFooterRef";
+        ToolResult<Void> r =
+            ToolResult.fail(ToolResultCode.REF_TYPE_MISMATCH, "该工具只接受 HeaderFooterRef");
+        return ToolResultRenderer.render(r);
       }
       List<Paragraph> paragraphs;
       String part;
@@ -113,9 +120,11 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
             .append("\n文本: ")
             .append(paragraph.text());
       }
-      return sb.toString();
+      ToolResult<String> result = ToolResult.ok(ref, sb.toString());
+      return ToolResultRenderer.render(result);
     } catch (RefResolutionException e) {
-      return e.render();
+      ToolResult<Void> result = ToolResult.fail(e.code().toToolResultCode(), e.render());
+      return ToolResultRenderer.render(result);
     }
   }
 
@@ -128,22 +137,25 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
       String docId, int sectionIndex, int paragraphIndex, boolean isHeader) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     var sections = doc.sections();
     if (outOfBounds(sectionIndex, sections.size())) {
-      return indexError("section 索引", sectionIndex, sections.size());
+      return renderIndexError("section 索引", sectionIndex, sections.size());
     }
     // 读写分离后 header()/footer() 只读返回，null 表示该 section 未设置页眉/页脚。
     Object hf =
         isHeader ? sections.get(sectionIndex).header() : sections.get(sectionIndex).footer();
     if (hf == null) {
       // 用提示串而非"错误"，让 Agent 知道这里确实没有内容，而不是索引算错。
-      return (isHeader ? "页眉" : "页脚") + " section=" + sectionIndex + " 不存在（该 section 未设置页眉/页脚）";
+      String message =
+          (isHeader ? "页眉" : "页脚") + " section=" + sectionIndex + " 不存在（该 section 未设置页眉/页脚）";
+      ToolResult<Void> result = ToolResult.ok(message);
+      return ToolResultRenderer.render(result);
     }
     List<Paragraph> paras = isHeader ? ((Header) hf).paragraphs() : ((Footer) hf).paragraphs();
     if (outOfBounds(paragraphIndex, paras.size())) {
-      return indexError((isHeader ? "页眉" : "页脚") + "内段落索引", paragraphIndex, paras.size());
+      return renderIndexError((isHeader ? "页眉" : "页脚") + "内段落索引", paragraphIndex, paras.size());
     }
     Paragraph p = paras.get(paragraphIndex);
     ElementResolver resolver = elementResolver(docId);
@@ -151,21 +163,24 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
         isHeader ? resolver.reference((Header) hf) : resolver.reference((Footer) hf);
     int runCount = p.runs().size();
     long hyperlinkCount = hyperlinkCount(p);
-    return (isHeader ? "页眉" : "页脚")
-        + " section="
-        + sectionIndex
-        + " 段落 "
-        + paragraphIndex
-        + "\npart ref: "
-        + partRef.canonical()
-        + "\nparagraph ref: "
-        + resolver.reference(p).canonical()
-        + "\n文本: "
-        + p.text()
-        + "\nrun 数: "
-        + runCount
-        + "\n超链接数: "
-        + hyperlinkCount;
+    String message =
+        (isHeader ? "页眉" : "页脚")
+            + " section="
+            + sectionIndex
+            + " 段落 "
+            + paragraphIndex
+            + "\npart ref: "
+            + partRef.canonical()
+            + "\nparagraph ref: "
+            + resolver.reference(p).canonical()
+            + "\n文本: "
+            + p.text()
+            + "\nrun 数: "
+            + runCount
+            + "\n超链接数: "
+            + hyperlinkCount;
+    ToolResult<Void> result = ToolResult.ok(message);
+    return ToolResultRenderer.render(result);
   }
 
   // ==================== 目录（TOC，只读） ====================
@@ -186,16 +201,18 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
   public String readToc(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     TableOfContents toc = doc.toc();
     if (toc == null) {
-      return "该文档没有目录(TOC 域)。";
+      ToolResult<Void> result = ToolResult.ok("该文档没有目录(TOC 域)。");
+      return ToolResultRenderer.render(result);
     }
     List<TocEntry> entries = toc.entries();
     if (entries.isEmpty()) {
       // 有 TOC 域但解析不出条目:罕见,可能 TOC 尚未在 Word 里生成(只有空域壳)。提示用户去 Word 刷新。
-      return "存在目录域,但未能解析出条目(可能尚未在 Word 中生成,请打开文档刷新目录)。";
+      ToolResult<Void> result = ToolResult.ok("存在目录域,但未能解析出条目(可能尚未在 Word 中生成,请打开文档刷新目录)。");
+      return ToolResultRenderer.render(result);
     }
     StringBuilder sb = new StringBuilder();
     sb.append("目录(").append(entries.size()).append(" 条)");
@@ -211,7 +228,8 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
         sb.append('\n');
       }
     }
-    return sb.toString();
+    ToolResult<Integer> result = ToolResult.ok(entries.size(), sb.toString());
+    return ToolResultRenderer.render(result);
   }
 
   /** 把条目的页码与锚点追加进结果串:页码非空则附「· 第N页」,有锚点则附「· 锚点 _Toc...」。 */

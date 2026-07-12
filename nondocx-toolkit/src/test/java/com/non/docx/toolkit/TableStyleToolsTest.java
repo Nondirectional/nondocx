@@ -35,7 +35,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 两条合法 + 一条越界 → 成功两条、失败一条不中断。
     Map<String, Object> e0 = cellShadingEdit(0, 0, 0, "F1F5F9");
@@ -69,7 +71,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> e0 = cellVAlignEdit(0, 0, 0, "TOP");
     Map<String, Object> e1 = cellVAlignEdit(0, 0, 1, "center"); // 大小写不敏感
@@ -99,7 +103,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result =
         tk.table.updateTableCellVerticalAlign(docId, List.of(cellVAlignEdit(0, 0, 0, "MIDDLE")));
@@ -116,7 +122,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> header = cellRunStyleEdit(0, 0, 0, 0, 0);
     header.put("bold", true);
@@ -142,7 +150,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result =
         tk.table.updateTableCellRunStyle(docId, List.of(cellRunStyleEdit(0, 0, 0, 0, 0)));
@@ -159,7 +169,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> e0 = cellAlignEdit(0, 0, 0, 0, "RIGHT");
     Map<String, Object> e1 = cellAlignEdit(0, 0, 1, 0, "center");
@@ -209,7 +221,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 标记第 0 行为表头行,第 1 行禁止跨页拆分。
     Map<String, Object> hr = rowEdit(0, 0);
@@ -246,7 +260,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> hr = rowEdit(0, 0);
     hr.put("header_row", false);
@@ -267,7 +283,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> ok = rowEdit(0, 0);
     ok.put("header_row", true);
@@ -289,7 +307,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result = tk.table.setTableColumnPercents(docId, 0, List.of(30, 70));
     assertThat(result).contains("列宽百分比 → [30, 70]");
@@ -318,7 +338,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result = tk.table.setTableColumnWidths(docId, 0, List.of(4513, 4513));
     assertThat(result).contains("列宽(twips) → [4513, 4513]");
@@ -340,7 +362,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     assertThat(tk.table.setTableColumnPercents(docId, 0, List.of(50, 50))).contains("越界");
     assertThat(tk.table.setTableColumnWidths(docId, 0, List.of(100, 100))).contains("越界");
@@ -363,7 +387,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 追加空行,返回新索引 2。
     String add = tk.table.addTableRow(docId, 0);
@@ -392,7 +418,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String add = tk.table.addTableCell(docId, 0, 0);
     assertThat(add).contains("新单元格索引 2");
@@ -415,7 +443,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> set = cellParaEdit(0, 0, 0, 0);
     set.put("heading", "h2"); // 大小写不敏感
@@ -450,7 +480,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> ind = cellParaEdit(0, 0, 0, 0);
     ind.put("left_twips", 720);
@@ -481,7 +513,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> set = cellParaEdit(0, 0, 0, 0);
     set.put("list_kind", "BULLET");
@@ -518,7 +552,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> set = cellParaEdit(0, 0, 0, 0);
     set.put("fill", "FEF3C7");
@@ -543,7 +579,9 @@ class TableStyleToolsTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 一条合法 heading + 一条非法 heading 值 + 一条段落越界。
     Map<String, Object> ok = cellParaEdit(0, 0, 0, 0);

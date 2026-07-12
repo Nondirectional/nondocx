@@ -1,5 +1,7 @@
 package com.non.docx.toolkit.ref;
 
+import com.non.docx.toolkit.result.ToolResultCode;
+
 /** 稳定引用解析错误码。 */
 public enum RefResolutionCode {
   STALE_REF("stale_ref"),
@@ -17,5 +19,29 @@ public enum RefResolutionCode {
 
   public String value() {
     return value;
+  }
+
+  /**
+   * 映射到统一 {@link ToolResultCode}。
+   *
+   * <p>ref 域错误码与 {@code ToolResultCode} 共享同一 value 字符串，不维护两套语义。
+   */
+  public ToolResultCode toToolResultCode() {
+    switch (this) {
+      case STALE_REF:
+        return ToolResultCode.STALE_REF;
+      case ELEMENT_REMOVED:
+        return ToolResultCode.ELEMENT_REMOVED;
+      case GENERATION_MISMATCH:
+        return ToolResultCode.GENERATION_MISMATCH;
+      case DOCUMENT_MISMATCH:
+        return ToolResultCode.DOCUMENT_MISMATCH;
+      case REF_TYPE_MISMATCH:
+        return ToolResultCode.REF_TYPE_MISMATCH;
+      case INVALID_REF:
+        return ToolResultCode.INVALID_REF;
+      default:
+        throw new IllegalStateException("未覆盖的 RefResolutionCode: " + this);
+    }
   }
 }

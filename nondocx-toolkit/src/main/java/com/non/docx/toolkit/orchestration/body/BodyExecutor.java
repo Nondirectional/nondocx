@@ -310,21 +310,13 @@ public final class BodyExecutor implements OperationExecutor {
   /**
    * 检查 BodyTools 返回串是否表示执行失败。
    *
-   * <p>BodyTools 批量方法（单元素调用也走批量路径）有两种失败格式：整体失败（以「错误」开头）和单条失败 （含「错误:」或「错误：」子串，如 {@code "[0]
-   * 错误:缺少必填字段 body_index"}）。两种都要检测，否则 会把单条失败误判为成功（commit 报告 executed=1 但文档实际没改）。
+   * <p>委托 {@link com.non.docx.toolkit.orchestration.commit.ToolResultChecks#checkResult}，
+   * 双模式：优先解析结构化 envelope，回退旧中文前缀（混合期，切片 8 移除）。
    */
   private static String checkResult(String result, Operation operation)
       throws OperationExecutionException {
-    if (result == null) {
-      throw new OperationExecutionException("body/" + operation.kind() + " 返回 null");
-    }
-    if (result.startsWith("错误")) {
-      throw new OperationExecutionException(result);
-    }
-    if (result.contains("错误:") || result.contains("错误：")) {
-      throw new OperationExecutionException("body/" + operation.kind() + " 执行失败: " + result);
-    }
-    return result;
+    return com.non.docx.toolkit.orchestration.commit.ToolResultChecks.checkResult(
+        result, "body", operation.kind());
   }
 
   // ==================== Operation 构造便捷方法（供 BodyAgent 使用） ====================

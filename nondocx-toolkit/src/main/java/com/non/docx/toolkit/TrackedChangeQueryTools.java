@@ -16,6 +16,9 @@ import com.non.docx.toolkit.ref.RefResolutionCode;
 import com.non.docx.toolkit.ref.RefResolutionException;
 import com.non.docx.toolkit.ref.ReferenceContext;
 import com.non.docx.toolkit.ref.RevisionRef;
+import com.non.docx.toolkit.result.ToolResult;
+import com.non.docx.toolkit.result.ToolResultCode;
+import com.non.docx.toolkit.result.ToolResultRenderer;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -66,9 +69,12 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
-    return "修订记录: " + (doc.trackedChanges().enabled() ? "已开启" : "未开启");
+    boolean enabled = doc.trackedChanges().enabled();
+    String message = "修订记录: " + (enabled ? "已开启" : "未开启");
+    ToolResult<Boolean> result = ToolResult.ok(enabled, message);
+    return ToolResultRenderer.render(result);
   }
 
   /**
@@ -89,7 +95,7 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       @ToolParam(name = "enabled", description = "true=开启修订模式,false=关闭") boolean enabled) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     try {
       if (enabled) {
@@ -97,9 +103,13 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       } else {
         doc.trackedChanges().disable();
       }
-      return "修订记录: " + (doc.trackedChanges().enabled() ? "已开启" : "已关闭") + "(改完需 save_docx 落盘)";
+      String message =
+          "修订记录: " + (doc.trackedChanges().enabled() ? "已开启" : "已关闭") + "(改完需 save_docx 落盘)";
+      ToolResult<Void> result = ToolResult.ok(message);
+      return ToolResultRenderer.render(result);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      ToolResult<Void> result = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, rootMessage(e));
+      return ToolResultRenderer.render(result);
     }
   }
 
@@ -118,11 +128,12 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
   public String listTrackedChanges(@ToolParam(name = "doc_id", description = "文档句柄") String docId) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     List<TrackedChange> list = doc.trackedChanges().list();
     if (list.isEmpty()) {
-      return "无修订";
+      ToolResult<Integer> result = ToolResult.ok(0, "无修订");
+      return ToolResultRenderer.render(result);
     }
     ElementResolver resolver = elementResolver(docId);
     StringBuilder sb = new StringBuilder();
@@ -137,7 +148,8 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
         sb.append('\n');
       }
     }
-    return sb.toString();
+    ToolResult<Integer> result = ToolResult.ok(list.size(), sb.toString());
+    return ToolResultRenderer.render(result);
   }
 
   /** 按稳定 id 取单条修订详情。未命中返回错误串(不要靠它枚举,枚举用 list_tracked_changes)。 */
@@ -150,16 +162,20 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
           String id) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     try {
       ElementResolver resolver = elementResolver(docId);
       TrackedChange change = resolveRevisionInput(docId, doc, id);
-      return describeRevision(change, resolver.reference(change));
+      String description = describeRevision(change, resolver.reference(change));
+      ToolResult<String> result = ToolResult.ok(change.id(), description);
+      return ToolResultRenderer.render(result);
     } catch (RefResolutionException e) {
-      return e.render();
+      ToolResult<Void> result = ToolResult.fail(e.code().toToolResultCode(), e.render());
+      return ToolResultRenderer.render(result);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      ToolResult<Void> result = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, rootMessage(e));
+      return ToolResultRenderer.render(result);
     }
   }
 
@@ -187,7 +203,9 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
     } else if ("REJECT".equalsIgnoreCase(action)) {
       accept = false;
     } else {
-      return "错误：action 仅支持 ACCEPT/REJECT";
+      ToolResult<Void> result =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "action 仅支持 ACCEPT/REJECT");
+      return ToolResultRenderer.render(result);
     }
 
     if ("TEXT_OR_MOVE".equalsIgnoreCase(target) || "TEXT".equalsIgnoreCase(target)) {
@@ -207,7 +225,9 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
           accept ? TrackedChanges::acceptCell : TrackedChanges::rejectCell,
           accept ? "应用单元格类" : "撤销单元格类");
     }
-    return "错误：target 仅支持 TEXT_OR_MOVE/PROPERTY/CELL";
+    ToolResult<Void> result =
+        ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "target 仅支持 TEXT_OR_MOVE/PROPERTY/CELL");
+    return ToolResultRenderer.render(result);
   }
 
   /**
@@ -228,10 +248,14 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       @ToolParam(name = "author", description = "scope=AUTHOR 时必填,大小写敏感精确匹配", required = false)
           String author) {
     if (action == null || action.isBlank()) {
-      return "错误:action 仅支持 ACCEPT 或 REJECT";
+      ToolResult<Void> r =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "action 仅支持 ACCEPT 或 REJECT");
+      return ToolResultRenderer.render(r);
     }
     if (scope == null || scope.isBlank()) {
-      return "错误:scope 仅支持 ALL 或 AUTHOR";
+      ToolResult<Void> r =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "scope 仅支持 ALL 或 AUTHOR");
+      return ToolResultRenderer.render(r);
     }
     String normalizedAction = action.trim().toUpperCase(java.util.Locale.ROOT);
     String normalizedScope = scope.trim().toUpperCase(java.util.Locale.ROOT);
@@ -240,50 +264,68 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
     }
     if ("AUTHOR".equals(normalizedScope)) {
       if (author == null || author.isBlank()) {
-        return "错误:scope=AUTHOR 时 author 必填";
+        ToolResult<Void> r =
+            ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "scope=AUTHOR 时 author 必填");
+        return ToolResultRenderer.render(r);
       }
       return applyTextRevisionsByAuthor(docId, normalizedAction, author);
     }
-    return "错误:scope 仅支持 ALL 或 AUTHOR";
+    ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "scope 仅支持 ALL 或 AUTHOR");
+    return ToolResultRenderer.render(r);
   }
 
   private String applyAllTextRevisions(String docId, String normalizedAction) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     try {
+      int n;
+      String verb;
       if ("ACCEPT".equals(normalizedAction)) {
-        int n = doc.trackedChanges().acceptAll();
-        return "已应用 " + n + " 条文本/移动类修订";
+        n = doc.trackedChanges().acceptAll();
+        verb = "应用";
+      } else if ("REJECT".equals(normalizedAction)) {
+        n = doc.trackedChanges().rejectAll();
+        verb = "撤销";
+      } else {
+        ToolResult<Void> r =
+            ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "action 仅支持 ACCEPT 或 REJECT");
+        return ToolResultRenderer.render(r);
       }
-      if ("REJECT".equals(normalizedAction)) {
-        int n = doc.trackedChanges().rejectAll();
-        return "已撤销 " + n + " 条文本/移动类修订";
-      }
-      return "错误:action 仅支持 ACCEPT 或 REJECT";
+      ToolResult<Integer> result = ToolResult.ok(n, "已" + verb + " " + n + " 条文本/移动类修订");
+      return ToolResultRenderer.render(result);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, rootMessage(e));
+      return ToolResultRenderer.render(r);
     }
   }
 
   private String applyTextRevisionsByAuthor(String docId, String normalizedAction, String author) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     try {
+      int n;
+      String verb;
       if ("ACCEPT".equals(normalizedAction)) {
-        int n = doc.trackedChanges().acceptByAuthor(author);
-        return "已应用作者「" + author + "」的 " + n + " 条文本/移动类修订";
+        n = doc.trackedChanges().acceptByAuthor(author);
+        verb = "应用";
+      } else if ("REJECT".equals(normalizedAction)) {
+        n = doc.trackedChanges().rejectByAuthor(author);
+        verb = "撤销";
+      } else {
+        ToolResult<Void> r =
+            ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "action 仅支持 ACCEPT 或 REJECT");
+        return ToolResultRenderer.render(r);
       }
-      if ("REJECT".equals(normalizedAction)) {
-        int n = doc.trackedChanges().rejectByAuthor(author);
-        return "已撤销作者「" + author + "」的 " + n + " 条文本/移动类修订";
-      }
-      return "错误:action 仅支持 ACCEPT 或 REJECT";
+      ToolResult<Integer> result =
+          ToolResult.ok(n, "已" + verb + "作者「" + author + "」的 " + n + " 条文本/移动类修订");
+      return ToolResultRenderer.render(result);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, rootMessage(e));
+      return ToolResultRenderer.render(r);
     }
   }
 
@@ -348,11 +390,12 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       String docId, List<String> ids, BiConsumer<TrackedChanges, String> action, String verb) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     List<Object> list = coerceList(ids);
     if (list.isEmpty()) {
-      return "ids 为空";
+      ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "ids 为空");
+      return ToolResultRenderer.render(r);
     }
     TrackedChanges tc = doc.trackedChanges();
     ElementResolver resolver = elementResolver(docId);
@@ -393,7 +436,15 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       }
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    ToolResult<Integer> result =
+        fail > 0
+            ? ToolResult.partial(
+                ToolResultCode.PARTIAL_FAILURE,
+                ok,
+                sb.toString(),
+                java.util.Collections.emptyList())
+            : ToolResult.ok(ok, sb.toString());
+    return ToolResultRenderer.render(result);
   }
 
   private TrackedChange resolveRevisionInput(String docId, Document doc, String input) {

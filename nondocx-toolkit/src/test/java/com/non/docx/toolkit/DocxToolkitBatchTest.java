@@ -40,7 +40,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 批量读三段,其中索引 5 越界——不应中断,越界条目要被标注。
     String result = tk.body.readParagraph(docId, List.of(0, 1, 5));
@@ -58,7 +60,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result =
         tk.body.updateParagraphAlignment(
@@ -84,7 +88,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result =
         tk.body.updateParagraphAlignment(docId, List.of(paragraphAlignment(0, "MIDDLE")));
@@ -101,7 +107,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 三条编辑:前两条合法(段 0/段 1),第三条段索引 99 越界。
     Map<String, Object> e0 = edit(0, 0, "新 A");
@@ -128,7 +136,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     var document = tk.session.getDocument(docId);
     String ref =
         tk.session
@@ -175,7 +185,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> title = styleEdit(0, 0);
     title.put("bold", true);
@@ -213,7 +225,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result = tk.body.updateRunStyle(docId, List.of(styleEdit(0, 0)));
     assertThat(result).contains("未提供任何样式字段").contains("成功 0 条,失败 1 条");
@@ -227,14 +241,18 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 缺 text 字段 → 应被记为错误而非 NPE。
     Map<String, Object> bad = new LinkedHashMap<>();
     bad.put("paragraph_index", 0);
     bad.put("run_index", 0);
     String result = tk.body.replaceRunText(docId, List.of(bad));
-    assertThat(result).contains("错误").contains("text");
+    assertThat(com.non.docx.toolkit.ToolTestSupport.parse(result).code())
+        .isEqualTo(com.non.docx.toolkit.result.ToolResultCode.PARTIAL_FAILURE);
+    assertThat(result).contains("text");
     assertThat(result).contains("成功 0 条,失败 1 条");
     // 原文未被破坏
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("保留");
@@ -251,7 +269,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> left = cellEdit(0, 0, 0, 0, 0, "左已改");
     Map<String, Object> right = cellEdit(0, 0, 1, 0, 0, "右已改");
@@ -274,7 +294,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     var document = tk.session.getDocument(docId);
     String ref =
         tk.session
@@ -327,7 +349,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result =
         tk.table.createTable(
@@ -346,7 +370,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result = tk.table.createTable(docId, List.of(List.of("A"), List.of()));
     assertThat(result).contains("错误:第 1 行为空");
@@ -361,7 +387,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result = tk.table.setTableBorders(docId, 0, "NONE");
     assertThat(result).contains("表格 0").contains("无边框");
@@ -378,7 +406,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String horizontal = tk.table.mergeTableCells(docId, array(horizontalMerge(0, 0, 0, 2)));
     assertThat(horizontal).contains("已横向合并表格 0 行 0 单元格 0..2");
@@ -398,7 +428,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     Map<String, Object> bad = new LinkedHashMap<>();
     bad.put("table_index", 0);
@@ -418,7 +450,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result =
         tk.body.insertParagraph(docId, List.of(paragraphInsert(0, "标题"), paragraphInsert(2, "结尾")));
@@ -441,7 +475,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result = tk.body.insertParagraph(docId, List.of(paragraphInsert(1, "表格前说明")));
     assertThat(result).contains("body 1").contains("表格前说明").contains("成功 1 条,失败 0 条");
@@ -460,7 +496,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 从 list 里取一个真实 id,再混入一个不存在的 id。
     String list = tk.trackedChangeQuery.listTrackedChanges(docId);
@@ -471,7 +509,9 @@ class DocxToolkitBatchTest {
         tk.trackedChangeQuery.applyTrackedChanges(
             docId, "ACCEPT", "TEXT_OR_MOVE", List.of(realId, "ins:not-exist"));
     assertThat(result).contains(realId).contains("已应用");
-    assertThat(result).contains("ins:not-exist").contains("错误");
+    assertThat(result).contains("ins:not-exist");
+    assertThat(com.non.docx.toolkit.ToolTestSupport.parse(result).code())
+        .isEqualTo(com.non.docx.toolkit.result.ToolResultCode.PARTIAL_FAILURE);
     assertThat(result).contains("成功 1 条,失败 1 条");
     // accept 一条后,应只剩 1 条(另一条 id 不存在,文档未变)。
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 1 条修订");
@@ -487,7 +527,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     // 单元素数组即"单次调用"语义。
     String result = tk.body.readParagraph(docId, List.of(0));
     assertThat(result).contains("段落 0").contains("唯一段");
@@ -501,7 +543,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     // 空数组:返回提示而非 NPE。
     assertThat(tk.body.readParagraph(docId, List.of())).contains("为空");
     assertThat(tk.body.updateParagraphAlignment(docId, List.of())).contains("为空");
@@ -545,7 +589,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     Path output = Path.of("relative-output.docx").toAbsolutePath();
 
     try {
@@ -568,7 +614,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String headerResult = tk.headerFooterToc.readHeaderFooter(docId, "HEADER", 0, 0);
     assertThat(headerResult)
@@ -606,7 +654,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 读两个合法 cell + 一个越界 cell(0,0,99)——不中断,越界条目标注。
     String result = tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 99)));
@@ -627,7 +677,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     String result =
         tk.trackedChangeAuthoring.deleteRunTracked(
             docId, "甲", List.of(runEdit(0, 0), runEdit(0, 2)));
@@ -645,7 +697,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     String result =
         tk.trackedChangeAuthoring.deleteRunTracked(
             docId, "甲", List.of(runEdit(0, 0), runEdit(0, 0)));
@@ -665,7 +719,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     Map<String, Object> e0 = runEdit(0, 0);
     e0.put("new_text", "新A");
     Map<String, Object> e2 = runEdit(0, 2);
@@ -686,7 +742,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     Map<String, Object> e0 = new LinkedHashMap<>();
     e0.put("paragraph_index", 0);
     e0.put("text", "(批注一)");
@@ -710,7 +768,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 批量标记两个单元格为 cellIns。
     String ins =
@@ -739,7 +799,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 读 run0 + run1 + 一个越界 run5——不中断,越界标注。
     String result = tk.body.readRun(docId, List.of(runEdit(0, 0), runEdit(0, 1), runEdit(0, 5)));
@@ -755,7 +817,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 先用 mark_style_change_tracked 造一条属性修订。
     tk.trackedChangeAuthoring.markStyleChangeTracked(docId, 0, 0, "甲", true, false, null);
@@ -769,7 +833,9 @@ class DocxToolkitBatchTest {
         tk.trackedChangeQuery.applyTrackedChanges(
             docId, "ACCEPT", "PROPERTY", List.of(propId, "rpr_change:not-exist"));
     assertThat(result).contains(propId).contains("已应用");
-    assertThat(result).contains("not-exist").contains("错误");
+    assertThat(result).contains("not-exist");
+    assertThat(com.non.docx.toolkit.ToolTestSupport.parse(result).code())
+        .isEqualTo(com.non.docx.toolkit.result.ToolResultCode.PARTIAL_FAILURE);
     assertThat(result).contains("成功 1 条,失败 1 条");
     // accept 后属性修订消失。
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("无修订");
@@ -790,7 +856,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     // 用 mark_tracked_cells 造两条 cellIns。
     tk.trackedChangeAuthoring.markTrackedCells(
         docId, "INSERTED", "甲", List.of(cellCoord(0, 0, 0), cellCoord(0, 0, 1)));
@@ -816,7 +884,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     String id = extractId(tk.trackedChangeQuery.listTrackedChanges(docId), "ins:");
 
     assertThat(
@@ -835,7 +905,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
 
     String result = tk.trackedChangeQuery.applyTextRevisions(docId, "ACCEPT", "ALL", null);
@@ -852,7 +924,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result = tk.trackedChangeQuery.applyTextRevisions(docId, "REJECT", "AUTHOR", "甲");
     assertThat(result).contains("已撤销作者「甲」的 1 条文本/移动类修订");
@@ -870,7 +944,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     assertThat(tk.trackedChangeQuery.applyTextRevisions(docId, "MERGE", "ALL", null))
         .contains("action 仅支持");
@@ -888,7 +964,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 只改文本:URL 应保持不变。
     String result = tk.body.updateHyperlink(docId, 0, 0, "新文本", null);
@@ -905,7 +983,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 只改 URL:文本应保持不变。
     tk.body.updateHyperlink(docId, 0, 0, null, "https://new.example.com/x");
@@ -930,7 +1010,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 一次改齐文本和 URL——这正是合并工具的核心价值(旧版要调两次)。
     String result = tk.body.updateHyperlink(docId, 0, 0, "新文本", "https://new.example.com/x");
@@ -952,7 +1034,9 @@ class DocxToolkitBatchTest {
       doc.save(file);
     }
     DocxToolkit tk = new DocxToolkit();
-    String docId = tk.session.openDocx(file.toAbsolutePath().toString());
+    String docId =
+        com.non.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 两个都不传 → 报错,文档不变。
     assertThat(tk.body.updateHyperlink(docId, 0, 0, null, null)).contains("至少传一个");

@@ -7,6 +7,10 @@ import com.non.docx.core.api.table.Cell;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
 import com.non.docx.toolkit.ref.ReferenceContext;
+import com.non.docx.toolkit.result.ToolResult;
+import com.non.docx.toolkit.result.ToolResultCode;
+import com.non.docx.toolkit.result.ToolResultRenderer;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -90,12 +94,12 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     List<Paragraph> paragraphs = doc.paragraphs();
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
-      return "edits 为空";
+      return renderInvalidArgument("edits 为空");
     }
     StringBuilder sb = new StringBuilder();
     int ok = 0;
@@ -154,8 +158,7 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
         fail++;
       }
     }
-    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    return renderBatchSummary(sb, ok, fail);
   }
 
   /**
@@ -192,11 +195,11 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
-      return "edits 为空";
+      return renderInvalidArgument("edits 为空");
     }
     var paragraphs = doc.paragraphs();
     StringBuilder sb = new StringBuilder();
@@ -272,8 +275,7 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
         fail++;
       }
     }
-    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    return renderBatchSummary(sb, ok, fail);
   }
 
   /**
@@ -308,12 +310,12 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     // replace 比 delete 多一个 new_text 参数,无法直接复用三参回调;在回调闭包里按条解析。
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
-      return "edits 为空";
+      return renderInvalidArgument("edits 为空");
     }
     // 先把每条解析成 (para,run,newText) 或错误标记,再交给共享执行框架。
     // 这里复用 applyRunTrackedBatch 的核心思路,但需要 newText;为避免过度抽象,就地实现(结构与共享方法一致)。
@@ -392,8 +394,7 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
         fail++;
       }
     }
-    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    return renderBatchSummary(sb, ok, fail);
   }
 
   /**
@@ -417,15 +418,15 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       @ToolParam(name = "color", description = "目标颜色十六进制(可选)", required = false) String color) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     List<Paragraph> paragraphs = doc.paragraphs();
     if (outOfBounds(paragraphIndex, paragraphs.size())) {
-      return indexError("段落索引", paragraphIndex, paragraphs.size());
+      return renderIndexError("段落索引", paragraphIndex, paragraphs.size());
     }
     var runs = paragraphs.get(paragraphIndex).runs();
     if (outOfBounds(runIndex, runs.size())) {
-      return indexError("run 索引", runIndex, runs.size());
+      return renderIndexError("run 索引", runIndex, runs.size());
     }
     try {
       Run r = runs.get(runIndex);
@@ -440,9 +441,11 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
         r.color(color);
       }
       r.commitStyleAsTracked(author, before);
-      return "已把段落 " + paragraphIndex + " run " + runIndex + " 的样式变更记为 rPrChange";
+      String message = "已把段落 " + paragraphIndex + " run " + runIndex + " 的样式变更记为 rPrChange";
+      ToolResult<Void> result = ToolResult.ok(message);
+      return ToolResultRenderer.render(result);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      return renderInvalidArgument(rootMessage(e));
     }
   }
 
@@ -468,7 +471,7 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
                       + "如 [{\"table_index\":0,\"row_index\":0,\"cell_index\":0}]")
           List<Map<String, Object>> cells) {
     if (changeType == null || changeType.isBlank()) {
-      return "错误:change_type 仅支持 INSERTED 或 DELETED";
+      return renderInvalidArgument("change_type 仅支持 INSERTED 或 DELETED");
     }
     String normalized = changeType.trim().toUpperCase(java.util.Locale.ROOT);
     if ("INSERTED".equals(normalized)
@@ -481,7 +484,7 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
         || "CELL_DEL".equals(normalized)) {
       return markCellsBatch(docId, author, cells, false);
     }
-    return "错误:change_type 仅支持 INSERTED 或 DELETED";
+    return renderInvalidArgument("change_type 仅支持 INSERTED 或 DELETED");
   }
 
   /**
@@ -505,37 +508,59 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       @ToolParam(name = "author", description = "修订作者") String author) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     List<Paragraph> paragraphs = doc.paragraphs();
     if (outOfBounds(sourceParagraphIndex, paragraphs.size())) {
-      return indexError("源段索引", sourceParagraphIndex, paragraphs.size());
+      return renderIndexError("源段索引", sourceParagraphIndex, paragraphs.size());
     }
     if (outOfBounds(targetParagraphIndex, paragraphs.size())) {
-      return indexError("目标段索引", targetParagraphIndex, paragraphs.size());
+      return renderIndexError("目标段索引", targetParagraphIndex, paragraphs.size());
     }
     var sourceRuns = paragraphs.get(sourceParagraphIndex).runs();
     if (outOfBounds(runIndex, sourceRuns.size())) {
-      return indexError("run 索引", runIndex, sourceRuns.size());
+      return renderIndexError("run 索引", runIndex, sourceRuns.size());
     }
     try {
       Run moving = sourceRuns.get(runIndex);
       paragraphs
           .get(targetParagraphIndex)
           .moveRunsFrom(author, paragraphs.get(sourceParagraphIndex), List.of(moving));
-      return "已把段 "
-          + sourceParagraphIndex
-          + " run "
-          + runIndex
-          + " 移到段 "
-          + targetParagraphIndex
-          + "(moveFrom + moveTo 配对)";
+      String message =
+          "已把段 "
+              + sourceParagraphIndex
+              + " run "
+              + runIndex
+              + " 移到段 "
+              + targetParagraphIndex
+              + "(moveFrom + moveTo 配对)";
+      ToolResult<Void> result = ToolResult.ok(message);
+      return ToolResultRenderer.render(result);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      return renderInvalidArgument(rootMessage(e));
     }
   }
 
   // ==================== 组内辅助 ====================
+
+  /**
+   * 把批量 collect-errors 的中文摘要渲染为双段格式。
+   *
+   * <p>有失败项时用 {@code PARTIAL_FAILURE}；全成功用 {@code OK}。
+   *
+   * @param sb 含逐条明细的中文摘要（不含末尾汇总行）
+   * @param ok 成功条数
+   * @param fail 失败条数
+   */
+  private static String renderBatchSummary(StringBuilder sb, int ok, int fail) {
+    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
+    ToolResult<Integer> result =
+        fail > 0
+            ? ToolResult.partial(
+                ToolResultCode.PARTIAL_FAILURE, ok, sb.toString(), Collections.emptyList())
+            : ToolResult.ok(ok, sb.toString());
+    return ToolResultRenderer.render(result);
+  }
 
   /**
    * 单元格标记批量执行的共享实现:解析 {@code cells} 坐标 → 逐个 resolveCell → {@code markInserted}/{@code markDeleted}。
@@ -548,11 +573,11 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       String docId, String author, List<Map<String, Object>> cells, boolean inserter) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     List<Object> list = coerceList(cells);
     if (list.isEmpty()) {
-      return "cells 为空";
+      return renderInvalidArgument("cells 为空");
     }
     String tag = inserter ? "cellIns" : "cellDel";
     StringBuilder sb = new StringBuilder();
@@ -611,7 +636,6 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
         fail++;
       }
     }
-    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    return renderBatchSummary(sb, ok, fail);
   }
 }

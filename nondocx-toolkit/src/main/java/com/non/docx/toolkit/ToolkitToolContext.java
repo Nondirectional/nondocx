@@ -7,6 +7,9 @@ import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.toolkit.ref.DocumentRef;
 import com.non.docx.toolkit.ref.ElementResolver;
 import com.non.docx.toolkit.ref.ReferenceContext;
+import com.non.docx.toolkit.result.ToolResult;
+import com.non.docx.toolkit.result.ToolResultCode;
+import com.non.docx.toolkit.result.ToolResultRenderer;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -134,6 +137,45 @@ abstract class ToolkitToolContext {
   /** docId 不存在的统一中文错误串（沿用「不抛异常、返回错误串给 Agent」的约定）。 */
   static String docNotFound(String docId) {
     return "错误：文档句柄 " + docId + " 不存在（未 open_docx 或已 close_docx）";
+  }
+
+  // ==================== 结构化结果便捷工厂（P0-02） ====================
+  //
+  // 以下 render* 方法返回双段格式 String（中文消息 + JSON envelope），
+  // 消除各工具类重复定义同一 docNotFound/indexError/invalidArgument 渲染逻辑。
+  // 所有 @ToolDef 方法应优先使用这些共享工厂，而非各自内联 ToolResult.fail + render。
+
+  /** 渲染 docId 不存在的结构化失败结果（双段格式）。 */
+  static String renderDocNotFound(String docId) {
+    return ToolResultRenderer.render(docNotFoundResult(docId));
+  }
+
+  /** docId 不存在的结构化失败结果（ToolResult 对象，供内部 helper 检查 success）。 */
+  static ToolResult<Void> docNotFoundResult(String docId) {
+    return ToolResult.fail(
+        ToolResultCode.DOCUMENT_CLOSED, "文档句柄 " + docId + " 不存在（未 open_docx 或已 close_docx）");
+  }
+
+  /** 渲染索引越界的结构化失败结果（附 suggestion 使用 0..size-1）。 */
+  static String renderIndexError(String what, int index, int size) {
+    return ToolResultRenderer.render(indexErrorResult(what, index, size));
+  }
+
+  /** 索引越界的结构化失败结果（ToolResult 对象）。 */
+  static ToolResult<Void> indexErrorResult(String what, int index, int size) {
+    String message = what + " " + index + " 越界（共 " + size + "）";
+    return ToolResult.fail(
+        ToolResultCode.INDEX_OUT_OF_RANGE, message, "使用 0.." + Math.max(0, size - 1));
+  }
+
+  /** 渲染参数错误的结构化失败结果。 */
+  static String renderInvalidArgument(String message) {
+    return ToolResultRenderer.render(invalidArgumentResult(message));
+  }
+
+  /** 参数错误的结构化失败结果（ToolResult 对象）。 */
+  static ToolResult<Void> invalidArgumentResult(String message) {
+    return ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, message);
   }
 
   // ==================== 无状态纯函数（入参归一化 / 边界 / 异常） ====================

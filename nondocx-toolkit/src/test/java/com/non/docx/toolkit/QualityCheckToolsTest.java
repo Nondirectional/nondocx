@@ -34,7 +34,7 @@ class QualityCheckToolsTest {
       throws Exception {
     Path file = tmp.resolve(name);
     doc.save(file);
-    return tk.session.openDocx(file.toString());
+    return com.non.docx.toolkit.ToolTestSupport.extractDocId(tk.session.openDocx(file.toString()));
   }
 
   // ---------- 合规文档全 ✅ ----------

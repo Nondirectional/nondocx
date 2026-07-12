@@ -123,10 +123,11 @@ public final class DocxOrchestrator {
    */
   public String open(Path path) {
     Objects.requireNonNull(path);
-    String docId = toolkit.session.openDocx(path.toString());
-    if (docId.startsWith("错误")) {
-      throw new IllegalStateException(docId);
+    String raw = toolkit.session.openDocx(path.toString());
+    if (com.non.docx.toolkit.orchestration.commit.ToolResultChecks.isFailure(raw)) {
+      throw new IllegalStateException(raw);
     }
+    String docId = com.non.docx.toolkit.orchestration.commit.ToolResultChecks.extractData(raw);
     String conversationId = "conv-" + sessionSeq.incrementAndGet();
     String sessionId = "sess-" + UUID.randomUUID();
     OrchestratorSession session = new OrchestratorSession(conversationId, sessionId, docId, path);
@@ -139,10 +140,12 @@ public final class DocxOrchestrator {
     OrchestratorSession session = requireSession(conversationId);
     // close + reopen 同一文件
     toolkit.session.closeDocx(session.docId());
-    String newDocId = toolkit.session.openDocx(session.sourcePath().toString());
-    if (newDocId.startsWith("错误")) {
-      throw new IllegalStateException(newDocId);
+    String rawReopen = toolkit.session.openDocx(session.sourcePath().toString());
+    if (com.non.docx.toolkit.orchestration.commit.ToolResultChecks.isFailure(rawReopen)) {
+      throw new IllegalStateException(rawReopen);
     }
+    String newDocId =
+        com.non.docx.toolkit.orchestration.commit.ToolResultChecks.extractData(rawReopen);
     // 更新 session 的 docId 与代次（session 的 docId 是 final——需要可变；改用替换 session）
     OrchestratorSession reopened =
         new OrchestratorSession(

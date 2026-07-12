@@ -6,8 +6,12 @@ import com.non.docx.core.Docx;
 import com.non.docx.core.api.Document;
 import com.non.docx.toolkit.ref.ElementResolver;
 import com.non.docx.toolkit.ref.ReferenceContext;
+import com.non.docx.toolkit.result.ToolResult;
+import com.non.docx.toolkit.result.ToolResultCode;
+import com.non.docx.toolkit.result.ToolResultRenderer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -96,9 +100,12 @@ public final class SessionTools extends ToolkitToolContext {
       String docId = "doc-" + seq.incrementAndGet();
       sessions.put(docId, doc);
       generations.put(docId, 1L);
-      return docId;
+      ToolResult<String> result = ToolResult.ok(docId, "已打开文档 " + path + "，句柄 " + docId);
+      return ToolResultRenderer.render(result);
     } catch (RuntimeException e) {
-      return "错误：无法打开文档 " + path + "（" + rootMessage(e) + "）";
+      String msg = "无法打开文档 " + path + "（" + rootMessage(e) + "）";
+      ToolResult<Void> result = ToolResult.fail(ToolResultCode.DOCUMENT_CORRUPT, msg);
+      return ToolResultRenderer.render(result);
     }
   }
 
@@ -115,7 +122,10 @@ public final class SessionTools extends ToolkitToolContext {
       @ToolParam(name = "output_path", description = "输出文件路径（绝对路径）") String outputPath) {
     Document doc = sessions.get(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      ToolResult<Void> result =
+          ToolResult.fail(
+              ToolResultCode.DOCUMENT_CLOSED, "文档句柄 " + docId + " 不存在（未 open_docx 或已 close_docx）");
+      return ToolResultRenderer.render(result);
     }
     try {
       Path out = Path.of(outputPath);
@@ -124,9 +134,13 @@ public final class SessionTools extends ToolkitToolContext {
         Files.createDirectories(parent);
       }
       doc.save(out);
-      return "已保存到 " + out.toAbsolutePath();
+      ToolResult<String> result =
+          ToolResult.ok(out.toAbsolutePath().toString(), "已保存到 " + out.toAbsolutePath());
+      return ToolResultRenderer.render(result);
     } catch (Exception e) {
-      return "错误：无法保存到 " + outputPath + "（" + rootMessage(e) + "）";
+      String msg = "无法保存到 " + outputPath + "（" + rootMessage(e) + "）";
+      ToolResult<Void> result = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
+      return ToolResultRenderer.render(result);
     }
   }
 
@@ -142,14 +156,18 @@ public final class SessionTools extends ToolkitToolContext {
     generations.remove(docId);
     references.invalidate(docId);
     if (doc == null) {
-      return "文档 " + docId + " 未打开（视为已关闭）";
+      ToolResult<Void> result = ToolResult.ok("文档 " + docId + " 未打开（视为已关闭）");
+      return ToolResultRenderer.render(result);
     }
     try {
       doc.close();
     } catch (RuntimeException e) {
-      return "文档 " + docId + " 已从会话移除，但关闭时出错：" + rootMessage(e);
+      String msg = "文档 " + docId + " 已从会话移除，但关闭时出错：" + rootMessage(e);
+      ToolResult<Void> result = ToolResult.fail(ToolResultCode.DOCUMENT_CLOSED, msg);
+      return ToolResultRenderer.render(result);
     }
-    return "已关闭 " + docId;
+    ToolResult<Void> result = ToolResult.ok("已关闭 " + docId);
+    return ToolResultRenderer.render(result);
   }
 
   /** 返回文档结构概览。 */
@@ -161,16 +179,27 @@ public final class SessionTools extends ToolkitToolContext {
       @ToolParam(name = "doc_id", description = "文档句柄") String docId) {
     Document doc = sessions.get(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      ToolResult<Void> result =
+          ToolResult.fail(
+              ToolResultCode.DOCUMENT_CLOSED, "文档句柄 " + docId + " 不存在（未 open_docx 或已 close_docx）");
+      return ToolResultRenderer.render(result);
     }
-    return "文档概览\n"
-        + "正文段落数: "
-        + doc.paragraphs().size()
-        + "\n正文表格数: "
-        + doc.tables().size()
-        + "\nbody 元素数: "
-        + doc.bodyElements().size()
-        + "\nsection 数: "
-        + doc.sections().size();
+    Map<String, Integer> data = new LinkedHashMap<>();
+    data.put("正文段落数", doc.paragraphs().size());
+    data.put("正文表格数", doc.tables().size());
+    data.put("body 元素数", doc.bodyElements().size());
+    data.put("section 数", doc.sections().size());
+    String message =
+        "文档概览\n"
+            + "正文段落数: "
+            + doc.paragraphs().size()
+            + "\n正文表格数: "
+            + doc.tables().size()
+            + "\nbody 元素数: "
+            + doc.bodyElements().size()
+            + "\nsection 数: "
+            + doc.sections().size();
+    ToolResult<Map<String, Integer>> result = ToolResult.ok(data, message);
+    return ToolResultRenderer.render(result);
   }
 }

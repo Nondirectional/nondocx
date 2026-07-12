@@ -1,0 +1,3 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/orchestration-layer.md", "reason": "验证 executor 字符串解析已替换为结构化消费"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查不可变、内容相等、零 POI 泄露"}

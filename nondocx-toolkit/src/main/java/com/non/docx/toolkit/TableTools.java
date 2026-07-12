@@ -20,6 +20,10 @@ import com.non.docx.toolkit.ref.RefResolutionCode;
 import com.non.docx.toolkit.ref.RefResolutionException;
 import com.non.docx.toolkit.ref.ReferenceContext;
 import com.non.docx.toolkit.ref.RunRef;
+import com.non.docx.toolkit.result.BatchItemResult;
+import com.non.docx.toolkit.result.ToolResult;
+import com.non.docx.toolkit.result.ToolResultCode;
+import com.non.docx.toolkit.result.ToolResultRenderer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -81,20 +85,27 @@ public final class TableTools extends ToolkitToolContext {
           List<List<String>> rows) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      ToolResult<Void> result = docNotFoundResult(docId);
+      return ToolResultRenderer.render(result);
     }
     List<Object> rowList = coerceList(rows);
     if (rowList.isEmpty()) {
-      return "rows 为空";
+      ToolResult<Void> result = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "rows 为空");
+      return ToolResultRenderer.render(result);
     }
     for (int r = 0; r < rowList.size(); r++) {
       if (!(rowList.get(r) instanceof List)) {
-        return "错误:第 " + r + " 行不是数组(" + rowList.get(r) + ")";
+        ToolResult<Void> result =
+            ToolResult.fail(
+                ToolResultCode.INVALID_ARGUMENT, "错误:第 " + r + " 行不是数组(" + rowList.get(r) + ")");
+        return ToolResultRenderer.render(result);
       }
     }
     for (int r = 0; r < rowList.size(); r++) {
       if (coerceList(rowList.get(r)).isEmpty()) {
-        return "错误:第 " + r + " 行为空";
+        ToolResult<Void> result =
+            ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "错误:第 " + r + " 行为空");
+        return ToolResultRenderer.render(result);
       }
     }
     int tableIndex = doc.tables().size();
@@ -107,7 +118,9 @@ public final class TableTools extends ToolkitToolContext {
         cellCount++;
       }
     }
-    return "已创建表格 " + tableIndex + ": " + rowList.size() + " 行," + cellCount + " 个单元格";
+    ToolResult<Void> result =
+        ToolResult.ok("已创建表格 " + tableIndex + ": " + rowList.size() + " 行," + cellCount + " 个单元格");
+    return ToolResultRenderer.render(result);
   }
 
   /**
@@ -128,20 +141,22 @@ public final class TableTools extends ToolkitToolContext {
       @ToolParam(name = "border_style", description = "边框样式,当前仅支持 NONE") String borderStyle) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     var tables = doc.tables();
     if (outOfBounds(tableIndex, tables.size())) {
-      return indexError("表格索引", tableIndex, tables.size());
+      return ToolResultRenderer.render(indexErrorResult("表格索引", tableIndex, tables.size()));
     }
     if (borderStyle == null || !"NONE".equalsIgnoreCase(borderStyle.trim())) {
-      return "错误:border_style 仅支持 NONE";
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "错误:border_style 仅支持 NONE"));
     }
     try {
       tables.get(tableIndex).noBorders();
-      return "已设置表格 " + tableIndex + " 为无边框";
+      return ToolResultRenderer.render(ToolResult.ok("已设置表格 " + tableIndex + " 为无边框"));
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e)));
     }
   }
 
@@ -173,13 +188,15 @@ public final class TableTools extends ToolkitToolContext {
           Map<String, Object>[] merges) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     List<Object> list = coerceObjectArray(merges);
     if (list.isEmpty()) {
-      return "merges 为空";
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "merges 为空"));
     }
     StringBuilder sb = new StringBuilder();
+    List<BatchItemResult<Void>> items = new ArrayList<>();
     int ok = 0;
     int fail = 0;
     for (int i = 0; i < list.size(); i++) {
@@ -189,7 +206,9 @@ public final class TableTools extends ToolkitToolContext {
       Object item = list.get(i);
       String tag = "[" + i + "] ";
       if (!(item instanceof Map)) {
-        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
+        String msg = "错误:该条不是对象(" + item + ")";
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
         fail++;
         continue;
       }
@@ -201,13 +220,17 @@ public final class TableTools extends ToolkitToolContext {
         tableIndex = getInt(m, "table_index");
         direction = getStr(m, "direction");
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
+        String msg = "错误:" + e.getMessage();
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
         fail++;
         continue;
       }
       var tables = doc.tables();
       if (outOfBounds(tableIndex, tables.size())) {
-        sb.append(tag).append(indexError("表格索引", tableIndex, tables.size()));
+        String msg = indexError("表格索引", tableIndex, tables.size());
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, indexErrorResult("表格索引", tableIndex, tables.size())));
         fail++;
         continue;
       }
@@ -217,16 +240,18 @@ public final class TableTools extends ToolkitToolContext {
           int fromCellIndex = getInt(m, "from_cell_index");
           int toCellIndex = getInt(m, "to_cell_index");
           tables.get(tableIndex).mergeCellsHorizontal(rowIndex, fromCellIndex, toCellIndex);
-          sb.append(tag)
-              .append("已横向合并表格 ")
-              .append(tableIndex)
-              .append(" 行 ")
-              .append(rowIndex)
-              .append(" 单元格 ")
-              .append(fromCellIndex)
-              .append("..")
-              .append(toCellIndex)
-              .append(" ✓");
+          String msg =
+              "已横向合并表格 "
+                  + tableIndex
+                  + " 行 "
+                  + rowIndex
+                  + " 单元格 "
+                  + fromCellIndex
+                  + ".."
+                  + toCellIndex
+                  + " ✓";
+          sb.append(tag).append(msg);
+          items.add(BatchItemResult.of(i, ToolResult.ok(msg)));
           ok++;
           continue;
         }
@@ -235,28 +260,37 @@ public final class TableTools extends ToolkitToolContext {
           int fromRowIndex = getInt(m, "from_row_index");
           int toRowIndex = getInt(m, "to_row_index");
           tables.get(tableIndex).mergeCellsVertical(cellIndex, fromRowIndex, toRowIndex);
-          sb.append(tag)
-              .append("已纵向合并表格 ")
-              .append(tableIndex)
-              .append(" 列 ")
-              .append(cellIndex)
-              .append(" 行 ")
-              .append(fromRowIndex)
-              .append("..")
-              .append(toRowIndex)
-              .append(" ✓");
+          String msg =
+              "已纵向合并表格 "
+                  + tableIndex
+                  + " 列 "
+                  + cellIndex
+                  + " 行 "
+                  + fromRowIndex
+                  + ".."
+                  + toRowIndex
+                  + " ✓";
+          sb.append(tag).append(msg);
+          items.add(BatchItemResult.of(i, ToolResult.ok(msg)));
           ok++;
           continue;
         }
-        sb.append(tag).append("错误:direction 仅支持 HORIZONTAL/VERTICAL");
+        String msg = "错误:direction 仅支持 HORIZONTAL/VERTICAL";
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
         fail++;
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(rootMessage(e));
+        String msg = "错误:" + rootMessage(e);
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, msg)));
         fail++;
       }
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    if (fail == 0) {
+      return ToolResultRenderer.render(ToolResult.ok(null, sb.toString(), ok, null));
+    }
+    return ToolResultRenderer.render(ToolResult.partial(items, sb.toString(), List.of()));
   }
 
   private static List<Object> coerceObjectArray(Map<String, Object>[] raw) {
@@ -264,6 +298,285 @@ public final class TableTools extends ToolkitToolContext {
       return List.of();
     }
     return new java.util.ArrayList<Object>(Arrays.asList(raw));
+  }
+
+  // ==================== ToolResult 辅助工厂 ====================
+
+  /** {@link #locateCell} 的结构化版本：成功返回 ok，失败返回带 code 的 ToolResult。 */
+  private static ToolResult<Void> locateCellResult(
+      Document doc, int tableIndex, int rowIndex, int cellIndex) {
+    var tables = doc.tables();
+    if (outOfBounds(tableIndex, tables.size())) {
+      return indexErrorResult("表格索引", tableIndex, tables.size());
+    }
+    var rows = tables.get(tableIndex).rows();
+    if (outOfBounds(rowIndex, rows.size())) {
+      return indexErrorResult("行索引", rowIndex, rows.size());
+    }
+    var cells = rows.get(rowIndex).cells();
+    if (outOfBounds(cellIndex, cells.size())) {
+      return indexErrorResult("单元格索引", cellIndex, cells.size());
+    }
+    return ToolResult.ok(null);
+  }
+
+  /** 单条单元格编辑动作（ToolResult 边界），由各写工具 lambda 提供。 */
+  @FunctionalInterface
+  private interface CellEditResultAction {
+    ToolResult<Void> apply(Map<String, Object> m, com.non.docx.core.api.table.Cell cell);
+  }
+
+  /**
+   * 单元格级写工具的批量循环骨架（ToolResult 版）。
+   *
+   * <p>负责：解析坐标 + locateCell 边界检查 + 调 lambda 写入 + collect-errors 汇总。全部成功返回 OK + matchedCount；有失败返回
+   * PARTIAL_FAILURE，{@code data} 为 {@code List<BatchItemResult>}。
+   */
+  private static ToolResult<List<BatchItemResult<Void>>> applyCellEditResults(
+      Document doc, List<Map<String, Object>> edits, CellEditResultAction action) {
+    List<Object> list = coerceList(edits);
+    if (list.isEmpty()) {
+      return ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空")
+          .<List<BatchItemResult<Void>>>mapData(null);
+    }
+    StringBuilder sb = new StringBuilder();
+    List<BatchItemResult<Void>> items = new ArrayList<>();
+    int ok = 0;
+    int fail = 0;
+    for (int i = 0; i < list.size(); i++) {
+      if (i > 0) {
+        sb.append('\n');
+      }
+      Object item = list.get(i);
+      String tag = "[" + i + "] ";
+      if (!(item instanceof Map)) {
+        String msg = "错误:该条不是对象(" + item + ")";
+        sb.append(tag).append(msg);
+        ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
+        items.add(BatchItemResult.of(i, r));
+        fail++;
+        continue;
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> m = (Map<String, Object>) item;
+      int tableIndex;
+      int rowIndex;
+      int cellIndex;
+      try {
+        tableIndex = getInt(m, "table_index");
+        rowIndex = getInt(m, "row_index");
+        cellIndex = getInt(m, "cell_index");
+      } catch (RuntimeException e) {
+        String msg = "错误:" + e.getMessage();
+        sb.append(tag).append(msg);
+        ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
+        items.add(BatchItemResult.of(i, r));
+        fail++;
+        continue;
+      }
+      ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
+      if (!locate.success()) {
+        sb.append(tag).append(locate.message());
+        items.add(BatchItemResult.of(i, locate));
+        fail++;
+        continue;
+      }
+      var cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
+      ToolResult<Void> r;
+      try {
+        r = action.apply(m, cell);
+      } catch (RuntimeException e) {
+        r = ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e));
+      }
+      sb.append(tag).append(r.message());
+      items.add(BatchItemResult.of(i, r));
+      if (r.success()) {
+        ok++;
+      } else {
+        fail++;
+      }
+    }
+    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
+    if (fail == 0) {
+      return ToolResult.ok(items, sb.toString(), ok, null);
+    }
+    return ToolResult.partial(items, sb.toString(), List.of());
+  }
+
+  /** 单条行编辑动作（ToolResult 边界），由各写工具 lambda 提供。 */
+  @FunctionalInterface
+  private interface RowEditResultAction {
+    ToolResult<Void> apply(Map<String, Object> m, Row row);
+  }
+
+  /** 行级写工具的批量循环骨架（ToolResult 版），与 {@link #applyCellEditResults} 对称。 */
+  private static ToolResult<List<BatchItemResult<Void>>> applyRowEditResults(
+      Document doc, List<Map<String, Object>> edits, RowEditResultAction action) {
+    List<Object> list = coerceList(edits);
+    if (list.isEmpty()) {
+      return ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空")
+          .<List<BatchItemResult<Void>>>mapData(null);
+    }
+    StringBuilder sb = new StringBuilder();
+    List<BatchItemResult<Void>> items = new ArrayList<>();
+    int ok = 0;
+    int fail = 0;
+    for (int i = 0; i < list.size(); i++) {
+      if (i > 0) {
+        sb.append('\n');
+      }
+      Object item = list.get(i);
+      String tag = "[" + i + "] ";
+      if (!(item instanceof Map)) {
+        String msg = "错误:该条不是对象(" + item + ")";
+        sb.append(tag).append(msg);
+        ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
+        items.add(BatchItemResult.of(i, r));
+        fail++;
+        continue;
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> m = (Map<String, Object>) item;
+      int tableIndex;
+      int rowIndex;
+      try {
+        tableIndex = getInt(m, "table_index");
+        rowIndex = getInt(m, "row_index");
+      } catch (RuntimeException e) {
+        String msg = "错误:" + e.getMessage();
+        sb.append(tag).append(msg);
+        ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
+        items.add(BatchItemResult.of(i, r));
+        fail++;
+        continue;
+      }
+      var tables = doc.tables();
+      if (outOfBounds(tableIndex, tables.size())) {
+        String msg = indexError("表格索引", tableIndex, tables.size());
+        sb.append(tag).append(msg);
+        ToolResult<Void> r = indexErrorResult("表格索引", tableIndex, tables.size());
+        items.add(BatchItemResult.of(i, r));
+        fail++;
+        continue;
+      }
+      var rows = tables.get(tableIndex).rows();
+      if (outOfBounds(rowIndex, rows.size())) {
+        String msg = indexError("行索引", rowIndex, rows.size());
+        sb.append(tag).append(msg);
+        ToolResult<Void> r = indexErrorResult("行索引", rowIndex, rows.size());
+        items.add(BatchItemResult.of(i, r));
+        fail++;
+        continue;
+      }
+      Row row = rows.get(rowIndex);
+      ToolResult<Void> r;
+      try {
+        r = action.apply(m, row);
+      } catch (RuntimeException e) {
+        r = ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e));
+      }
+      sb.append(tag).append(r.message());
+      items.add(BatchItemResult.of(i, r));
+      if (r.success()) {
+        ok++;
+      } else {
+        fail++;
+      }
+    }
+    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
+    if (fail == 0) {
+      return ToolResult.ok(items, sb.toString(), ok, null);
+    }
+    return ToolResult.partial(items, sb.toString(), List.of());
+  }
+
+  /** 单条段落编辑动作（ToolResult 边界），由各段落样式工具 lambda 提供。 */
+  @FunctionalInterface
+  private interface CellParagraphEditResultAction {
+    ToolResult<Void> apply(Map<String, Object> m, Paragraph p);
+  }
+
+  /** 单元格内段落级写工具的批量循环骨架（ToolResult 版）。 */
+  private static ToolResult<List<BatchItemResult<Void>>> applyCellParagraphEditResults(
+      Document doc, List<Map<String, Object>> edits, CellParagraphEditResultAction action) {
+    List<Object> list = coerceList(edits);
+    if (list.isEmpty()) {
+      return ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空")
+          .<List<BatchItemResult<Void>>>mapData(null);
+    }
+    StringBuilder sb = new StringBuilder();
+    List<BatchItemResult<Void>> items = new ArrayList<>();
+    int ok = 0;
+    int fail = 0;
+    for (int i = 0; i < list.size(); i++) {
+      if (i > 0) {
+        sb.append('\n');
+      }
+      Object item = list.get(i);
+      String tag = "[" + i + "] ";
+      if (!(item instanceof Map)) {
+        String msg = "错误:该条不是对象(" + item + ")";
+        sb.append(tag).append(msg);
+        ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
+        items.add(BatchItemResult.of(i, r));
+        fail++;
+        continue;
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> m = (Map<String, Object>) item;
+      int tableIndex;
+      int rowIndex;
+      int cellIndex;
+      int paragraphIndex;
+      try {
+        tableIndex = getInt(m, "table_index");
+        rowIndex = getInt(m, "row_index");
+        cellIndex = getInt(m, "cell_index");
+        paragraphIndex = getInt(m, "paragraph_index");
+      } catch (RuntimeException e) {
+        String msg = "错误:" + e.getMessage();
+        sb.append(tag).append(msg);
+        ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
+        items.add(BatchItemResult.of(i, r));
+        fail++;
+        continue;
+      }
+      ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
+      if (!locate.success()) {
+        sb.append(tag).append(locate.message());
+        items.add(BatchItemResult.of(i, locate));
+        fail++;
+        continue;
+      }
+      var paras = locateCellObj(doc, tableIndex, rowIndex, cellIndex).paragraphs();
+      if (outOfBounds(paragraphIndex, paras.size())) {
+        String msg = indexError("单元格内段落索引", paragraphIndex, paras.size());
+        sb.append(tag).append(msg);
+        ToolResult<Void> r = indexErrorResult("单元格内段落索引", paragraphIndex, paras.size());
+        items.add(BatchItemResult.of(i, r));
+        fail++;
+        continue;
+      }
+      Paragraph p = paras.get(paragraphIndex);
+      ToolResult<Void> r;
+      try {
+        r = action.apply(m, p);
+      } catch (RuntimeException e) {
+        r = ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e));
+      }
+      sb.append(tag).append(r.message());
+      items.add(BatchItemResult.of(i, r));
+      if (r.success()) {
+        ok++;
+      } else {
+        fail++;
+      }
+    }
+    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
+    if (fail == 0) {
+      return ToolResult.ok(items, sb.toString(), ok, null);
+    }
+    return ToolResult.partial(items, sb.toString(), List.of());
   }
 
   /**
@@ -299,12 +612,12 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> cells) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    var tables = doc.tables();
     List<Object> list = coerceList(cells);
     if (list.isEmpty()) {
-      return "cells 为空";
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "cells 为空"));
     }
     StringBuilder sb = new StringBuilder();
     ElementResolver resolver = elementResolver(docId);
@@ -342,9 +655,9 @@ public final class TableTools extends ToolkitToolContext {
           tableIndex = getInt(m, "table_index");
           rowIndex = getInt(m, "row_index");
           cellIndex = getInt(m, "cell_index");
-          String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-          if (cellResult.startsWith("错误")) {
-            sb.append("[").append(i).append("] ").append(cellResult);
+          ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
+          if (!locate.success()) {
+            sb.append("[").append(i).append("] ").append(locate.message());
             continue;
           }
           cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
@@ -369,7 +682,7 @@ public final class TableTools extends ToolkitToolContext {
         sb.append("\n  段落 ").append(p).append(": run 数 ").append(paras.get(p).runs().size());
       }
     }
-    return sb.toString();
+    return ToolResultRenderer.render(ToolResult.ok(sb.toString()));
   }
 
   private static int[] cellCoordinates(Document doc, Cell target) {
@@ -420,7 +733,7 @@ public final class TableTools extends ToolkitToolContext {
       @ToolParam(name = "ref", description = "canonical RunRef", required = false) String ref) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     TableRunTarget target;
     try {
@@ -428,7 +741,7 @@ public final class TableTools extends ToolkitToolContext {
           resolveTableRunTarget(
               docId, doc, ref, tableIndex, rowIndex, cellIndex, paragraphIndex, runIndex);
     } catch (RuntimeException e) {
-      return renderRefError(e);
+      return ToolResultRenderer.render(refErrorResult(e));
     }
     StringBuilder sb = new StringBuilder();
     sb.append("单元格 (")
@@ -446,7 +759,7 @@ public final class TableTools extends ToolkitToolContext {
         .append("\n文本: ")
         .append(target.run.text());
     appendRunStyleSummary(sb, target.run);
-    return sb.toString();
+    return ToolResultRenderer.render(ToolResult.ok(sb.toString()));
   }
 
   /**
@@ -488,13 +801,15 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
-      return "edits 为空";
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空"));
     }
     StringBuilder sb = new StringBuilder();
+    List<BatchItemResult<Void>> items = new ArrayList<>();
     int ok = 0;
     int fail = 0;
     for (int i = 0; i < list.size(); i++) {
@@ -504,7 +819,9 @@ public final class TableTools extends ToolkitToolContext {
       Object item = list.get(i);
       String tag = "[" + i + "] ";
       if (!(item instanceof Map)) {
-        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
+        String msg = "错误:该条不是对象(" + item + ")";
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
         fail++;
         continue;
       }
@@ -525,31 +842,38 @@ public final class TableTools extends ToolkitToolContext {
                 optionalInt(m, "run_index"));
         text = getStr(m, "text");
       } catch (RuntimeException e) {
-        sb.append(tag).append(renderRefError(e));
+        ToolResult<Void> r = refErrorResult(e);
+        sb.append(tag).append(r.message());
+        items.add(BatchItemResult.of(i, r));
         fail++;
         continue;
       }
       target.run.text(text);
-      sb.append(tag)
-          .append("单元格 (")
-          .append(target.tableIndex)
-          .append(',')
-          .append(target.rowIndex)
-          .append(',')
-          .append(target.cellIndex)
-          .append(") 段落 ")
-          .append(target.paragraphIndex)
-          .append(" run ")
-          .append(target.runIndex)
-          .append(" → \"")
-          .append(text)
-          .append("\" ref=")
-          .append(target.ref.canonical())
-          .append(" ✓");
+      String msg =
+          "单元格 ("
+              + target.tableIndex
+              + ","
+              + target.rowIndex
+              + ","
+              + target.cellIndex
+              + ") 段落 "
+              + target.paragraphIndex
+              + " run "
+              + target.runIndex
+              + " → \""
+              + text
+              + "\" ref="
+              + target.ref.canonical()
+              + " ✓";
+      sb.append(tag).append(msg);
+      items.add(BatchItemResult.of(i, ToolResult.ok(msg)));
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    if (fail == 0) {
+      return ToolResultRenderer.render(ToolResult.ok(null, sb.toString(), ok, null));
+    }
+    return ToolResultRenderer.render(ToolResult.partial(items, sb.toString(), List.of()));
   }
 
   private TableRunTarget resolveTableRunTarget(
@@ -584,18 +908,18 @@ public final class TableTools extends ToolkitToolContext {
           resolver.reference(run));
     }
     requireCoordinates(tableIndex, rowIndex, cellIndex, paragraphIndex, runIndex);
-    String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-    if (cellResult.startsWith("错误")) {
-      throw new IllegalArgumentException(cellResult);
+    ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
+    if (!locate.success()) {
+      throw new RefTargetException(locate);
     }
     Cell cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
     List<Paragraph> paragraphs = cell.paragraphs();
     if (outOfBounds(paragraphIndex, paragraphs.size())) {
-      throw new IllegalArgumentException(indexError("单元格内段落索引", paragraphIndex, paragraphs.size()));
+      throw new RefTargetException(indexErrorResult("单元格内段落索引", paragraphIndex, paragraphs.size()));
     }
     List<Run> runs = paragraphs.get(paragraphIndex).runs();
     if (outOfBounds(runIndex, runs.size())) {
-      throw new IllegalArgumentException(indexError("run 索引", runIndex, runs.size()));
+      throw new RefTargetException(indexErrorResult("run 索引", runIndex, runs.size()));
     }
     Run run = runs.get(runIndex);
     return new TableRunTarget(
@@ -641,13 +965,27 @@ public final class TableTools extends ToolkitToolContext {
     return payload.containsKey(field) ? getInt(payload, field) : null;
   }
 
-  private static String renderRefError(RuntimeException e) {
+  /** 把 ref 域异常映射成 {@link ToolResult}（内部方法返回结构化结果，不嗅探中文前缀）。 */
+  private static ToolResult<Void> refErrorResult(RuntimeException e) {
     if (e instanceof RefResolutionException) {
-      return ((RefResolutionException) e).render();
+      RefResolutionException rre = (RefResolutionException) e;
+      return ToolResult.fail(rre.code().toToolResultCode(), rre.render());
     }
-    return e.getMessage() != null && e.getMessage().startsWith("错误")
-        ? e.getMessage()
-        : "错误:" + e.getMessage();
+    if (e instanceof RefTargetException) {
+      return ((RefTargetException) e).result;
+    }
+    String msg = e.getMessage() != null ? e.getMessage() : "";
+    return ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "错误:" + msg);
+  }
+
+  /** 包装结构化 {@link ToolResult} 的内部异常，用于从 helper 抛出到 @ToolDef 边界。 */
+  private static final class RefTargetException extends RuntimeException {
+    final ToolResult<Void> result;
+
+    RefTargetException(ToolResult<Void> result) {
+      super(result.message());
+      this.result = result;
+    }
   }
 
   private static final class TableRunTarget {
@@ -707,17 +1045,17 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    return applyCellEdits(
-        doc,
-        edits,
-        "底纹",
-        (m, cell, tag, sb) -> {
-          String fill = getStr(m, "fill");
-          cell.shading(fill);
-          sb.append(tag).append("单元格 ").append(coord(m)).append(" 底纹 → ").append(fill).append(" ✓");
-        });
+    return ToolResultRenderer.render(
+        applyCellEditResults(
+            doc,
+            edits,
+            (m, cell) -> {
+              String fill = getStr(m, "fill");
+              cell.shading(fill);
+              return ToolResult.ok("单元格 " + coord(m) + " 底纹 → " + fill + " ✓");
+            }));
   }
 
   /**
@@ -745,17 +1083,17 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    return applyCellEdits(
-        doc,
-        edits,
-        "垂直对齐",
-        (m, cell, tag, sb) -> {
-          VerticalAlign va = parseVerticalAlign(getStr(m, "vertical_align"));
-          cell.verticalAlign(va);
-          sb.append(tag).append("单元格 ").append(coord(m)).append(" 垂直对齐 → ").append(va).append(" ✓");
-        });
+    return ToolResultRenderer.render(
+        applyCellEditResults(
+            doc,
+            edits,
+            (m, cell) -> {
+              VerticalAlign va = parseVerticalAlign(getStr(m, "vertical_align"));
+              cell.verticalAlign(va);
+              return ToolResult.ok("单元格 " + coord(m) + " 垂直对齐 → " + va + " ✓");
+            }));
   }
 
   /**
@@ -782,13 +1120,15 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
-      return "edits 为空";
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空"));
     }
     StringBuilder sb = new StringBuilder();
+    List<BatchItemResult<Void>> items = new ArrayList<>();
     int ok = 0;
     int fail = 0;
     for (int i = 0; i < list.size(); i++) {
@@ -798,7 +1138,9 @@ public final class TableTools extends ToolkitToolContext {
       Object item = list.get(i);
       String tag = "[" + i + "] ";
       if (!(item instanceof Map)) {
-        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
+        String msg = "错误:该条不是对象(" + item + ")";
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
         fail++;
         continue;
       }
@@ -816,53 +1158,68 @@ public final class TableTools extends ToolkitToolContext {
         paragraphIndex = getInt(m, "paragraph_index");
         runIndex = getInt(m, "run_index");
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
+        String msg = "错误:" + e.getMessage();
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
         fail++;
         continue;
       }
-      String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-      if (cellResult.startsWith("错误")) {
-        sb.append(tag).append(cellResult);
+      ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
+      if (!locate.success()) {
+        sb.append(tag).append(locate.message());
+        items.add(BatchItemResult.of(i, locate));
         fail++;
         continue;
       }
       var paras = locateCellObj(doc, tableIndex, rowIndex, cellIndex).paragraphs();
       if (outOfBounds(paragraphIndex, paras.size())) {
-        sb.append(tag).append(indexError("单元格内段落索引", paragraphIndex, paras.size()));
+        String msg = indexError("单元格内段落索引", paragraphIndex, paras.size());
+        sb.append(tag).append(msg);
+        items.add(
+            BatchItemResult.of(i, indexErrorResult("单元格内段落索引", paragraphIndex, paras.size())));
         fail++;
         continue;
       }
       var runs = paras.get(paragraphIndex).runs();
       if (outOfBounds(runIndex, runs.size())) {
-        sb.append(tag).append(indexError("run 索引", runIndex, runs.size()));
+        String msg = indexError("run 索引", runIndex, runs.size());
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, indexErrorResult("run 索引", runIndex, runs.size())));
         fail++;
         continue;
       }
       Run run = runs.get(runIndex);
       List<String> changed = applyRunStyleFields(m, run);
       if (changed == null) {
-        sb.append(tag).append("错误:未提供任何样式字段");
+        String msg = "错误:未提供任何样式字段";
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
         fail++;
         continue;
       }
-      sb.append(tag)
-          .append("单元格 (")
-          .append(tableIndex)
-          .append(',')
-          .append(rowIndex)
-          .append(',')
-          .append(cellIndex)
-          .append(") 段落 ")
-          .append(paragraphIndex)
-          .append(" run ")
-          .append(runIndex)
-          .append(" 样式 → ")
-          .append(String.join("、", changed))
-          .append(" ✓");
+      String msg =
+          "单元格 ("
+              + tableIndex
+              + ","
+              + rowIndex
+              + ","
+              + cellIndex
+              + ") 段落 "
+              + paragraphIndex
+              + " run "
+              + runIndex
+              + " 样式 → "
+              + String.join("、", changed)
+              + " ✓";
+      sb.append(tag).append(msg);
+      items.add(BatchItemResult.of(i, ToolResult.ok(msg)));
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    if (fail == 0) {
+      return ToolResultRenderer.render(ToolResult.ok(null, sb.toString(), ok, null));
+    }
+    return ToolResultRenderer.render(ToolResult.partial(items, sb.toString(), List.of()));
   }
 
   /**
@@ -886,13 +1243,15 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
-      return "edits 为空";
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空"));
     }
     StringBuilder sb = new StringBuilder();
+    List<BatchItemResult<Void>> items = new ArrayList<>();
     int ok = 0;
     int fail = 0;
     for (int i = 0; i < list.size(); i++) {
@@ -902,7 +1261,9 @@ public final class TableTools extends ToolkitToolContext {
       Object item = list.get(i);
       String tag = "[" + i + "] ";
       if (!(item instanceof Map)) {
-        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
+        String msg = "错误:该条不是对象(" + item + ")";
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
         fail++;
         continue;
       }
@@ -920,45 +1281,58 @@ public final class TableTools extends ToolkitToolContext {
         paragraphIndex = getInt(m, "paragraph_index");
         alignment = parseAlignment(getStr(m, "alignment"));
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
+        String msg = "错误:" + e.getMessage();
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
         fail++;
         continue;
       }
-      String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-      if (cellResult.startsWith("错误")) {
-        sb.append(tag).append(cellResult);
+      ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
+      if (!locate.success()) {
+        sb.append(tag).append(locate.message());
+        items.add(BatchItemResult.of(i, locate));
         fail++;
         continue;
       }
       var paras = locateCellObj(doc, tableIndex, rowIndex, cellIndex).paragraphs();
       if (outOfBounds(paragraphIndex, paras.size())) {
-        sb.append(tag).append(indexError("单元格内段落索引", paragraphIndex, paras.size()));
+        String msg = indexError("单元格内段落索引", paragraphIndex, paras.size());
+        sb.append(tag).append(msg);
+        items.add(
+            BatchItemResult.of(i, indexErrorResult("单元格内段落索引", paragraphIndex, paras.size())));
         fail++;
         continue;
       }
       try {
         paras.get(paragraphIndex).alignment(alignment);
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(rootMessage(e));
+        String msg = "错误:" + rootMessage(e);
+        sb.append(tag).append(msg);
+        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, msg)));
         fail++;
         continue;
       }
-      sb.append(tag)
-          .append("单元格 (")
-          .append(tableIndex)
-          .append(',')
-          .append(rowIndex)
-          .append(',')
-          .append(cellIndex)
-          .append(") 段落 ")
-          .append(paragraphIndex)
-          .append(" 对齐 → ")
-          .append(alignment)
-          .append(" ✓");
+      String msg =
+          "单元格 ("
+              + tableIndex
+              + ","
+              + rowIndex
+              + ","
+              + cellIndex
+              + ") 段落 "
+              + paragraphIndex
+              + " 对齐 → "
+              + alignment
+              + " ✓";
+      sb.append(tag).append(msg);
+      items.add(BatchItemResult.of(i, ToolResult.ok(msg)));
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    if (fail == 0) {
+      return ToolResultRenderer.render(ToolResult.ok(null, sb.toString(), ok, null));
+    }
+    return ToolResultRenderer.render(ToolResult.partial(items, sb.toString(), List.of()));
   }
 
   // ==================== 单元格视觉样式·读侧补强 ====================
@@ -986,73 +1360,6 @@ public final class TableTools extends ToolkitToolContext {
   }
 
   // ==================== 单元格写工具共享:批量循环骨架 ====================
-
-  /** 单条单元格编辑动作(由各写工具 lambda 提供)。 */
-  @FunctionalInterface
-  private interface CellEditAction {
-    void apply(
-        Map<String, Object> m, com.non.docx.core.api.table.Cell cell, String tag, StringBuilder sb)
-        throws RuntimeException;
-  }
-
-  /**
-   * 单元格级写工具的批量循环骨架(底纹/垂直对齐这类只需定位到 cell 的工具共用)。
-   *
-   * <p>负责:解析坐标 + locateCell 边界检查 + 调 lambda 写入 + collect-errors 汇总。lambda 抛出的 RuntimeException
-   * 转中文错误串不中断。
-   */
-  private String applyCellEdits(
-      Document doc, List<Map<String, Object>> edits, String emptyHint, CellEditAction action) {
-    List<Object> list = coerceList(edits);
-    if (list.isEmpty()) {
-      return emptyHint + ":edits 为空";
-    }
-    StringBuilder sb = new StringBuilder();
-    int ok = 0;
-    int fail = 0;
-    for (int i = 0; i < list.size(); i++) {
-      if (i > 0) {
-        sb.append('\n');
-      }
-      Object item = list.get(i);
-      String tag = "[" + i + "] ";
-      if (!(item instanceof Map)) {
-        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
-        fail++;
-        continue;
-      }
-      @SuppressWarnings("unchecked")
-      Map<String, Object> m = (Map<String, Object>) item;
-      int tableIndex;
-      int rowIndex;
-      int cellIndex;
-      try {
-        tableIndex = getInt(m, "table_index");
-        rowIndex = getInt(m, "row_index");
-        cellIndex = getInt(m, "cell_index");
-      } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
-        fail++;
-        continue;
-      }
-      String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-      if (cellResult.startsWith("错误")) {
-        sb.append(tag).append(cellResult);
-        fail++;
-        continue;
-      }
-      var cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
-      try {
-        action.apply(m, cell, tag, sb);
-        ok++;
-      } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(rootMessage(e));
-        fail++;
-      }
-    }
-    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
-  }
 
   /** 把一条 edit 的坐标格式化为 {@code (t,r,c)} 串,供成功消息复用。 */
   private static String coord(Map<String, Object> m) {
@@ -1151,21 +1458,22 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    return applyRowEdits(
-        doc,
-        edits,
-        (m, row, tag, sb) -> {
-          boolean on = boolVal(m.get("header_row"));
-          row.headerRow(on);
-          sb.append(tag)
-              .append("表格 ")
-              .append(m.get("table_index"))
-              .append(" 行 ")
-              .append(m.get("row_index"));
-          sb.append(on ? " → 表头行 ✓" : " → 取消表头行 ✓");
-        });
+    return ToolResultRenderer.render(
+        applyRowEditResults(
+            doc,
+            edits,
+            (m, row) -> {
+              boolean on = boolVal(m.get("header_row"));
+              row.headerRow(on);
+              return ToolResult.ok(
+                  "表格 "
+                      + m.get("table_index")
+                      + " 行 "
+                      + m.get("row_index")
+                      + (on ? " → 表头行 ✓" : " → 取消表头行 ✓"));
+            }));
   }
 
   /**
@@ -1190,21 +1498,22 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    return applyRowEdits(
-        doc,
-        edits,
-        (m, row, tag, sb) -> {
-          boolean on = boolVal(m.get("cant_split"));
-          row.cantSplit(on);
-          sb.append(tag)
-              .append("表格 ")
-              .append(m.get("table_index"))
-              .append(" 行 ")
-              .append(m.get("row_index"));
-          sb.append(on ? " → 禁止跨页拆分 ✓" : " → 允许跨页拆分 ✓");
-        });
+    return ToolResultRenderer.render(
+        applyRowEditResults(
+            doc,
+            edits,
+            (m, row) -> {
+              boolean on = boolVal(m.get("cant_split"));
+              row.cantSplit(on);
+              return ToolResult.ok(
+                  "表格 "
+                      + m.get("table_index")
+                      + " 行 "
+                      + m.get("row_index")
+                      + (on ? " → 禁止跨页拆分 ✓" : " → 允许跨页拆分 ✓"));
+            }));
   }
 
   /**
@@ -1228,11 +1537,11 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> rows) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     List<Object> list = coerceList(rows);
     if (list.isEmpty()) {
-      return "rows 为空";
+      return ToolResultRenderer.render(ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "rows 为空"));
     }
     StringBuilder sb = new StringBuilder();
     for (int i = 0; i < list.size(); i++) {
@@ -1277,7 +1586,7 @@ public final class TableTools extends ToolkitToolContext {
           .append("\n禁止跨页拆分: ")
           .append(row.cantSplit());
     }
-    return sb.toString();
+    return ToolResultRenderer.render(ToolResult.ok(sb.toString()));
   }
 
   /**
@@ -1303,19 +1612,27 @@ public final class TableTools extends ToolkitToolContext {
           List<Integer> percents) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    int[] pct = toIntArray(percents, "percents");
+    int[] pct;
+    try {
+      pct = toIntArray(percents, "percents");
+    } catch (RuntimeException e) {
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "错误:" + e.getMessage()));
+    }
     var tables = doc.tables();
     if (outOfBounds(tableIndex, tables.size())) {
-      return indexError("表格索引", tableIndex, tables.size());
+      return ToolResultRenderer.render(indexErrorResult("表格索引", tableIndex, tables.size()));
     }
     try {
       tables.get(tableIndex).columnPercents(pct);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e)));
     }
-    return "已设置表格 " + tableIndex + " 列宽百分比 → " + Arrays.toString(pct);
+    return ToolResultRenderer.render(
+        ToolResult.ok("已设置表格 " + tableIndex + " 列宽百分比 → " + Arrays.toString(pct)));
   }
 
   /**
@@ -1337,19 +1654,27 @@ public final class TableTools extends ToolkitToolContext {
           List<Integer> widths) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    int[] dxa = toIntArray(widths, "widths");
+    int[] dxa;
+    try {
+      dxa = toIntArray(widths, "widths");
+    } catch (RuntimeException e) {
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "错误:" + e.getMessage()));
+    }
     var tables = doc.tables();
     if (outOfBounds(tableIndex, tables.size())) {
-      return indexError("表格索引", tableIndex, tables.size());
+      return ToolResultRenderer.render(indexErrorResult("表格索引", tableIndex, tables.size()));
     }
     try {
       tables.get(tableIndex).columnWidths(dxa);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e)));
     }
-    return "已设置表格 " + tableIndex + " 列宽(twips) → " + Arrays.toString(dxa);
+    return ToolResultRenderer.render(
+        ToolResult.ok("已设置表格 " + tableIndex + " 列宽(twips) → " + Arrays.toString(dxa)));
   }
 
   /**
@@ -1367,95 +1692,26 @@ public final class TableTools extends ToolkitToolContext {
       @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     var tables = doc.tables();
     if (outOfBounds(tableIndex, tables.size())) {
-      return indexError("表格索引", tableIndex, tables.size());
+      return ToolResultRenderer.render(indexErrorResult("表格索引", tableIndex, tables.size()));
     }
     var widths = tables.get(tableIndex).columnWidths();
     if (widths.isEmpty()) {
-      return "表格 " + tableIndex + " 未设列宽(tblGrid 无 gridCol)";
+      return ToolResultRenderer.render(
+          ToolResult.ok("表格 " + tableIndex + " 未设列宽(tblGrid 无 gridCol)"));
     }
     StringBuilder sb = new StringBuilder();
     sb.append("表格 ").append(tableIndex).append(" 列宽(twips),共 ").append(widths.size()).append(" 列:");
     for (int c = 0; c < widths.size(); c++) {
       sb.append("\n  列 ").append(c).append(": ").append(widths.get(c));
     }
-    return sb.toString();
+    return ToolResultRenderer.render(ToolResult.ok(sb.toString()));
   }
 
   // ==================== 行级写工具共享:批量循环骨架 ====================
-
-  /** 单条行编辑动作(由各写工具 lambda 提供)。 */
-  @FunctionalInterface
-  private interface RowEditAction {
-    void apply(Map<String, Object> m, Row row, String tag, StringBuilder sb)
-        throws RuntimeException;
-  }
-
-  /**
-   * 行级写工具的批量循环骨架(headerRow/cantSplit 共用)。
-   *
-   * <p>负责:解析 table_index/row_index + 边界检查 + 调 lambda 写入 + collect-errors 汇总。 与 {@link
-   * #applyCellEdits} 对称,只是定位到 Row 而非 Cell。
-   */
-  private String applyRowEdits(
-      Document doc, List<Map<String, Object>> edits, RowEditAction action) {
-    List<Object> list = coerceList(edits);
-    if (list.isEmpty()) {
-      return "edits 为空";
-    }
-    StringBuilder sb = new StringBuilder();
-    int ok = 0;
-    int fail = 0;
-    for (int i = 0; i < list.size(); i++) {
-      if (i > 0) {
-        sb.append('\n');
-      }
-      Object item = list.get(i);
-      String tag = "[" + i + "] ";
-      if (!(item instanceof Map)) {
-        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
-        fail++;
-        continue;
-      }
-      @SuppressWarnings("unchecked")
-      Map<String, Object> m = (Map<String, Object>) item;
-      int tableIndex;
-      int rowIndex;
-      try {
-        tableIndex = getInt(m, "table_index");
-        rowIndex = getInt(m, "row_index");
-      } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
-        fail++;
-        continue;
-      }
-      var tables = doc.tables();
-      if (outOfBounds(tableIndex, tables.size())) {
-        sb.append(tag).append(indexError("表格索引", tableIndex, tables.size()));
-        fail++;
-        continue;
-      }
-      var rows = tables.get(tableIndex).rows();
-      if (outOfBounds(rowIndex, rows.size())) {
-        sb.append(tag).append(indexError("行索引", rowIndex, rows.size()));
-        fail++;
-        continue;
-      }
-      Row row = rows.get(rowIndex);
-      try {
-        action.apply(m, row, tag, sb);
-        ok++;
-      } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(rootMessage(e));
-        fail++;
-      }
-    }
-    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
-  }
 
   /** 把 LLM 传来的数组(JSON 还原为 List&lt;Integer&gt;/List&lt;Number&gt;)归一化为 int[],空或 null 报错。 */
   private static int[] toIntArray(List<Integer> raw, String name) {
@@ -1502,20 +1758,21 @@ public final class TableTools extends ToolkitToolContext {
       @ToolParam(name = "table_index", description = "表格索引(0 起)") int tableIndex) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     var tables = doc.tables();
     if (outOfBounds(tableIndex, tables.size())) {
-      return indexError("表格索引", tableIndex, tables.size());
+      return ToolResultRenderer.render(indexErrorResult("表格索引", tableIndex, tables.size()));
     }
-    Row row;
     try {
-      row = tables.get(tableIndex).addRow();
+      tables.get(tableIndex).addRow();
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e)));
     }
     int newRow = tables.get(tableIndex).rows().size() - 1;
-    return "已追加空行,新行索引 " + newRow + "(表格 " + tableIndex + ")";
+    return ToolResultRenderer.render(
+        ToolResult.ok("已追加空行,新行索引 " + newRow + "(表格 " + tableIndex + ")"));
   }
 
   /**
@@ -1534,23 +1791,26 @@ public final class TableTools extends ToolkitToolContext {
       @ToolParam(name = "row_index", description = "行索引(0 起)") int rowIndex) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     var tables = doc.tables();
     if (outOfBounds(tableIndex, tables.size())) {
-      return indexError("表格索引", tableIndex, tables.size());
+      return ToolResultRenderer.render(indexErrorResult("表格索引", tableIndex, tables.size()));
     }
     var rows = tables.get(tableIndex).rows();
     if (outOfBounds(rowIndex, rows.size())) {
-      return indexError("行索引", rowIndex, rows.size());
+      return ToolResultRenderer.render(indexErrorResult("行索引", rowIndex, rows.size()));
     }
     try {
       tables.get(tableIndex).removeRow(rowIndex);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e)));
     }
     int remain = tables.get(tableIndex).rows().size();
-    return "已删除表格 " + tableIndex + " 第 " + rowIndex + " 行,剩余 " + remain + " 行(后续行索引已前移)";
+    return ToolResultRenderer.render(
+        ToolResult.ok(
+            "已删除表格 " + tableIndex + " 第 " + rowIndex + " 行,剩余 " + remain + " 行(后续行索引已前移)"));
   }
 
   /**
@@ -1571,24 +1831,26 @@ public final class TableTools extends ToolkitToolContext {
       @ToolParam(name = "row_index", description = "行索引(0 起)") int rowIndex) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
     var tables = doc.tables();
     if (outOfBounds(tableIndex, tables.size())) {
-      return indexError("表格索引", tableIndex, tables.size());
+      return ToolResultRenderer.render(indexErrorResult("表格索引", tableIndex, tables.size()));
     }
     var rows = tables.get(tableIndex).rows();
     if (outOfBounds(rowIndex, rows.size())) {
-      return indexError("行索引", rowIndex, rows.size());
+      return ToolResultRenderer.render(indexErrorResult("行索引", rowIndex, rows.size()));
     }
     Row row = rows.get(rowIndex);
     try {
       row.addCell();
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e)));
     }
     int newCell = rows.get(rowIndex).cells().size() - 1;
-    return "已追加空单元格,新单元格索引 " + newCell + "(表格 " + tableIndex + " 行 " + rowIndex + ")";
+    return ToolResultRenderer.render(
+        ToolResult.ok("已追加空单元格,新单元格索引 " + newCell + "(表格 " + tableIndex + " 行 " + rowIndex + ")"));
   }
 
   /**
@@ -1608,28 +1870,31 @@ public final class TableTools extends ToolkitToolContext {
       @ToolParam(name = "cell_index", description = "单元格索引(0 起)") int cellIndex) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-    if (cellResult.startsWith("错误")) {
-      return cellResult;
+    ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
+    if (!locate.success()) {
+      return ToolResultRenderer.render(locate);
     }
     Row row = tablesRow(doc, tableIndex, rowIndex);
     try {
       row.removeCell(cellIndex);
     } catch (RuntimeException e) {
-      return "错误:" + rootMessage(e);
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e)));
     }
     int remain = tablesRow(doc, tableIndex, rowIndex).cells().size();
-    return "已删除表格 "
-        + tableIndex
-        + " 行 "
-        + rowIndex
-        + " 第 "
-        + cellIndex
-        + " 单元格,剩余 "
-        + remain
-        + " 个(后续单元格索引已前移)";
+    return ToolResultRenderer.render(
+        ToolResult.ok(
+            "已删除表格 "
+                + tableIndex
+                + " 行 "
+                + rowIndex
+                + " 第 "
+                + cellIndex
+                + " 单元格,剩余 "
+                + remain
+                + " 个(后续单元格索引已前移)"));
   }
 
   /**
@@ -1657,22 +1922,22 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    return applyCellParagraphEdits(
-        doc,
-        edits,
-        (m, p, tag, sb) -> {
-          boolean clear = boolVal(m.get("clear"));
-          if (clear) {
-            p.clearHeading();
-            sb.append(tag).append("段落标题已清除 ✓");
-          } else {
-            HeadingLevel hl = parseHeading(getStr(m, "heading"));
-            p.heading(hl);
-            sb.append(tag).append("段落标题 → ").append(hl).append(" ✓");
-          }
-        });
+    return ToolResultRenderer.render(
+        applyCellParagraphEditResults(
+            doc,
+            edits,
+            (m, p) -> {
+              boolean clear = boolVal(m.get("clear"));
+              if (clear) {
+                p.clearHeading();
+                return ToolResult.ok("段落标题已清除 ✓");
+              }
+              HeadingLevel hl = parseHeading(getStr(m, "heading"));
+              p.heading(hl);
+              return ToolResult.ok("段落标题 → " + hl + " ✓");
+            }));
   }
 
   /**
@@ -1699,22 +1964,18 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    return applyCellParagraphEdits(
-        doc,
-        edits,
-        (m, p, tag, sb) -> {
-          int left = getInt(m, "left_twips");
-          int firstLine = getInt(m, "first_line_twips");
-          p.indent(left, firstLine);
-          sb.append(tag)
-              .append("段落缩进 → left=")
-              .append(left)
-              .append(" firstLine=")
-              .append(firstLine)
-              .append(" ✓");
-        });
+    return ToolResultRenderer.render(
+        applyCellParagraphEditResults(
+            doc,
+            edits,
+            (m, p) -> {
+              int left = getInt(m, "left_twips");
+              int firstLine = getInt(m, "first_line_twips");
+              p.indent(left, firstLine);
+              return ToolResult.ok("段落缩进 → left=" + left + " firstLine=" + firstLine + " ✓");
+            }));
   }
 
   /**
@@ -1740,16 +2001,17 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    return applyCellParagraphEdits(
-        doc,
-        edits,
-        (m, p, tag, sb) -> {
-          double ls = getDouble(m, "line_spacing");
-          p.lineSpacing(ls);
-          sb.append(tag).append("段落行距 → ").append(ls).append(" ✓");
-        });
+    return ToolResultRenderer.render(
+        applyCellParagraphEditResults(
+            doc,
+            edits,
+            (m, p) -> {
+              double ls = getDouble(m, "line_spacing");
+              p.lineSpacing(ls);
+              return ToolResult.ok("段落行距 → " + ls + " ✓");
+            }));
   }
 
   /**
@@ -1777,28 +2039,23 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    return applyCellParagraphEdits(
-        doc,
-        edits,
-        (m, p, tag, sb) -> {
-          boolean clear = boolVal(m.get("clear"));
-          if (clear) {
-            p.clearList();
-            sb.append(tag).append("段落列表已清除 ✓");
-          } else {
-            ListKind kind = parseListKind(getStr(m, "list_kind"));
-            int level = getInt(m, "level");
-            p.list(kind, level);
-            sb.append(tag)
-                .append("段落列表 → ")
-                .append(kind)
-                .append("(level ")
-                .append(level)
-                .append(") ✓");
-          }
-        });
+    return ToolResultRenderer.render(
+        applyCellParagraphEditResults(
+            doc,
+            edits,
+            (m, p) -> {
+              boolean clear = boolVal(m.get("clear"));
+              if (clear) {
+                p.clearList();
+                return ToolResult.ok("段落列表已清除 ✓");
+              }
+              ListKind kind = parseListKind(getStr(m, "list_kind"));
+              int level = getInt(m, "level");
+              p.list(kind, level);
+              return ToolResult.ok("段落列表 → " + kind + "(level " + level + ") ✓");
+            }));
   }
 
   /**
@@ -1824,92 +2081,20 @@ public final class TableTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return ToolResultRenderer.render(docNotFoundResult(docId));
     }
-    return applyCellParagraphEdits(
-        doc,
-        edits,
-        (m, p, tag, sb) -> {
-          String fill = getStr(m, "fill");
-          p.shading(fill);
-          sb.append(tag).append("段落底纹 → ").append(fill).append(" ✓");
-        });
+    return ToolResultRenderer.render(
+        applyCellParagraphEditResults(
+            doc,
+            edits,
+            (m, p) -> {
+              String fill = getStr(m, "fill");
+              p.shading(fill);
+              return ToolResult.ok("段落底纹 → " + fill + " ✓");
+            }));
   }
 
   // ==================== 段落级写工具共享:批量循环骨架 ====================
-
-  /** 单条段落编辑动作(由各段落样式工具 lambda 提供)。 */
-  @FunctionalInterface
-  private interface CellParagraphEditAction {
-    void apply(Map<String, Object> m, Paragraph p, String tag, StringBuilder sb)
-        throws RuntimeException;
-  }
-
-  /**
-   * 单元格内段落级写工具的批量循环骨架(heading/indent/spacing/list/shading 共用)。
-   *
-   * <p>负责:解析坐标 + locateCell + 段落边界检查 + 调 lambda 写入 + collect-errors 汇总。
-   */
-  private String applyCellParagraphEdits(
-      Document doc, List<Map<String, Object>> edits, CellParagraphEditAction action) {
-    List<Object> list = coerceList(edits);
-    if (list.isEmpty()) {
-      return "edits 为空";
-    }
-    StringBuilder sb = new StringBuilder();
-    int ok = 0;
-    int fail = 0;
-    for (int i = 0; i < list.size(); i++) {
-      if (i > 0) {
-        sb.append('\n');
-      }
-      Object item = list.get(i);
-      String tag = "[" + i + "] ";
-      if (!(item instanceof Map)) {
-        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
-        fail++;
-        continue;
-      }
-      @SuppressWarnings("unchecked")
-      Map<String, Object> m = (Map<String, Object>) item;
-      int tableIndex;
-      int rowIndex;
-      int cellIndex;
-      int paragraphIndex;
-      try {
-        tableIndex = getInt(m, "table_index");
-        rowIndex = getInt(m, "row_index");
-        cellIndex = getInt(m, "cell_index");
-        paragraphIndex = getInt(m, "paragraph_index");
-      } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
-        fail++;
-        continue;
-      }
-      String cellResult = locateCell(doc, tableIndex, rowIndex, cellIndex);
-      if (cellResult.startsWith("错误")) {
-        sb.append(tag).append(cellResult);
-        fail++;
-        continue;
-      }
-      var paras = locateCellObj(doc, tableIndex, rowIndex, cellIndex).paragraphs();
-      if (outOfBounds(paragraphIndex, paras.size())) {
-        sb.append(tag).append(indexError("单元格内段落索引", paragraphIndex, paras.size()));
-        fail++;
-        continue;
-      }
-      Paragraph p = paras.get(paragraphIndex);
-      try {
-        action.apply(m, p, tag, sb);
-        ok++;
-      } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(rootMessage(e));
-        fail++;
-      }
-    }
-    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
-  }
 
   /** 取表格某行的活 Row(已通过边界检查)。 */
   private static Row tablesRow(Document doc, int tableIndex, int rowIndex) {

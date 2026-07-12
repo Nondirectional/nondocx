@@ -17,6 +17,9 @@ import com.non.docx.toolkit.ref.ParagraphRef;
 import com.non.docx.toolkit.ref.RefResolutionException;
 import com.non.docx.toolkit.ref.ReferenceContext;
 import com.non.docx.toolkit.ref.RunRef;
+import com.non.docx.toolkit.result.ToolResult;
+import com.non.docx.toolkit.result.ToolResultCode;
+import com.non.docx.toolkit.result.ToolResultRenderer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -83,12 +86,14 @@ public final class BodyTools extends ToolkitToolContext {
           List<Integer> paragraphIndexes) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     var paragraphs = doc.paragraphs();
     List<Object> indexes = coerceList(paragraphIndexes);
     if (indexes.isEmpty()) {
-      return "段落索引数组为空";
+      ToolResult<Void> result =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "段落索引数组为空", "至少传一个段落索引");
+      return ToolResultRenderer.render(result);
     }
     StringBuilder sb = new StringBuilder();
     ElementResolver resolver = elementResolver(docId);
@@ -136,7 +141,8 @@ public final class BodyTools extends ToolkitToolContext {
       sb.append("run 数: ").append(runCount).append('\n');
       sb.append("超链接数: ").append(hyperlinkCount);
     }
-    return sb.toString();
+    ToolResult<String> result = ToolResult.ok(sb.toString(), sb.toString());
+    return ToolResultRenderer.render(result);
   }
 
   private static int paragraphIndex(List<Paragraph> paragraphs, Paragraph target) {
@@ -174,16 +180,19 @@ public final class BodyTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     var paragraphs = doc.paragraphs();
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
-      return "edits 为空";
+      ToolResult<Void> result =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空", "至少传一条修改");
+      return ToolResultRenderer.render(result);
     }
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    List<String> changedRefs = new ArrayList<>();
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -222,10 +231,16 @@ public final class BodyTools extends ToolkitToolContext {
           .append(" ref=")
           .append(target.ref.canonical())
           .append(" ✓");
+      changedRefs.add(target.ref.canonical());
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    int matchedCount = ok + fail;
+    ToolResult<List<String>> result =
+        fail > 0
+            ? ToolResult.partial(ToolResultCode.PARTIAL_FAILURE, changedRefs, sb.toString(), null)
+            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, changedRefs);
+    return ToolResultRenderer.render(result);
   }
 
   /**
@@ -252,12 +267,14 @@ public final class BodyTools extends ToolkitToolContext {
           List<Map<String, Object>> runs) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     var paragraphs = doc.paragraphs();
     List<Object> list = coerceList(runs);
     if (list.isEmpty()) {
-      return "runs 为空";
+      ToolResult<Void> result =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "runs 为空", "至少传一个 run 坐标");
+      return ToolResultRenderer.render(result);
     }
     StringBuilder sb = new StringBuilder();
     for (int i = 0; i < list.size(); i++) {
@@ -291,7 +308,8 @@ public final class BodyTools extends ToolkitToolContext {
           .append("\n样式: ")
           .append(target.run.style());
     }
-    return sb.toString();
+    ToolResult<String> result = ToolResult.ok(sb.toString(), sb.toString());
+    return ToolResultRenderer.render(result);
   }
 
   /**
@@ -329,16 +347,19 @@ public final class BodyTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     var paragraphs = doc.paragraphs();
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
-      return "edits 为空";
+      ToolResult<Void> result =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空", "至少传一条修改");
+      return ToolResultRenderer.render(result);
     }
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    List<String> changedRefs = new ArrayList<>();
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -373,10 +394,16 @@ public final class BodyTools extends ToolkitToolContext {
           .append("\" ref=")
           .append(target.ref.canonical())
           .append(" ✓");
+      changedRefs.add(target.ref.canonical());
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    int matchedCount = ok + fail;
+    ToolResult<List<String>> result =
+        fail > 0
+            ? ToolResult.partial(ToolResultCode.PARTIAL_FAILURE, changedRefs, sb.toString(), null)
+            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, changedRefs);
+    return ToolResultRenderer.render(result);
   }
 
   private static Alignment parseAlignment(String raw) {
@@ -528,16 +555,19 @@ public final class BodyTools extends ToolkitToolContext {
           List<Map<String, Object>> edits) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     var paragraphs = doc.paragraphs();
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
-      return "edits 为空";
+      ToolResult<Void> result =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空", "至少传一条修改");
+      return ToolResultRenderer.render(result);
     }
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    List<String> changedRefs = new ArrayList<>();
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -612,10 +642,16 @@ public final class BodyTools extends ToolkitToolContext {
           .append(" ref=")
           .append(target.ref.canonical())
           .append(" ✓");
+      changedRefs.add(target.ref.canonical());
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    int matchedCount = ok + fail;
+    ToolResult<List<String>> result =
+        fail > 0
+            ? ToolResult.partial(ToolResultCode.PARTIAL_FAILURE, changedRefs, sb.toString(), null)
+            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, changedRefs);
+    return ToolResultRenderer.render(result);
   }
 
   /**
@@ -653,11 +689,13 @@ public final class BodyTools extends ToolkitToolContext {
           List<Map<String, Object>> paragraphs) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     List<Object> list = coerceList(paragraphs);
     if (list.isEmpty()) {
-      return "paragraphs 为空";
+      ToolResult<Void> result =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "paragraphs 为空", "至少传一条插入");
+      return ToolResultRenderer.render(result);
     }
     StringBuilder sb = new StringBuilder();
     int ok = 0;
@@ -712,7 +750,12 @@ public final class BodyTools extends ToolkitToolContext {
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
-    return sb.toString();
+    int matchedCount = ok + fail;
+    ToolResult<Integer> result =
+        fail > 0
+            ? ToolResult.partial(ToolResultCode.PARTIAL_FAILURE, ok, sb.toString(), null)
+            : ToolResult.ok(ok, sb.toString(), matchedCount, null);
+    return ToolResultRenderer.render(result);
   }
 
   // ==================== 超链接（显示文本 + URL 双向改） ====================
@@ -731,9 +774,12 @@ public final class BodyTools extends ToolkitToolContext {
       @ToolParam(name = "hyperlink_index", description = "超链接索引（0 起）") int hyperlinkIndex) {
     Hyperlink link = locateHyperlink(docId, paragraphIndex, hyperlinkIndex);
     if (link == null) {
-      return locateHyperlinkFailed(docId, paragraphIndex, hyperlinkIndex);
+      ToolResult<Void> failed = locateHyperlinkFailed(docId, paragraphIndex, hyperlinkIndex);
+      return ToolResultRenderer.render(failed);
     }
-    return "显示文本: " + link.text() + "\n目标 URL: " + link.url();
+    String summary = "显示文本: " + link.text() + "\n目标 URL: " + link.url();
+    ToolResult<String> result = ToolResult.ok(summary, summary);
+    return ToolResultRenderer.render(result);
   }
 
   /**
@@ -758,11 +804,15 @@ public final class BodyTools extends ToolkitToolContext {
       @ToolParam(name = "text", description = "新的显示文本(可选,不传则不改)", required = false) String text,
       @ToolParam(name = "url", description = "新的目标 URL(可选,不传则不改)", required = false) String url) {
     if ((text == null || text.isEmpty()) && (url == null || url.isEmpty())) {
-      return "错误:text 和 url 至少传一个";
+      ToolResult<Void> result =
+          ToolResult.fail(
+              ToolResultCode.INVALID_ARGUMENT, "错误:text 和 url 至少传一个", "传 text 改显示文本、传 url 改地址");
+      return ToolResultRenderer.render(result);
     }
     Hyperlink link = locateHyperlink(docId, paragraphIndex, hyperlinkIndex);
     if (link == null) {
-      return locateHyperlinkFailed(docId, paragraphIndex, hyperlinkIndex);
+      ToolResult<Void> failed = locateHyperlinkFailed(docId, paragraphIndex, hyperlinkIndex);
+      return ToolResultRenderer.render(failed);
     }
     List<String> done = new ArrayList<>();
     if (text != null && !text.isEmpty()) {
@@ -773,11 +823,17 @@ public final class BodyTools extends ToolkitToolContext {
       try {
         link.url(url);
       } catch (RuntimeException e) {
-        return "错误：无法修改超链接 URL（" + rootMessage(e) + "）";
+        ToolResult<Void> result =
+            ToolResult.fail(
+                ToolResultCode.INVALID_ARGUMENT, "错误：无法修改超链接 URL（" + rootMessage(e) + "）");
+        return ToolResultRenderer.render(result);
       }
       done.add("URL → " + url);
     }
-    return "已修改：段落 " + paragraphIndex + " 超链接 " + hyperlinkIndex + " 的 " + String.join("、", done);
+    String message =
+        "已修改：段落 " + paragraphIndex + " 超链接 " + hyperlinkIndex + " 的 " + String.join("、", done);
+    ToolResult<String> result = ToolResult.ok(message, message);
+    return ToolResultRenderer.render(result);
   }
 
   // ==================== 文本搜索（横切所有容器，一次定位） ====================
@@ -835,7 +891,7 @@ public final class BodyTools extends ToolkitToolContext {
           Integer maxResults) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return renderDocNotFound(docId);
     }
     // 用 Integer 而非 int：LLM 不传该参数时 nonchain 会注入 null，
     // 包装类型能安全接住 null，这里再归一化为默认值（避免基本类型收到 null 触发 NPE）。
@@ -885,7 +941,9 @@ public final class BodyTools extends ToolkitToolContext {
     boolean possiblyMore = hits.size() >= limit;
 
     if (hits.isEmpty()) {
-      return "未找到「" + keyword + "」";
+      String message = "未找到「" + keyword + "」";
+      ToolResult<List<String>> result = ToolResult.ok(hits, message, 0, null);
+      return ToolResultRenderer.render(result);
     }
     StringBuilder sb = new StringBuilder();
     sb.append("找到 ").append(hits.size()).append(" 处「").append(keyword).append("」：\n");
@@ -898,7 +956,8 @@ public final class BodyTools extends ToolkitToolContext {
     if (possiblyMore) {
       sb.append("\n（已达 ").append(limit).append(" 处上限，可能还有更多；请用更长的关键词缩小范围，或调大 max_results）");
     }
-    return sb.toString();
+    ToolResult<List<String>> result = ToolResult.ok(hits, sb.toString(), hits.size(), null);
+    return ToolResultRenderer.render(result);
   }
 
   // ==================== 搜索 / 超链接 组内辅助 ====================
@@ -1037,17 +1096,28 @@ public final class BodyTools extends ToolkitToolContext {
     return null;
   }
 
-  /** 配合 {@link #locateHyperlink}：返回定位失败时的中文错误串（需重新解析边界以给准确数字）。 */
-  private String locateHyperlinkFailed(String docId, int paragraphIndex, int hyperlinkIndex) {
+  /**
+   * 配合 {@link #locateHyperlink}：返回定位失败时的结构化结果（需重新解析边界以给准确数字）。
+   *
+   * <p>非 {@code @ToolDef} 的内部 helper，直接返回 {@link ToolResult} 不走 String 边界。
+   */
+  private ToolResult<Void> locateHyperlinkFailed(
+      String docId, int paragraphIndex, int hyperlinkIndex) {
     Document doc = document(docId);
     if (doc == null) {
-      return docNotFound(docId);
+      return docNotFoundResult(docId);
     }
     var paragraphs = doc.paragraphs();
     if (outOfBounds(paragraphIndex, paragraphs.size())) {
-      return indexError("段落索引", paragraphIndex, paragraphs.size());
+      return ToolResult.fail(
+          ToolResultCode.INDEX_OUT_OF_RANGE,
+          "错误：段落索引 " + paragraphIndex + " 越界（共 " + paragraphs.size() + "）",
+          "使用 0.." + Math.max(0, paragraphs.size() - 1));
     }
     long count = hyperlinkCount(paragraphs.get(paragraphIndex));
-    return "错误：超链接索引 " + hyperlinkIndex + " 越界（该段含 " + count + " 个超链接）";
+    return ToolResult.fail(
+        ToolResultCode.INDEX_OUT_OF_RANGE,
+        "错误：超链接索引 " + hyperlinkIndex + " 越界（该段含 " + count + " 个超链接）",
+        "使用 0.." + Math.max(0L, count - 1L));
   }
 }
