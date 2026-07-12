@@ -357,7 +357,7 @@ class DocxToolkitBatchTest {
         tk.table.createTable(
             docId, List.of(List.of("姓名", "分数"), List.of("张三", "95"), List.of("李四", "88")));
     assertThat(result).contains("已创建表格 0").contains("3 行").contains("6 个单元格");
-    assertThat(tk.session.getDocumentOverview(docId)).contains("正文表格数: 1");
+    assertThat(tk.session.getDocumentOverview(docId)).contains("表格数: 1");
     assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 0, 0)))).contains("姓名");
     assertThat(tk.table.readTableCell(docId, List.of(cellCoord(0, 1, 1)))).contains("95");
   }
@@ -376,7 +376,7 @@ class DocxToolkitBatchTest {
 
     String result = tk.table.createTable(docId, List.of(List.of("A"), List.of()));
     assertThat(result).contains("错误:第 1 行为空");
-    assertThat(tk.session.getDocumentOverview(docId)).contains("正文表格数: 0");
+    assertThat(tk.session.getDocumentOverview(docId)).contains("表格数: 0");
   }
 
   @Test
@@ -461,7 +461,7 @@ class DocxToolkitBatchTest {
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("标题");
     assertThat(tk.body.readParagraph(docId, List.of(1))).contains("正文");
     assertThat(tk.body.readParagraph(docId, List.of(2))).contains("结尾");
-    assertThat(tk.session.getDocumentOverview(docId)).contains("正文段落数: 3");
+    assertThat(tk.session.getDocumentOverview(docId)).contains("段落数: 3");
   }
 
   @Test

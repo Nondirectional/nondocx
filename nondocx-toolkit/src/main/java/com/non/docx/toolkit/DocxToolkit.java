@@ -2,6 +2,7 @@ package com.non.docx.toolkit;
 
 import com.non.chain.tool.ToolRegistry;
 import com.non.docx.toolkit.capability.CapabilityTools;
+import com.non.docx.toolkit.view.ViewTools;
 
 /**
  * nondocx-toolkit 的聚合门面：一次构造出全部八组工具（七组文档工具 + 一组能力契约工具），并保证文档工具共享同一份会话状态。
@@ -61,6 +62,9 @@ public final class DocxToolkit {
   /** 能力契约工具组：提供 describe_capabilities，让 Agent 查询机器可读能力清单。 */
   public final CapabilityTools capability;
 
+  /** 语义视图工具组：6 个 view_* 工具，为 Agent 提供低成本、可控上下文的文档语义视图。 */
+  public final ViewTools view;
+
   /** 构造全部七组工具，共享同一份文档会话状态。 */
   public DocxToolkit() {
     // 先建会话源头：SessionTools 自建 sessions/seq。
@@ -102,7 +106,19 @@ public final class DocxToolkit {
             session.sharedSeq(),
             session.sharedReferences(),
             session.sharedGenerations());
-    // 能力契约工具无会话状态，持有 7 个文档工具实例用于反射收集能力元数据。
+    // 语义视图工具：注入共享会话状态 + qualityCheck 引用（供 issues 视图复用检查逻辑）。
+    this.view =
+        new ViewTools(
+            session.sharedSessions(),
+            session.sharedSeq(),
+            session.sharedReferences(),
+            session.sharedGenerations(),
+            qualityCheck);
+    // 让 session 的 get_document_overview 委托 view 服务的 stats 视图（data 升级为 StatsView 超集）。
+    session.bindViewService(
+        new com.non.docx.toolkit.view.DocumentViewService(
+            session.sharedReferences(), qualityCheck));
+    // 能力契约工具无会话状态，持有 8 个文档工具实例用于反射收集能力元数据。
     this.capability =
         new CapabilityTools(
             session,
@@ -111,7 +127,8 @@ public final class DocxToolkit {
             headerFooterToc,
             trackedChangeQuery,
             trackedChangeAuthoring,
-            qualityCheck);
+            qualityCheck,
+            view);
   }
 
   /**
@@ -132,6 +149,7 @@ public final class DocxToolkit {
         .scan(trackedChangeQuery)
         .scan(trackedChangeAuthoring)
         .scan(qualityCheck)
+        .scan(view)
         .scan(capability);
   }
 }

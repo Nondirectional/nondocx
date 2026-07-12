@@ -156,14 +156,7 @@ public final class QualityCheckTools extends ToolkitToolContext {
       return ToolResultRenderer.render(result);
     }
     List<String> selected = resolveChecks(checks);
-    List<CheckResult> results = new ArrayList<>();
-    for (String name : selected) {
-      try {
-        results.add(runCheck(name, doc));
-      } catch (Exception e) {
-        results.add(new CheckResult(name, false, "检查异常: " + rootMessage(e), "error"));
-      }
-    }
+    List<CheckResult> results = runChecks(selected, doc);
     return formatReport(docId, results);
   }
 
@@ -179,6 +172,31 @@ public final class QualityCheckTools extends ToolkitToolContext {
       }
     }
     return selected;
+  }
+
+  /**
+   * 对文档跑全量内置检查，返回逐条结果。供 {@code DocumentViewService.issues()} 复用。
+   *
+   * <p>不改变 {@code check_quality} 工具行为；后者仍走 {@link #checkQuality} 的报告渲染路径。
+   *
+   * @param doc 活文档
+   * @return 全部 10 项检查的逐条结果
+   */
+  public List<CheckResult> runAllChecks(Document doc) {
+    return runChecks(ALL_CHECKS, doc);
+  }
+
+  /** 按指定检查项列表执行，异常项包装为 error 级 CheckResult。 */
+  private List<CheckResult> runChecks(List<String> names, Document doc) {
+    List<CheckResult> results = new ArrayList<>();
+    for (String name : names) {
+      try {
+        results.add(runCheck(name, doc));
+      } catch (Exception e) {
+        results.add(new CheckResult(name, false, "检查异常: " + rootMessage(e), "error"));
+      }
+    }
+    return results;
   }
 
   /** 按检查名分发到对应方法。 */
@@ -608,8 +626,8 @@ public final class QualityCheckTools extends ToolkitToolContext {
     return ToolResultRenderer.render(result);
   }
 
-  /** 单项检查结果（toolkit 内部值对象）。 */
-  static final class CheckResult {
+  /** 单项检查结果。P0-04 起提升为 public，供 {@code DocumentViewService.issues()} 复用。 */
+  public static final class CheckResult {
     final String name;
     final boolean passed;
     final String message;
@@ -629,6 +647,26 @@ public final class QualityCheckTools extends ToolkitToolContext {
     String toReportLine() {
       String icon = passed ? "✅" : ("error".equals(severity) ? "❌" : "⚠️");
       return icon + " [" + name + "] " + message;
+    }
+
+    /** 检查项名称。 */
+    public String name() {
+      return name;
+    }
+
+    /** 是否通过。 */
+    public boolean passed() {
+      return passed;
+    }
+
+    /** 中文检查消息。 */
+    public String message() {
+      return message;
+    }
+
+    /** 严重级别：{@code "error"} 或 {@code "warning"}。 */
+    public String severity() {
+      return severity;
     }
   }
 }

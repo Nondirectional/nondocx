@@ -51,7 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p><b>线程模型。</b> 与原单体一致——为单 Agent 实例设计，内部状态未做并发保护，不要跨 Agent 共享。
  */
-abstract class ToolkitToolContext {
+public abstract class ToolkitToolContext {
 
   /** 打开的文档会话：docId → 活文档。{@code final} 引用保证子类共享同一份 Map。 */
   final Map<String, Document> sessions;
@@ -63,7 +63,7 @@ abstract class ToolkitToolContext {
   final ReferenceContext references;
 
   /** docId 对应的 toolkit 会话代次。 */
-  final Map<String, Long> generations;
+  protected final Map<String, Long> generations;
 
   /**
    * 创建一份<b>独立</b>的会话状态（拥有自己的 sessions/seq）。
@@ -93,7 +93,7 @@ abstract class ToolkitToolContext {
    *
    * <p>{@link DocxToolkit} 用此构造把 {@link SessionTools} 创建的四个共享对象注入全部工具组。
    */
-  ToolkitToolContext(
+  public ToolkitToolContext(
       Map<String, Document> sharedSessions,
       AtomicInteger sharedSeq,
       ReferenceContext sharedReferences,
@@ -107,7 +107,7 @@ abstract class ToolkitToolContext {
   // ==================== 状态相关：按 docId 取活文档 / 错误串 ====================
 
   /** 按 docId 取活文档；不存在返回 {@code null}（调用方自行决定返回哪个中文错误串）。 */
-  Document document(String docId) {
+  protected Document document(String docId) {
     return sessions.get(docId);
   }
 

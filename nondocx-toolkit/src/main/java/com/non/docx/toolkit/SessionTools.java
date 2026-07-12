@@ -13,6 +13,8 @@ import com.non.docx.toolkit.ref.ReferenceContext;
 import com.non.docx.toolkit.result.ToolResult;
 import com.non.docx.toolkit.result.ToolResultCode;
 import com.non.docx.toolkit.result.ToolResultRenderer;
+import com.non.docx.toolkit.view.DocumentViewService;
+import com.non.docx.toolkit.view.dto.StatsView;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -57,6 +59,19 @@ public final class SessionTools extends ToolkitToolContext {
   /** 暴露共享 generation 状态供门面注入给其它工具类。 */
   Map<String, Long> sharedGenerations() {
     return generations;
+  }
+
+  /**
+   * 语义视图服务引用。由 {@link DocxToolkit} 在构造末尾绑定，供 {@code get_document_overview} 委托。
+   *
+   * <p>延迟绑定是因为 {@link DocumentViewService} 依赖 {@link QualityCheckTools}，而后者在门面构造里晚于 {@code
+   * SessionTools} 创建。未绑定时（独立使用 SessionTools）走旧概览逻辑，保持兼容。
+   */
+  private DocumentViewService viewService;
+
+  /** 门面在构造末尾绑定视图服务，让 {@code get_document_overview} 委托 {@code view_stats}。 */
+  void bindViewService(DocumentViewService viewService) {
+    this.viewService = viewService;
   }
 
   /**
@@ -184,11 +199,17 @@ public final class SessionTools extends ToolkitToolContext {
     return ToolResultRenderer.render(result);
   }
 
-  /** 返回文档结构概览。 */
+  /**
+   * 返回文档结构概览。
+   *
+   * <p>P0-04 起委托 {@link DocumentViewService#stats}，data 升级为完整 {@link StatsView}（旧 4 个 int 仍包含在内）。
+   * 未绑定 viewService 时走旧逻辑（独立使用 SessionTools 的兼容路径）。
+   */
   @ToolDef(
       name = "get_document_overview",
       description =
-          "返回文档结构概览：正文段落数、正文表格数、body 元素数、section 数。" + "了解文档规模/判断后续索引范围时优先用它，不要分别调用多个 count 工具。")
+          "返回文档结构概览：正文段落数、正文表格数、body 元素数、section 数、图片数、修订数、字体/字号分布。"
+              + "了解文档规模/判断后续索引范围时优先用它，不要分别调用多个 count 工具。")
   @ToolCapability(operation = CapabilityOperation.READ, element = "document")
   public String getDocumentOverview(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -200,6 +221,23 @@ public final class SessionTools extends ToolkitToolContext {
               ToolResultCode.DOCUMENT_CLOSED, "文档句柄 " + docId + " 不存在（未 open_docx 或已 close_docx）");
       return ToolResultRenderer.render(result);
     }
+    if (viewService != null) {
+      long generation = generations.getOrDefault(docId, 1L);
+      StatsView stats = viewService.stats(doc, docId, generation);
+      String message =
+          "文档概览\n"
+              + "段落数: "
+              + stats.paragraphCount()
+              + "\n表格数: "
+              + stats.tableCount()
+              + "\nbody 元素数: "
+              + stats.bodyElementCount()
+              + "\nsection 数: "
+              + stats.sectionCount();
+      ToolResult<StatsView> result = ToolResult.ok(stats, message);
+      return ToolResultRenderer.render(result);
+    }
+    // 兼容路径：未绑定 viewService（独立使用 SessionTools）
     Map<String, Integer> data = new LinkedHashMap<>();
     data.put("正文段落数", doc.paragraphs().size());
     data.put("正文表格数", doc.tables().size());

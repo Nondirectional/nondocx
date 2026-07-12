@@ -44,7 +44,13 @@ public final class ToolResultRenderer {
   private static final ObjectMapper MAPPER =
       new ObjectMapper()
           .setSerializationInclusion(JsonInclude.Include.NON_NULL)
-          .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
+          .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+          .setVisibility(
+              com.fasterxml.jackson.annotation.PropertyAccessor.FIELD,
+              com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.ANY)
+          .setVisibility(
+              com.fasterxml.jackson.annotation.PropertyAccessor.GETTER,
+              com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.NONE);
 
   private ToolResultRenderer() {}
 
