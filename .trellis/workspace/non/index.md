@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
+- **Total Sessions**: 23
 - **Last Active**: 2026-07-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1055 | Active |
+| `journal-1.md` | ~1090 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-07-12 | P0-04 统一语义视图 | `3ee1393`, `2247b7b`, `7ad6194` | `main` |
 | 22 | 2026-07-12 | P0-03 机器可读能力契约 | `b6d25cf`, `5e7b13d`, `5eb682b` | `main` |
 | 21 | 2026-07-12 | P0-02 结构化工具结果 | `77fec2f`, `0924a89` | `main` |
 | 20 | 2026-07-10 | 完成 P0-01 稳定语义寻址 | `7b1e52b`, `1891ea2` | `main` |

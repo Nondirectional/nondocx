@@ -1053,3 +1053,38 @@ Consolidated the nondocx toolkit Agent tool surface into intention-oriented entr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: P0-04 统一语义视图
+
+**Date**: 2026-07-12
+**Task**: P0-04 统一语义视图
+**Branch**: `main`
+
+### Summary
+
+实现 DocumentViewService 只读服务，复用 SnapshotBuilder 单遍历，提供 6 种语义视图（outline/text/annotated/stats/issues/element）。新增 ViewTools 工具类（6 个 view_* 工具），迁移 get_document_overview 为委托 stats 视图的薄适配层。QualityCheckTools.CheckResult 提升为 public + runAllChecks()。ToolkitToolContext 提升为 public abstract。ToolResultRenderer 配 Jackson FIELD visibility 支持无 getter DTO 序列化。25 个测试，mvn verify 全绿。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3ee1393` | (see git log) |
+| `2247b7b` | (see git log) |
+| `7ad6194` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
