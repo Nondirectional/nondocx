@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
-- **Last Active**: 2026-07-10
+- **Total Sessions**: 21
+- **Last Active**: 2026-07-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~986 | Active |
+| `journal-1.md` | ~1020 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-07-12 | P0-02 结构化工具结果 | `77fec2f`, `0924a89` | `main` |
 | 20 | 2026-07-10 | 完成 P0-01 稳定语义寻址 | `7b1e52b`, `1891ea2` | `main` |
 | 19 | 2026-07-08 | Toolkit tool surface consolidation | `48db5f2` | `feat/onlyoffice-demo` |
 | 18 | 2026-07-08 | OnlyOffice 实时预览的 nondocx Agent 对话 demo | `c2dd76b`, `679f002` | `feat/onlyoffice-demo` |

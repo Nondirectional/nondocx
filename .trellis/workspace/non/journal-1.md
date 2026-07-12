@@ -984,3 +984,37 @@ Consolidated the nondocx toolkit Agent tool surface into intention-oriented entr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: P0-02 结构化工具结果
+
+**Date**: 2026-07-12
+**Task**: P0-02 结构化工具结果
+**Branch**: `main`
+
+### Summary
+
+建立统一 ToolResult<T> 双段格式（中文消息 + JSON envelope），消除全仓 startsWith/contains 错误 嗅探。新建 result/ 包（6 核心类 + 37 测试），迁移 55 个 @ToolDef 方法、4 executor、 DocxOrchestrator。TableTools 内部 7 处嗅探全消除。ToolkitToolContext 提取 6 个共享工厂。 nonchain 框架 Object.toString() 硬约束决定了 @ToolDef 必须返回 String、内部序列化的架构走向。 523 测试全过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `77fec2f` | (see git log) |
+| `0924a89` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
