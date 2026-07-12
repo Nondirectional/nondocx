@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/orchestration-layer.md", "reason": "验证写安全协议与桥接层硬契约一致"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验证无 Lombok、测试覆盖、禁止模式"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验证错误码使用正确"}
