@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验证不可变值对象、测试覆盖、forbidden patterns、POI 不泄露"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "校验异常层次与 unchecked 契约"}
+{"file": ".trellis/spec/backend/orchestration-layer.md", "reason": "校验 describe_capabilities 输出与 P0-02 envelope 一致"}
+{"file": "docs/10-officecli-docx-learning-todolist.md", "reason": "对照 P0-03 验收标准逐项确认"}

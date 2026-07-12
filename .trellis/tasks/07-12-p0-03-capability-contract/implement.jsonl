@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CapabilityDeclarationException 应遵循 DocxException 层次与全 unchecked 规范"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "不可变值对象、内容相等、无 Lombok、forbidden patterns 适用新增模型/工具"}
+{"file": ".trellis/spec/backend/orchestration-layer.md", "reason": "P0-01 ref / P0-02 ToolResult envelope 是能力契约复用的基础"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "新增 capability/ 包需与 ref/ result/ 平级"}
+{"file": "docs/10-officecli-docx-learning-todolist.md", "reason": "P0-03 需求来源与验收标准"}
