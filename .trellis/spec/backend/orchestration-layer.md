@@ -606,3 +606,110 @@ public String newTool(
 
 **Related**: 本文档 P0-01（Stable Semantic References）、P0-02（Structured Tool Results）；
 `capabilities.json` 字段形状见 `CapabilityJsonIo`。
+
+---
+
+## Scenario: Unified Semantic View (P0-04)
+
+> `DocumentViewService` 把 `DocumentSnapshot` 提炼为 6 种只读视图，为 Agent 提供低成本、可控上下文。
+> Agent 不必全文 dump 即可定位目标、理解结构、评估质量、按需展开细节。
+
+### 1. Scope / Trigger
+
+当 Agent 需要理解文档结构、定位目标元素、评估质量或按需展开 run 明细时，使用 `view_*` 工具族。
+不要用 `get_document_overview`（已迁移为 `view_stats` 的薄适配层）+ 多次 `read_*` 拼凑上下文。
+
+### 2. 架构
+
+```
+DocumentViewService (只读服务, 复用 SnapshotBuilder + ElementResolver)
+  ├─ outline()   ─→ SnapshotBuilder.build() → 投影标题树/section/表格/TOC/页眉页脚/修订概览
+  ├─ text()      ─→ SnapshotBuilder.build() → 投影按文档顺序的文本 + ref
+  ├─ annotated() ─→ 快照 ref + ElementResolver 逐段补读 run 直接格式
+  ├─ stats()     ─→ SnapshotBuilder.build() → 投影统计 + 补 imageCount/字体/字号聚合
+  ├─ issues()    ─→ QualityCheckTools.runAllChecks(doc) → 包装 CheckResult → IssueEntry
+  └─ element()   ─→ ElementRef parse → ElementResolver.resolve(ref) → 投影单元素详情
+```
+
+`ViewTools`（第 9 个工具类）是薄适配层：只做 docId 解析 + 参数校验 + `ToolResult<T>` envelope 包装。
+
+### 3. Contracts
+
+- **复用 SnapshotBuilder**：`outline`/`text`/`stats` 调 `build()` 一次投影，**不建第二套 body 遍历**。
+- **annotated 复用快照 ref**：经 `resolver.resolve(pp.ref())` 补读 run，保证与快照 ref 一致。
+- **零 POI 泄露**：全部 DTO 是 `final class` + `private final` 字段，Jackson 经 `FIELD` visibility 序列化。
+- **上下文控制**：`ViewQuery`（maxItems=200 / textTruncate=120 / expandRuns=false）；超过截断并标记
+  `ViewMeta.truncated=true` + `totalCount`。element 视图单元素全量，不走 maxItems。
+- **视图一致性**：同一文档所有视图引用同一 `sessionGeneration`；outline ref 可被 element 解析。
+- **issues 浅层**：复用 `QualityCheckTools.runAllChecks()` 返回 `List<CheckResult>`，包装成 `IssueEntry`。
+  不建 `DocumentIssue` 模型和 issue code 目录（留 P1-01）。
+- **annotated 浅层**：只给 run 直接格式（bold/italic/font/size/color），不解析样式链来源（留 P1-02）。
+
+### 4. 6 个 view_* 工具
+
+| 工具名 | operation | element | 参数 | data DTO |
+|---|---|---|---|---|
+| `view_outline` | READ | document | doc_id, max_items?, text_truncate? | OutlineView |
+| `view_text` | READ | document | doc_id, max_items?, text_truncate? | TextView |
+| `view_annotated` | READ | paragraph | doc_id, max_items?, expand_runs? | AnnotatedView |
+| `view_stats` | READ | document | doc_id | StatsView |
+| `view_issues` | QUALITY | document | doc_id, severity? | IssuesView |
+| `view_element` | READ | element | doc_id, ref | ElementView |
+
+### 5. get_document_overview 迁移
+
+`SessionTools.getDocumentOverview` 已迁移为委托 `DocumentViewService.stats()`：
+- 工具名 `get_document_overview` 不变（向后兼容）。
+- data 从 `Map<String,Integer>` 升级为 `StatsView`（超集：旧 4 个 int 仍在，新增 imageCount/fonts/fontSizes 等）。
+- message 文案从 `正文段落数`/`正文表格数` 改为 `段落数`/`表格数`（与 view_stats 一致）。
+- `SessionTools` 经 `bindViewService()` 延迟绑定 `DocumentViewService`（解决 QualityCheckTools 循环依赖）。
+  未绑定时走旧逻辑（独立使用 SessionTools 兼容）。
+
+### 6. DTO 序列化（Jackson FIELD visibility）
+
+`ToolResultRenderer` 的 ObjectMapper 配了 `PropertyAccessor.FIELD = ANY` +
+`PropertyAccessor.GETTER = NONE`。这意味着：
+- DTO 的 `private final` 字段直接被 Jackson 反射序列化，**不需要** `getXxx()` getter。
+- accessor 方法名用无前缀风格（`paragraphCount()` 而非 `getParagraphCount()`），与现有 `ParagraphPreview` 一致。
+- `Map<String,Object>` 的 value **不能为 null**（`Map.copyOf` 不允许）；用 `putIfNotNull` 过滤。
+
+### 7. ToolkitToolContext 可见性
+
+P0-04 起 `ToolkitToolContext` 提升为 `public abstract`，`document(docId)` 和 `generations` 字段提升为
+`protected`，4 参构造提升为 `public`。因为 `ViewTools` 是第一个不在 `toolkit` 包的工具类（在 `view` 子包）。
+现有包内子类不受影响（protected ⊇ 包级）。
+
+### 8. QualityCheckTools.CheckResult 可见性
+
+`CheckResult` 从包级提升为 `public static final class`，新增 4 个 public accessor（`name()`/`passed()`/
+`message()`/`severity()`）。新增 `public List<CheckResult> runAllChecks(Document)` 供 issues 视图复用。
+`check_quality` 工具行为不变（内部改为调 `runChecks` 私有 helper）。
+
+### 9. Wrong vs Correct
+
+```java
+// Wrong —— 在 ViewTools 或 DocumentViewService 内重新遍历 doc.bodyElements() 做统计
+public StatsView stats(Document doc, ...) {
+  int paraCount = 0;
+  for (BodyElement be : doc.bodyElements()) {  // 第二套遍历！
+    if (be instanceof Paragraph) paraCount++;
+  }
+}
+
+// Correct —— 复用 SnapshotBuilder.build() 投影
+public StatsView stats(Document doc, ...) {
+  DocumentSnapshot snapshot = buildSnapshot(doc, docId, generation);
+  return new StatsView(meta, snapshot.overview().paragraphCount(), ...);
+}
+```
+
+```java
+// Wrong —— ElementView properties 含 null value（Map.copyOf 会 NPE）
+properties.put("font", r.font());  // font() 可能返回 null
+
+// Correct —— 过滤 null
+putIfNotNull(properties, "font", r.font());
+```
+
+**Related**: 本文档 P0-01（ref）、P0-02（ToolResult envelope）、P0-03（能力契约）；
+视图 DTO 见 `com.non.docx.toolkit.view.dto`。

@@ -16,33 +16,33 @@
 
 ## 优先级总览
 
-| 优先级 | ID | 主题 | 主要收益 |
-|---|---|---|---|
-| P0 | P0-01 | 稳定语义寻址 | 解决索引漂移和跨阶段定位风险 |
-| P0 | P0-02 | 结构化工具结果 | 消除字符串解析与错误语义歧义 |
+| 优先级 | ID      | 主题 | 主要收益 |
+|---|---------|---|---|
+| P0 | P0-01 ✅ | 稳定语义寻址 | 解决索引漂移和跨阶段定位风险 |
+| P0 | P0-02 ✅ | 结构化工具结果 | 消除字符串解析与错误语义歧义 |
 | P0 | P0-03 ✅ | 机器可读能力契约 | 防止工具、文档、实现漂移 |
-| P0 | P0-04 | 统一语义视图 | 为 Agent 提供低成本、可控上下文 |
-| P0 | P0-05 | 写操作安全协议 | 防止空操作、越界和意外批量修改 |
-| P0 | P0-06 | Agent 工作流技能文档 | 固化先读、再改、再验证的正确流程 |
-| P1 | P1-01 | 结构化问题诊断 | 统一质量检查、兼容性和损坏报告 |
-| P1 | P1-02 | 样式继承与国际化 | 提升中文、混排、RTL 和模板适配能力 |
-| P1 | P1-03 | DOCX 包安全与健壮性 | 提升不可信文档输入安全和错误质量 |
-| P1 | P1-04 | 可选视觉 QA 闭环 | 降低“结构正确、视觉错误”风险 |
-| P1 | P1-05 | 文档元数据与设置 | 低成本补齐常见文档级能力 |
-| P1 | P1-06 | Bookmark 与 Field | 支持模板、页码、交叉引用、邮件合并 |
-| P1 | P1-07 | Styles 与 Numbering 模型 | 从直接格式升级为可维护文档设计系统 |
-| P1 | P1-08 | 批处理与提交语义 | 统一部分失败、停止策略和执行报告 |
-| P1 | P1-09 | 页眉页脚完整变体 | 补齐首页、奇偶页和字段页码 |
-| P1 | P1-10 | Footnote 与 Endnote | 补齐报告、论文、法律文档基础能力 |
-| P2 | P2-01 | SDT 与 Form Field | 支持结构化模板和表单文档 |
-| P2 | P2-02 | TOC 创作与刷新策略 | 从只读升级为可创建、可交付 |
-| P2 | P2-03 | Watermark 与 Textbox | 补齐常见版式元素 |
-| P2 | P2-04 | OMML Equation | 支持技术和学术文档公式 |
-| P2 | P2-05 | 文档保护与权限范围 | 支持只读、批注、修订和表单保护 |
-| P3 | P3-01 | Native Chart | 可编辑原生图表，复杂度高 |
-| P3 | P3-02 | Shape、Diagram、SmartArt | POI 支持薄，优先研究后决定 |
-| P3 | P3-03 | OLE 与嵌入对象 | 安全和兼容成本高，默认不进 core |
-| P3 | P3-04 | 可插拔扩展协议 | 为长尾格式/渲染器提供边界 |
+| P0 | P0-04 ✅ | 统一语义视图 | 为 Agent 提供低成本、可控上下文 |
+| P0 | P0-05   | 写操作安全协议 | 防止空操作、越界和意外批量修改 |
+| P0 | P0-06   | Agent 工作流技能文档 | 固化先读、再改、再验证的正确流程 |
+| P1 | P1-01   | 结构化问题诊断 | 统一质量检查、兼容性和损坏报告 |
+| P1 | P1-02   | 样式继承与国际化 | 提升中文、混排、RTL 和模板适配能力 |
+| P1 | P1-03   | DOCX 包安全与健壮性 | 提升不可信文档输入安全和错误质量 |
+| P1 | P1-04   | 可选视觉 QA 闭环 | 降低“结构正确、视觉错误”风险 |
+| P1 | P1-05   | 文档元数据与设置 | 低成本补齐常见文档级能力 |
+| P1 | P1-06   | Bookmark 与 Field | 支持模板、页码、交叉引用、邮件合并 |
+| P1 | P1-07   | Styles 与 Numbering 模型 | 从直接格式升级为可维护文档设计系统 |
+| P1 | P1-08   | 批处理与提交语义 | 统一部分失败、停止策略和执行报告 |
+| P1 | P1-09   | 页眉页脚完整变体 | 补齐首页、奇偶页和字段页码 |
+| P1 | P1-10   | Footnote 与 Endnote | 补齐报告、论文、法律文档基础能力 |
+| P2 | P2-01   | SDT 与 Form Field | 支持结构化模板和表单文档 |
+| P2 | P2-02   | TOC 创作与刷新策略 | 从只读升级为可创建、可交付 |
+| P2 | P2-03   | Watermark 与 Textbox | 补齐常见版式元素 |
+| P2 | P2-04   | OMML Equation | 支持技术和学术文档公式 |
+| P2 | P2-05   | 文档保护与权限范围 | 支持只读、批注、修订和表单保护 |
+| P3 | P3-01   | Native Chart | 可编辑原生图表，复杂度高 |
+| P3 | P3-02   | Shape、Diagram、SmartArt | POI 支持薄，优先研究后决定 |
+| P3 | P3-03   | OLE 与嵌入对象 | 安全和兼容成本高，默认不进 core |
+| P3 | P3-04   | 可插拔扩展协议 | 为长尾格式/渲染器提供边界 |
 
 ---
 
@@ -223,7 +223,7 @@ ToolResult<T> {
 
 ---
 
-### [ ] P0-04 统一语义视图
+### [x] P0-04 统一语义视图
 
 **目标**
 
@@ -240,19 +240,25 @@ ToolResult<T> {
 
 **实施清单**
 
-- [ ] 新增 `DocumentViewService`。
-- [ ] 复用 `SnapshotBuilder`，避免第二套遍历。
-- [ ] 输出强类型 DTO，不直接输出 POI 类型。
-- [ ] 支持最大条数、文本截断和按需展开 run，控制 Agent 上下文。
-- [ ] 每个视图包含 `snapshotVersion/sessionGeneration`。
-- [ ] toolkit 的 overview/read 工具逐步改为该服务的薄适配层。
+- [x] 新增 `DocumentViewService`。 → `com.non.docx.toolkit.view.DocumentViewService`
+- [x] 复用 `SnapshotBuilder`，避免第二套遍历。 → outline/text/stats 调 `build()` 一次投影
+- [x] 输出强类型 DTO，不直接输出 POI 类型。 → `view/dto/` 12 个不可变值对象，Jackson FIELD visibility 序列化
+- [x] 支持最大条数、文本截断和按需展开 run，控制 Agent 上下文。 → `ViewQuery`(maxItems=200/textTruncate=120/expandRuns=false)
+- [x] 每个视图包含 `snapshotVersion/sessionGeneration`。 → `ViewMeta` 内嵌于所有视图 DTO
+- [x] toolkit 的 overview/read 工具逐步改为该服务的薄适配层。 → `get_document_overview` 迁移为委托 `stats()`；新增 6 个 `view_*` 工具
 
 **验收**
 
-- [ ] 一个大型文档无需全文 dump 即可定位目标。
-- [ ] outline 中每项都带可用于后续修改的 ref。
-- [ ] stats 与真实文档结构一致。
-- [ ] 同一 snapshot 内所有视图引用一致。
+- [x] 一个大型文档无需全文 dump 即可定位目标。 → maxItems 截断 + truncated 标记
+- [x] outline 中每项都带可用于后续修改的 ref。 → OutlineEntry.ref 为 canonical 字符串
+- [x] stats 与真实文档结构一致。 → DocumentViewServiceTest.statsMatchesDocumentStructure
+- [x] 同一 snapshot 内所有视图引用一致。 → DocumentViewServiceTest.allViewsShareSameGeneration
+
+**范围边界（浅层先行，深项留给 P1）**
+
+- annotated 只给 run 直接格式（bold/italic/font/size/color），不解析样式链来源 → 留 P1-02。
+- issues 复用 `QualityCheckTools.CheckResult`，不建 DocumentIssue 模型和 issue code 目录 → 留 P1-01。
+- `read_paragraph`/`read_run` 保持不动（已 ref-aware 且工作正常）。
 
 **OfficeCLI 参考**
 
