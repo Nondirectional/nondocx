@@ -95,7 +95,8 @@ class DocxToolkitBatchTest {
             tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result =
-        tk.body.updateParagraphAlignment(docId, List.of(paragraphAlignment(0, "MIDDLE")), null, null);
+        tk.body.updateParagraphAlignment(
+            docId, List.of(paragraphAlignment(0, "MIDDLE")), null, null);
     assertThat(result).contains("仅支持 LEFT/CENTER/RIGHT/JUSTIFY").contains("成功 0 条,失败 1 条");
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("对齐: LEFT");
   }
@@ -482,7 +483,8 @@ class DocxToolkitBatchTest {
         com.non.docx.toolkit.ToolTestSupport.extractDocId(
             tk.session.openDocx(file.toAbsolutePath().toString()));
 
-    String result = tk.body.insertParagraph(docId, List.of(paragraphInsert(1, "表格前说明")), null, null);
+    String result =
+        tk.body.insertParagraph(docId, List.of(paragraphInsert(1, "表格前说明")), null, null);
     assertThat(result).contains("body 1").contains("表格前说明").contains("成功 1 条,失败 0 条");
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("开头");
     assertThat(tk.body.readParagraph(docId, List.of(1))).contains("表格前说明");

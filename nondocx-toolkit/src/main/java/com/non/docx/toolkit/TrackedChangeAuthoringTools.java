@@ -684,12 +684,12 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
     if ("INSERTED".equals(normalized)
         || "INSERT".equals(normalized)
         || "CELL_INS".equals(normalized)) {
-    return markCellsBatch(docId, author, cells, true, stopOnError);
+      return markCellsBatch(docId, author, cells, true, stopOnError);
     }
     if ("DELETED".equals(normalized)
         || "DELETE".equals(normalized)
         || "CELL_DEL".equals(normalized)) {
-    return markCellsBatch(docId, author, cells, false, stopOnError);
+      return markCellsBatch(docId, author, cells, false, stopOnError);
     }
     return renderInvalidArgument("change_type 仅支持 INSERTED 或 DELETED");
   }
@@ -883,6 +883,7 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
     int skipped = stoppedAt >= 0 ? list.size() - stoppedAt - 1 : 0;
     return renderBatchSummary(sb, ok, fail, skipped);
   }
+
   /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
   @Deprecated
   public String insertTrackedRun(String docId, String author, List<Map<String, Object>> edits) {

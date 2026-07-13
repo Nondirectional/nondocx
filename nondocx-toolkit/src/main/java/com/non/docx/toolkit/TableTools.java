@@ -1201,7 +1201,9 @@ public final class TableTools extends ToolkitToolContext {
               name = "on_error",
               description = "continue=失败不中断(默认),stop=遇首条失败即停",
               required = false)
-          @ParamCapability(type = ParamType.ENUM, enumValues = {"continue", "stop"})
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
           String onError,
       @ToolParam(
               name = "expected_generation",
@@ -1265,7 +1267,9 @@ public final class TableTools extends ToolkitToolContext {
               name = "on_error",
               description = "continue=失败不中断(默认),stop=遇首条失败即停",
               required = false)
-          @ParamCapability(type = ParamType.ENUM, enumValues = {"continue", "stop"})
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
           String onError,
       @ToolParam(
               name = "expected_generation",
@@ -1685,7 +1689,9 @@ public final class TableTools extends ToolkitToolContext {
               name = "on_error",
               description = "continue=失败不中断(默认),stop=遇首条失败即停",
               required = false)
-          @ParamCapability(type = ParamType.ENUM, enumValues = {"continue", "stop"})
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
           String onError,
       @ToolParam(
               name = "expected_generation",
@@ -1747,7 +1753,9 @@ public final class TableTools extends ToolkitToolContext {
               name = "on_error",
               description = "continue=失败不中断(默认),stop=遇首条失败即停",
               required = false)
-          @ParamCapability(type = ParamType.ENUM, enumValues = {"continue", "stop"})
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
           String onError,
       @ToolParam(
               name = "expected_generation",
@@ -2524,6 +2532,7 @@ public final class TableTools extends ToolkitToolContext {
     }
     throw new IllegalArgumentException("字段 " + key + " 不是数值:" + v);
   }
+
   /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
   @Deprecated
   public String updateTableCellShading(String docId, List<Map<String, Object>> edits) {

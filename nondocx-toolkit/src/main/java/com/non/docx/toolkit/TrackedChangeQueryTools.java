@@ -593,6 +593,7 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
     }
     return elementResolver(docId).resolve((RevisionRef) parsed);
   }
+
   /** 兼容旧 Java 调用；等价于未传 expected_generation。 */
   @Deprecated
   public String setTrackedChangesEnabled(String docId, boolean enabled) {
@@ -601,14 +602,11 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
 
   /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
   @Deprecated
-  public String applyTrackedChanges(
-      String docId, String action, String target, List<String> ids) {
+  public String applyTrackedChanges(String docId, String action, String target, List<String> ids) {
     return applyTrackedChanges(docId, action, target, ids, null, null);
   }
 
-  /**
-   * 兼容旧 Java 调用；scope=ALL 仍必须通过新 API 显式传 confirmAll=true。
-   */
+  /** 兼容旧 Java 调用；scope=ALL 仍必须通过新 API 显式传 confirmAll=true。 */
   @Deprecated
   public String applyTextRevisions(String docId, String action, String scope, String author) {
     return applyTextRevisions(docId, action, scope, author, false, null);

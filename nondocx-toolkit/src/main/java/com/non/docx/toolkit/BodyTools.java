@@ -1364,6 +1364,7 @@ public final class BodyTools extends ToolkitToolContext {
         "错误：超链接索引 " + hyperlinkIndex + " 越界（该段含 " + count + " 个超链接）",
         "使用 0.." + Math.max(0L, count - 1L));
   }
+
   /** 兼容旧 Java 调用；等价于未传 expected_generation。 */
   @Deprecated
   public String updateHyperlink(
