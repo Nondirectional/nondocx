@@ -199,6 +199,11 @@ final class AgentBridge {
               dispatch.id,
               "assignments",
               dispatch.views()));
+      log.info(
+          "DispatchPlan {} 分派 {} 个专家: {}",
+          dispatch.id,
+          dispatch.assignments.size(),
+          dispatch.views());
       List<CompletableFuture<ExpertPlan>> futures = new ArrayList<>();
       for (Assignment assignment : dispatch.assignments) {
         LlmDocxExpert expert = experts.get(assignment.toolGroup);
@@ -215,6 +220,11 @@ final class AgentBridge {
       for (CompletableFuture<ExpertPlan> future : futures) {
         if (cancelRequested.get()) throw new CancelledException();
         ExpertPlan plan = future.join();
+        log.info(
+            "专家计划回收: agent={}, planId={}, operations={}",
+            plan == null ? "null" : plan.agentName(),
+            plan == null ? "null" : plan.planId(),
+            plan == null ? 0 : plan.operations().size());
         if (plan != null && !plan.operations().isEmpty()) plans.add(plan);
       }
       List<String> sources = new ArrayList<>();
@@ -223,6 +233,11 @@ final class AgentBridge {
         sources.add(plan.planId());
         operations.addAll(plan.operations());
       }
+      log.info(
+          "DispatchPlan {} 合并完成: plans={}, operations={}",
+          dispatch.id,
+          plans.size(),
+          operations.size());
       if (operations.isEmpty()) {
         emit(ctx, frame("blocked", "message", "专家未产生有效操作，请继续协商。"));
         return;
@@ -284,7 +299,9 @@ final class AgentBridge {
     String prompt =
         "你是实施分派器。用户已明确授权。基于目标和快照，只输出 JSON："
             + "{\"assignments\":[{\"toolGroup\":\"body|table|header-toc|revision|quality\",\"task\":\"具体任务\"}]}。"
-            + "不得解释，不得输出未列出的工具组。\n目标："
+            + "不得解释，不得输出未列出的工具组。分派规则：正文中的标题、段落、文本、对齐和样式一律是 body；"
+            + "表格及单元格是 table；header-toc 仅用于页眉、页脚或目录；修订是 revision；检查是 quality。"
+            + "例如“在文档开头添加 H1 标题”必须分派 body，绝不能分派 header-toc。\n目标："
             + goal
             + "\n快照："
             + snapshot.overview();
@@ -314,6 +331,7 @@ final class AgentBridge {
         for (JsonNode item : array) {
           String group = item.path("toolGroup").asText("");
           String task = item.path("task").asText("");
+          group = normalizeDispatchGroup(group, task);
           if (TOOL_GROUPS.contains(group) && !task.isBlank())
             assignments.add(new Assignment(group, task));
         }
@@ -321,6 +339,18 @@ final class AgentBridge {
       log.warn("DispatchPlan 解析失败", e);
     }
     return new Dispatch("dispatch-" + dispatchSeq.incrementAndGet(), assignments);
+  }
+
+  /** 防止 LLM 把正文标题误解为页眉/目录领域；不改变真正页眉、页脚或目录请求。 */
+  private static String normalizeDispatchGroup(String group, String task) {
+    if (!"header-toc".equals(group) || task == null) return group;
+    String text = task.toLowerCase(java.util.Locale.ROOT);
+    boolean explicitHeaderDomain =
+        text.contains("页眉") || text.contains("页脚") || text.contains("目录");
+    boolean bodyHeading =
+        text.contains("文档开头") || text.contains("正文") || text.contains("h1") || text.contains("标题");
+    if (bodyHeading && !explicitHeaderDomain) return "body";
+    return group;
   }
 
   private Consumer<LlmTraceEvent> traceConsumer(Context ctx, String turnId) {
