@@ -265,24 +265,25 @@ final class LlmDocxExpert implements ExpertAgent {
   private String callLlm(String prompt, Consumer<LlmTraceEvent> traceCallback) {
     try {
       Message message = Message.user(prompt);
+      StringBuilder streamedContent = new StringBuilder();
       log.info("发送 LLM prompt:\n----- PROMPT BEGIN -----\n{}\n----- PROMPT END -----", prompt);
       ChatResult result =
           llm.streamChat(
               List.of(message),
               chunk -> {
-                if (traceCallback == null) {
-                  return;
-                }
                 // 逐 chunk 推 content / thinking delta
                 if (chunk.hasContent()) {
                   String delta = chunk.deltaContent();
                   if (delta != null && !delta.isEmpty()) {
-                    traceCallback.accept(LlmTraceEvent.ofContentDelta(name(), delta));
+                    streamedContent.append(delta);
+                    if (traceCallback != null) {
+                      traceCallback.accept(LlmTraceEvent.ofContentDelta(name(), delta));
+                    }
                   }
                 }
                 if (chunk.hasThinking()) {
                   String delta = chunk.deltaThinking();
-                  if (delta != null && !delta.isEmpty()) {
+                  if (delta != null && !delta.isEmpty() && traceCallback != null) {
                     traceCallback.accept(LlmTraceEvent.ofThinkingDelta(name(), delta));
                   }
                 }
@@ -291,7 +292,15 @@ final class LlmDocxExpert implements ExpertAgent {
       if (traceCallback != null) {
         traceCallback.accept(LlmTraceEvent.ofComplete(name(), result.tokenUsage()));
       }
-      return result.content().trim();
+      String streamed = streamedContent.toString().trim();
+      String completed = result.content() == null ? "" : result.content().trim();
+      String selected = streamed.isEmpty() ? completed : streamed;
+      log.info(
+          "LLM 输出来源: streamedChars={}, completedChars={}, 使用={}",
+          streamed.length(),
+          completed.length(),
+          streamed.isEmpty() ? "completed" : "streamed");
+      return selected;
     } catch (RuntimeException e) {
       // LLM 调用失败——返回空 plan，不阻断流程；推 failure 事件让前端标红
       log.warn("LLM 调用失败,返回空 plan: {}", rootMessage(e));
