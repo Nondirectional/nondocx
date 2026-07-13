@@ -2,11 +2,13 @@ package com.non.docx.demo;
 
 import com.non.chain.provider.DashscopeLLM;
 import com.non.chain.provider.LLM;
+import com.non.chain.provider.VLLM;
 import com.non.docx.toolkit.orchestration.DocxOrchestrator;
 import com.non.docx.toolkit.orchestration.Operation;
 import com.non.docx.toolkit.orchestration.PhaseCallback;
 import com.non.docx.toolkit.orchestration.RouterResult;
 import com.non.docx.toolkit.orchestration.RouterState;
+import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.body.BodyExecutor;
 import com.non.docx.toolkit.orchestration.specialist.HeaderTocExecutor;
 import com.non.docx.toolkit.orchestration.specialist.QualityExecutor;
@@ -20,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +36,11 @@ import org.slf4j.LoggerFactory;
  *
  * <ol>
  *   <li>{@code step(analyze)} —— 分析完成，推文档结构摘要
- *   <li>{@code step(plan)} —— 计划完成，推人话操作清单
+ *   <li>{@code trace(prompt)} —— LLM prompt 构造完成（PLAN 进行中，一次性）
+ *   <li>{@code trace(thinking_delta)} × N —— LLM thinking 逐字（PLAN 进行中）
+ *   <li>{@code trace(content_delta)} × N —— LLM response 逐字（PLAN 进行中）
+ *   <li>{@code trace(complete)} —— LLM 调用结束（成功/失败）
+ *   <li>{@code step(plan)} —— 计划完成，推人话操作清单（PLAN 完成后，与 trace 共存）
  *   <li>{@code step(commit)} —— 提交完成（或失败），推执行结果
  *   <li>{@code doc_changed} —— save 成功后刷新 OO（仅 DONE）
  *   <li>{@code done} —— 本轮结束
@@ -72,7 +79,7 @@ final class AgentBridge {
     }
 
     this.enabled = true;
-    LLM llm = new DashscopeLLM("qwen3.7-plus").maxCompletionTokens(65536).thinkingBudget(512);
+    LLM llm = new VLLM("http://10.100.10.21:40002/v1","qwen3-14b").maxCompletionTokens(65536).thinkingBudget(512);
     log.info("AgentBridge 初始化: model=qwen3.7-plus, maxTokens=65536, thinkingBudget=512");
 
     this.orchestrator = DocxOrchestrator.create();
@@ -128,7 +135,15 @@ final class AgentBridge {
             flush(ctx);
           };
 
-      RouterResult result = orchestrator.run(conversationId, message, callback);
+      // 用 trace 回调推送 LLM 内部过程（prompt / response delta / thinking delta / complete）
+      Consumer<LlmTraceEvent> traceCb =
+          trace -> {
+            Map<String, Object> traceFrame = buildTraceFrame(turnId, trace);
+            writeFrame(ctx, traceFrame);
+            flush(ctx);
+          };
+
+      RouterResult result = orchestrator.run(conversationId, message, callback, traceCb);
       log.info("编排完成: state={}", result.state());
       if (result.state() == RouterState.FAILED) {
         // FAILED 时打印失败详情，方便排查（commit 异常、操作执行失败等）
@@ -168,6 +183,46 @@ final class AgentBridge {
   }
 
   // ==================== step 帧构造 ====================
+
+  /**
+   * 把 {@link LlmTraceEvent} 转成前端可渲染的 trace 帧。
+   *
+   * <p>trace 帧与 step 帧是两种独立帧类型：step 是阶段级汇总，trace 是 token 级增量。前端按 {@code type}
+   * 分发。
+   */
+  private static Map<String, Object> buildTraceFrame(String turnId, LlmTraceEvent trace) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("type", "trace");
+    m.put("turnId", turnId);
+    m.put("agent", trace.agentName());
+    switch (trace.kind()) {
+      case PROMPT:
+        m.put("event", "prompt");
+        m.put("prompt", trace.prompt());
+        break;
+      case CONTENT_DELTA:
+        m.put("event", "content_delta");
+        m.put("delta", trace.delta());
+        break;
+      case THINKING_DELTA:
+        m.put("event", "thinking_delta");
+        m.put("delta", trace.delta());
+        break;
+      case COMPLETE:
+        m.put("event", "complete");
+        m.put("success", trace.success());
+        if (!trace.success()) {
+          m.put("error", trace.error());
+        }
+        if (trace.usage() != null) {
+          m.put("usage", trace.usage().toString());
+        }
+        break;
+      default:
+        m.put("event", trace.kind().name().toLowerCase(java.util.Locale.ROOT));
+    }
+    return m;
+  }
 
   /** 把 PhaseEvent 转成前端可渲染的 step 帧。 */
   private static Map<String, Object> buildStepFrame(String turnId, PhaseCallback.PhaseEvent event) {

@@ -186,6 +186,11 @@ function handleSseFrame(frame, assistantState) {
       handleStepFrame(data);
       break;
     }
+    case 'trace': {
+      // LLM 推理过程：prompt/response/thinking 的实时展示
+      handleTraceFrame(data);
+      break;
+    }
     case 'doc_changed': {
       // save 成功，用新 key 刷新 OnlyOffice
       console.log('[刷新] save 成功,新 key:', data.key);
@@ -300,8 +305,161 @@ function handleStepFrame(data) {
   scrollToBottom();
 }
 
-function appendAssistantText(state, delta) {
-  if (!delta) return;
+// ============ LLM trace 折叠区 ============
+//
+// trace 帧穿插在 PLAN 阶段进行中（prompt → thinking_delta×N → content_delta×N → complete），
+// 与阶段级 step 帧共存。前端在 progress-card 内为 LLM 推理过程渲染一个折叠区：
+//   <details class="trace-panel">
+//     <summary>LLM 推理过程</summary>
+//     <div class="trace-tabs"><button>Response</button><button>Thinking</button></div>
+//     <pre class="trace-prompt">...</pre>            ← prompt 只读块（可复制）
+//     <div class="trace-response"></div>             ← response 逐字追加
+//     <div class="trace-thinking" hidden></div>      ← thinking 逐字追加（默认隐藏）
+//   </details>
+// 按 turnId + agent 缓存，确保同一专家的 delta 续写同一区域。
+
+// trace 折叠区缓存：key = turnId + '|' + agent
+const tracePanels = {};
+
+function handleTraceFrame(data) {
+  const turnId = data.turnId;
+  const agent = data.agent || 'unknown';
+  const cacheKey = turnId + '|' + agent;
+
+  // 确保对应的 progress-card 存在（trace 可能在 step 之前到达）
+  if (!progressCards[turnId]) {
+    const card = document.createElement('div');
+    card.className = 'progress-card';
+    messagesEl.appendChild(card);
+    progressCards[turnId] = card;
+  }
+  const card = progressCards[turnId];
+
+  // 首次收到该专家的 trace：在卡片内创建折叠区
+  if (!tracePanels[cacheKey]) {
+    const panel = buildTracePanel(agent);
+    card.appendChild(panel.el);
+    tracePanels[cacheKey] = panel;
+  }
+  const panel = tracePanels[cacheKey];
+
+  switch (data.event) {
+    case 'prompt':
+      panel.promptEl.textContent = data.prompt || '';
+      break;
+    case 'content_delta':
+      panel.responseEl.append(document.createTextNode(data.delta || ''));
+      panel.showTab('response');
+      break;
+    case 'thinking_delta':
+      panel.thinkingEl.append(document.createTextNode(data.delta || ''));
+      break;
+    case 'complete':
+      if (data.success === false) {
+        panel.markError(data.error || 'LLM 调用失败');
+      } else {
+        panel.markComplete(data.usage);
+      }
+      break;
+  }
+  scrollToBottom();
+}
+
+/**
+ * 构建 trace 折叠区 DOM（含 response/thinking 双 tab 切换）。
+ *
+ * @param agent 专家名
+ * @return {{el, promptEl, responseEl, thinkingEl, showTab, markError, markComplete}}
+ */
+function buildTracePanel(agent) {
+  const el = document.createElement('details');
+  el.className = 'trace-panel';
+  el.open = true; // 默认展开，让用户第一时间看到推理过程
+
+  const summary = document.createElement('summary');
+  summary.className = 'trace-summary';
+  summary.textContent = '🧠 LLM 推理过程（' + agent + '）';
+  el.appendChild(summary);
+
+  // tab 切换条
+  const tabs = document.createElement('div');
+  tabs.className = 'trace-tabs';
+  const responseBtn = document.createElement('button');
+  responseBtn.type = 'button';
+  responseBtn.className = 'trace-tab active';
+  responseBtn.textContent = 'Response';
+  const thinkingBtn = document.createElement('button');
+  thinkingBtn.type = 'button';
+  thinkingBtn.className = 'trace-tab';
+  thinkingBtn.textContent = 'Thinking';
+  tabs.appendChild(responseBtn);
+  tabs.appendChild(thinkingBtn);
+  el.appendChild(tabs);
+
+  // prompt 只读块
+  const promptLabel = document.createElement('div');
+  promptLabel.className = 'trace-section-label';
+  promptLabel.textContent = 'Prompt';
+  el.appendChild(promptLabel);
+  const promptEl = document.createElement('pre');
+  promptEl.className = 'trace-prompt';
+  el.appendChild(promptEl);
+
+  // response 区域（默认激活）
+  const responseLabel = document.createElement('div');
+  responseLabel.className = 'trace-section-label';
+  responseLabel.textContent = 'Response';
+  el.appendChild(responseLabel);
+  const responseEl = document.createElement('div');
+  responseEl.className = 'trace-response trace-stream';
+  el.appendChild(responseEl);
+
+  // thinking 区域（默认隐藏）
+  const thinkingLabel = document.createElement('div');
+  thinkingLabel.className = 'trace-section-label';
+  thinkingLabel.textContent = 'Thinking';
+  thinkingLabel.hidden = true;
+  el.appendChild(thinkingLabel);
+  const thinkingEl = document.createElement('div');
+  thinkingEl.className = 'trace-thinking trace-stream';
+  thinkingEl.hidden = true;
+  el.appendChild(thinkingEl);
+
+  // tab 切换逻辑
+  responseBtn.addEventListener('click', () => showTab('response'));
+  thinkingBtn.addEventListener('click', () => showTab('thinking'));
+
+  function showTab(which) {
+    const isResponse = which === 'response';
+    responseBtn.classList.toggle('active', isResponse);
+    thinkingBtn.classList.toggle('active', !isResponse);
+    responseEl.hidden = !isResponse;
+    thinkingEl.hidden = isResponse;
+    responseLabel.hidden = !isResponse;
+    thinkingLabel.hidden = isResponse;
+  }
+
+  function markError(msg) {
+    summary.textContent = '❌ LLM 推理失败（' + agent + '）';
+    const errEl = document.createElement('div');
+    errEl.className = 'trace-error';
+    errEl.textContent = msg;
+    el.appendChild(errEl);
+  }
+
+  function markComplete(usage) {
+    if (usage) {
+      const u = document.createElement('div');
+      u.className = 'trace-usage';
+      u.textContent = usage;
+      el.appendChild(u);
+    }
+  }
+
+  return { el, promptEl, responseEl, thinkingEl, showTab, markError, markComplete };
+}
+
+function appendAssistantText(state, delta) {  if (!delta) return;
   if (!state.currentTextEl) {
     state.currentTextEl = appendMsg('assistant', '');
   }

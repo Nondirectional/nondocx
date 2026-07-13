@@ -2,6 +2,7 @@ package com.non.docx.demo;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.non.chain.ChatChunk;
 import com.non.chain.ChatResult;
 import com.non.chain.Message;
 import com.non.chain.provider.LLM;
@@ -10,6 +11,7 @@ import com.non.docx.toolkit.orchestration.DocumentSnapshot;
 import com.non.docx.toolkit.orchestration.ExpertPlan;
 import com.non.docx.toolkit.orchestration.Operation;
 import com.non.docx.toolkit.orchestration.agent.ExpertAgent;
+import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,7 +69,11 @@ final class LlmDocxExpert implements ExpertAgent {
   }
 
   @Override
-  public ExpertPlan plan(OrchestratorSession session, DocumentSnapshot snapshot, String intent) {
+  public ExpertPlan plan(
+      OrchestratorSession session,
+      DocumentSnapshot snapshot,
+      String intent,
+      Consumer<LlmTraceEvent> traceCallback) {
     log.debug(
         "开始规划: paragraphs={}, tables={}, intent={}",
         snapshot.overview().paragraphCount(),
@@ -75,7 +82,11 @@ final class LlmDocxExpert implements ExpertAgent {
     // 用 nonchain Agent 让 LLM 产出 JSON operation
     // Agent 无工具注册——只让它基于 snapshot 文本 + intent 纯推理产出 JSON（不调 toolkit）
     String prompt = buildPrompt(snapshot, intent);
-    String llmOutput = callLlm(prompt);
+    // 发 trace：prompt 一次性（供前端静态展示）
+    if (traceCallback != null) {
+      traceCallback.accept(LlmTraceEvent.ofPrompt(name(), prompt));
+    }
+    String llmOutput = callLlm(prompt, traceCallback);
     List<Operation> ops = parseOperations(llmOutput);
     log.info("规划完成: 产出 {} 条 operation", ops.size());
     for (Operation op : ops) {
@@ -234,15 +245,48 @@ final class LlmDocxExpert implements ExpertAgent {
     }
   }
 
-  /** 同步调用 LLM，返回原始文本输出。 */
-  private String callLlm(String prompt) {
+  /**
+   * 流式调用 LLM，返回原始文本输出。同时经 traceCallback 推送 response/thinking 增量与完成事件。
+   *
+   * <p>用 {@code streamChat} 而非阻塞 {@code chat}：让前端能逐字看到 LLM 的 response 与 thinking。 实际返回值用 {@link
+   * ChatResult#content()}（完整文本，与现状一致），trace delta 仅用于前端可视化。
+   */
+  private String callLlm(String prompt, Consumer<LlmTraceEvent> traceCallback) {
     try {
       Message message = Message.user(prompt);
-      ChatResult result = llm.chat(List.of(message));
+      log.info("发送 LLM prompt:\n----- PROMPT BEGIN -----\n{}\n----- PROMPT END -----", prompt);
+      ChatResult result =
+          llm.streamChat(
+              List.of(message),
+              chunk -> {
+                if (traceCallback == null) {
+                  return;
+                }
+                // 逐 chunk 推 content / thinking delta
+                if (chunk.hasContent()) {
+                  String delta = chunk.deltaContent();
+                  if (delta != null && !delta.isEmpty()) {
+                    traceCallback.accept(LlmTraceEvent.ofContentDelta(name(), delta));
+                  }
+                }
+                if (chunk.hasThinking()) {
+                  String delta = chunk.deltaThinking();
+                  if (delta != null && !delta.isEmpty()) {
+                    traceCallback.accept(LlmTraceEvent.ofThinkingDelta(name(), delta));
+                  }
+                }
+              });
+      // 成功完成：推 complete 事件（含 token 用量，供前端统计）
+      if (traceCallback != null) {
+        traceCallback.accept(LlmTraceEvent.ofComplete(name(), result.tokenUsage()));
+      }
       return result.content().trim();
     } catch (RuntimeException e) {
-      // LLM 调用失败——返回空 plan，不阻断流程
+      // LLM 调用失败——返回空 plan，不阻断流程；推 failure 事件让前端标红
       log.warn("LLM 调用失败,返回空 plan: {}", rootMessage(e));
+      if (traceCallback != null) {
+        traceCallback.accept(LlmTraceEvent.ofFailure(name(), rootMessage(e)));
+      }
       return "{\"operations\":[]}";
     }
   }

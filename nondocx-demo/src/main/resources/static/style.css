@@ -277,6 +277,125 @@ html, body {
   to { transform: rotate(360deg); }
 }
 
+/* ============ LLM trace 折叠区（嵌在进度卡内） ============ */
+
+.trace-panel {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e5e6eb;
+  font-size: 12px;
+}
+
+.trace-summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: #4e5969;
+  user-select: none;
+  list-style: none; /* 用 emoji 代替默认三角 */
+}
+
+.trace-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* tab 切换条 */
+.trace-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 8px 0 6px;
+  border-bottom: 1px solid #e5e6eb;
+}
+
+.trace-tab {
+  padding: 4px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #86909c;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.trace-tab.active {
+  color: #3370ff;
+  border-bottom-color: #3370ff;
+  font-weight: 500;
+}
+
+.trace-tab:hover:not(.active) {
+  color: #4e5969;
+}
+
+/* 小节标签（Prompt / Response / Thinking） */
+.trace-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #86909c;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 8px 0 4px;
+}
+
+/* prompt 只读块（可滚动、可复制） */
+.trace-prompt {
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f7f8fa;
+  border: 1px solid #e5e6eb;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #4e5969;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+/* response / thinking 流式追加区 */
+.trace-stream {
+  min-height: 20px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f7f8fa;
+  border: 1px solid #e5e6eb;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #1f2329;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.trace-thinking.trace-stream {
+  background: #fffbe6;
+  border-color: #ffe58f;
+  color: #6b5900;
+  font-style: italic;
+}
+
+/* 错误标记 */
+.trace-error {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #ffece8;
+  color: #f53f3f;
+  font-size: 12px;
+}
+
+/* token 用量 */
+.trace-usage {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #86909c;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
+
 /* ============ 输入区 ============ */
 .chat-input {
   display: flex;
