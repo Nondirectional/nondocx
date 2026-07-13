@@ -135,6 +135,12 @@ public final class ToolResultRenderer {
     if (result.matchedCount() != null) {
       envelope.put("matchedCount", result.matchedCount());
     }
+    if (result.changedCount() != null) {
+      envelope.put("changedCount", result.changedCount());
+    }
+    if (result.skippedCount() != null) {
+      envelope.put("skippedCount", result.skippedCount());
+    }
     if (!result.suggestion().isEmpty()) {
       envelope.put("suggestion", result.suggestion());
     }

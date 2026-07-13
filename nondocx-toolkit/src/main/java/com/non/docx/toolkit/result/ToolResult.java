@@ -26,6 +26,8 @@ public final class ToolResult<T> {
   private final List<ToolWarning> warnings;
   private final List<String> changedRefs;
   private final Integer matchedCount;
+  private final Integer changedCount;
+  private final Integer skippedCount;
   private final String suggestion;
 
   private ToolResult(
@@ -36,6 +38,8 @@ public final class ToolResult<T> {
       List<ToolWarning> warnings,
       List<String> changedRefs,
       Integer matchedCount,
+      Integer changedCount,
+      Integer skippedCount,
       String suggestion) {
     this.success = success;
     this.code = code;
@@ -44,6 +48,8 @@ public final class ToolResult<T> {
     this.warnings = warnings == null ? Collections.emptyList() : List.copyOf(warnings);
     this.changedRefs = changedRefs == null ? Collections.emptyList() : List.copyOf(changedRefs);
     this.matchedCount = matchedCount;
+    this.changedCount = changedCount;
+    this.skippedCount = skippedCount;
     this.suggestion = suggestion == null ? "" : suggestion;
   }
 
@@ -56,7 +62,8 @@ public final class ToolResult<T> {
    * @param message 中文消息
    */
   public static <T> ToolResult<T> ok(T data, String message) {
-    return new ToolResult<>(true, ToolResultCode.OK, message, data, null, null, null, null);
+    return new ToolResult<>(
+        true, ToolResultCode.OK, message, data, null, null, null, null, null, null);
   }
 
   /**
@@ -67,7 +74,8 @@ public final class ToolResult<T> {
    * @param changedRefs 写操作实际影响的 canonical ref
    */
   public static <T> ToolResult<T> ok(T data, String message, List<String> changedRefs) {
-    return new ToolResult<>(true, ToolResultCode.OK, message, data, null, changedRefs, null, null);
+    return new ToolResult<>(
+        true, ToolResultCode.OK, message, data, null, changedRefs, null, null, null, null);
   }
 
   /**
@@ -81,12 +89,41 @@ public final class ToolResult<T> {
   public static <T> ToolResult<T> ok(
       T data, String message, Integer matchedCount, List<String> changedRefs) {
     return new ToolResult<>(
-        true, ToolResultCode.OK, message, data, null, changedRefs, matchedCount, null);
+        true, ToolResultCode.OK, message, data, null, changedRefs, matchedCount, null, null, null);
+  }
+
+  /**
+   * 成功结果，带匹配数、改动数和变更 ref。
+   *
+   * @param data 机器可读负载
+   * @param message 中文消息
+   * @param matchedCount 多目标匹配数
+   * @param changedCount 实际改动数（≤ matchedCount）
+   * @param changedRefs 写操作实际影响的 canonical ref
+   */
+  public static <T> ToolResult<T> ok(
+      T data,
+      String message,
+      Integer matchedCount,
+      Integer changedCount,
+      List<String> changedRefs) {
+    return new ToolResult<>(
+        true,
+        ToolResultCode.OK,
+        message,
+        data,
+        null,
+        changedRefs,
+        matchedCount,
+        changedCount,
+        null,
+        null);
   }
 
   /** 无 data 的成功结果。 */
   public static ToolResult<Void> ok(String message) {
-    return new ToolResult<>(true, ToolResultCode.OK, message, null, null, null, null, null);
+    return new ToolResult<>(
+        true, ToolResultCode.OK, message, null, null, null, null, null, null, null);
   }
 
   // ===== 失败工厂 =====
@@ -99,7 +136,7 @@ public final class ToolResult<T> {
    */
   public static ToolResult<Void> fail(ToolResultCode code, String message) {
     validateFailCode(code);
-    return new ToolResult<>(false, code, message, null, null, null, null, null);
+    return new ToolResult<>(false, code, message, null, null, null, null, null, null, null);
   }
 
   /**
@@ -111,7 +148,7 @@ public final class ToolResult<T> {
    */
   public static ToolResult<Void> fail(ToolResultCode code, String message, String suggestion) {
     validateFailCode(code);
-    return new ToolResult<>(false, code, message, null, null, null, null, suggestion);
+    return new ToolResult<>(false, code, message, null, null, null, null, null, null, suggestion);
   }
 
   // ===== 部分失败工厂 =====
@@ -125,7 +162,16 @@ public final class ToolResult<T> {
    */
   public static <T> ToolResult<T> partial(T data, String message, List<ToolWarning> warnings) {
     return new ToolResult<>(
-        false, ToolResultCode.PARTIAL_FAILURE, message, data, warnings, null, null, null);
+        false,
+        ToolResultCode.PARTIAL_FAILURE,
+        message,
+        data,
+        warnings,
+        null,
+        null,
+        null,
+        null,
+        null);
   }
 
   /**
@@ -139,7 +185,31 @@ public final class ToolResult<T> {
   public static <T> ToolResult<T> partial(
       ToolResultCode code, T data, String message, List<ToolWarning> warnings) {
     validateFailCode(code);
-    return new ToolResult<>(false, code, message, data, warnings, null, null, null);
+    return new ToolResult<>(false, code, message, data, warnings, null, null, null, null, null);
+  }
+
+  /**
+   * 部分失败结果，带计数（用于批量 stopOnError 场景）。
+   *
+   * @param code 错误码（不可为 OK）
+   * @param data 机器可读负载
+   * @param message 中文消息
+   * @param warnings 警告列表
+   * @param matchedCount 匹配的目标数
+   * @param changedCount 实际改动数
+   * @param skippedCount 未执行数（stop 模式）
+   */
+  public static <T> ToolResult<T> partial(
+      ToolResultCode code,
+      T data,
+      String message,
+      List<ToolWarning> warnings,
+      Integer matchedCount,
+      Integer changedCount,
+      Integer skippedCount) {
+    validateFailCode(code);
+    return new ToolResult<>(
+        false, code, message, data, warnings, null, matchedCount, changedCount, skippedCount, null);
   }
 
   // ===== 带 suggestion 的成功 =====
@@ -152,7 +222,8 @@ public final class ToolResult<T> {
    * @param suggestion 建议
    */
   public static <T> ToolResult<T> okWith(T data, String message, String suggestion) {
-    return new ToolResult<>(true, ToolResultCode.OK, message, data, null, null, null, suggestion);
+    return new ToolResult<>(
+        true, ToolResultCode.OK, message, data, null, null, null, null, null, suggestion);
   }
 
   // ===== 访问器 =====
@@ -192,6 +263,16 @@ public final class ToolResult<T> {
     return matchedCount;
   }
 
+  /** 实际改动数（≤ matchedCount），无则为 null。 */
+  public Integer changedCount() {
+    return changedCount;
+  }
+
+  /** 未执行数（stopOnError 模式下因前面失败而未执行的条目数），无则为 null。 */
+  public Integer skippedCount() {
+    return skippedCount;
+  }
+
   /** 可重试建议，无则为空字符串。 */
   public String suggestion() {
     return suggestion;
@@ -205,7 +286,17 @@ public final class ToolResult<T> {
   public ToolResult<T> withChangedRef(String ref) {
     List<String> refs = new ArrayList<>(changedRefs);
     refs.add(ref);
-    return new ToolResult<>(success, code, message, data, warnings, refs, matchedCount, suggestion);
+    return new ToolResult<>(
+        success,
+        code,
+        message,
+        data,
+        warnings,
+        refs,
+        matchedCount,
+        changedCount,
+        skippedCount,
+        suggestion);
   }
 
   /**
@@ -217,7 +308,16 @@ public final class ToolResult<T> {
     List<ToolWarning> list = new ArrayList<>(warnings);
     list.add(warning);
     return new ToolResult<>(
-        success, code, message, data, list, changedRefs, matchedCount, suggestion);
+        success,
+        code,
+        message,
+        data,
+        list,
+        changedRefs,
+        matchedCount,
+        changedCount,
+        skippedCount,
+        suggestion);
   }
 
   /**
@@ -228,7 +328,16 @@ public final class ToolResult<T> {
    */
   public <R> ToolResult<R> mapData(R newData) {
     return new ToolResult<>(
-        success, code, message, newData, warnings, changedRefs, matchedCount, suggestion);
+        success,
+        code,
+        message,
+        newData,
+        warnings,
+        changedRefs,
+        matchedCount,
+        changedCount,
+        skippedCount,
+        suggestion);
   }
 
   private static void validateFailCode(ToolResultCode code) {
@@ -252,13 +361,24 @@ public final class ToolResult<T> {
         && warnings.equals(that.warnings)
         && changedRefs.equals(that.changedRefs)
         && Objects.equals(matchedCount, that.matchedCount)
+        && Objects.equals(changedCount, that.changedCount)
+        && Objects.equals(skippedCount, that.skippedCount)
         && suggestion.equals(that.suggestion);
   }
 
   @Override
   public int hashCode() {
     return Objects.hash(
-        success, code, message, data, warnings, changedRefs, matchedCount, suggestion);
+        success,
+        code,
+        message,
+        data,
+        warnings,
+        changedRefs,
+        matchedCount,
+        changedCount,
+        skippedCount,
+        suggestion);
   }
 
   @Override

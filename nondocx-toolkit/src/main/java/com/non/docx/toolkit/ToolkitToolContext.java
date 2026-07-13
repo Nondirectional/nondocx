@@ -178,6 +178,53 @@ public abstract class ToolkitToolContext {
     return ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, message);
   }
 
+  // ==================== 写安全协议工厂（P0-05） ====================
+
+  /** 空更新（无可写字段）的结构化失败结果（ToolResult 对象）。 */
+  static ToolResult<Void> noChangesAppliedResult(String message) {
+    return ToolResult.fail(ToolResultCode.NO_CHANGES_APPLIED, message, "至少提供一个可写字段");
+  }
+
+  /** 渲染空更新的结构化失败结果（双段格式）。 */
+  static String renderNoChangesApplied(String message) {
+    return ToolResultRenderer.render(noChangesAppliedResult(message));
+  }
+
+  /**
+   * generation 不匹配的结构化失败结果（ToolResult 对象）。
+   *
+   * @param expected 调用方持有的 generation
+   * @param actual 当前会话 generation
+   */
+  static ToolResult<Void> generationMismatchResult(long expected, long actual) {
+    return ToolResult.fail(
+        ToolResultCode.GENERATION_MISMATCH,
+        "expected_generation=" + expected + " 与当前 generation=" + actual + " 不符",
+        "重新读取文档获取最新 generation");
+  }
+
+  /** 渲染 generation 不匹配的结构化失败结果（双段格式）。 */
+  static String renderGenerationMismatch(long expected, long actual) {
+    return ToolResultRenderer.render(generationMismatchResult(expected, actual));
+  }
+
+  /**
+   * 校验 expected_generation（P0-05 写安全协议）。
+   *
+   * <p>Agent 通过 {@code expected_generation} 参数传入其持有的 session generation， 防止旧快照驱动修改 reopen 后的新文档状态。
+   *
+   * @param docId 文档句柄
+   * @param expectedGeneration 调用方持有的 generation；{@code null} 跳过校验（向后兼容）
+   * @return {@code true} 通过（或跳过）；{@code false} 不匹配
+   */
+  boolean checkExpectedGeneration(String docId, Integer expectedGeneration) {
+    if (expectedGeneration == null) {
+      return true;
+    }
+    long current = generations.getOrDefault(docId, 1L);
+    return expectedGeneration.longValue() == current;
+  }
+
   // ==================== 无状态纯函数（入参归一化 / 边界 / 异常） ====================
   //
   // 背景:nonchain 0.8.4 把 LLM 传来的 JSON 数组还原成 ArrayList<LinkedHashMap>,
