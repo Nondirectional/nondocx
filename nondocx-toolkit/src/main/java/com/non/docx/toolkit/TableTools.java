@@ -29,6 +29,7 @@ import com.non.docx.toolkit.result.BatchItemResult;
 import com.non.docx.toolkit.result.ToolResult;
 import com.non.docx.toolkit.result.ToolResultCode;
 import com.non.docx.toolkit.result.ToolResultRenderer;
+import com.non.docx.toolkit.result.ToolWarning;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -358,11 +359,15 @@ public final class TableTools extends ToolkitToolContext {
   /**
    * 单元格级写工具的批量循环骨架（ToolResult 版）。
    *
-   * <p>负责：解析坐标 + locateCell 边界检查 + 调 lambda 写入 + collect-errors 汇总。全部成功返回 OK + matchedCount；有失败返回
-   * PARTIAL_FAILURE，{@code data} 为 {@code List<BatchItemResult>}。
+   * <p>负责：解析坐标 + locateCell 边界检查 + 调 lambda 写入 + collect-errors 汇总。全部成功返回 OK +
+   * matchedCount/changedCount；有失败返回 PARTIAL_FAILURE，{@code data} 为 {@code List<BatchItemResult>}。
+   * {@code stopOnError=true} 时遇第一条失败即停，未执行条目计入 {@code skippedCount}。
    */
   private static ToolResult<List<BatchItemResult<Void>>> applyCellEditResults(
-      Document doc, List<Map<String, Object>> edits, CellEditResultAction action) {
+      Document doc,
+      List<Map<String, Object>> edits,
+      boolean stopOnError,
+      CellEditResultAction action) {
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
       return ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空")
@@ -372,6 +377,7 @@ public final class TableTools extends ToolkitToolContext {
     List<BatchItemResult<Void>> items = new ArrayList<>();
     int ok = 0;
     int fail = 0;
+    int stoppedAt = -1;
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -384,6 +390,10 @@ public final class TableTools extends ToolkitToolContext {
         ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
         items.add(BatchItemResult.of(i, r));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -401,6 +411,10 @@ public final class TableTools extends ToolkitToolContext {
         ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
         items.add(BatchItemResult.of(i, r));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
@@ -408,6 +422,10 @@ public final class TableTools extends ToolkitToolContext {
         sb.append(tag).append(locate.message());
         items.add(BatchItemResult.of(i, locate));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       var cell = locateCellObj(doc, tableIndex, rowIndex, cellIndex);
@@ -423,13 +441,25 @@ public final class TableTools extends ToolkitToolContext {
         ok++;
       } else {
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
       }
     }
+    int skipped = stoppedAt >= 0 ? list.size() - stoppedAt - 1 : 0;
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
     if (fail == 0) {
-      return ToolResult.ok(items, sb.toString(), ok, null);
+      return ToolResult.ok(items, sb.toString(), ok, ok, null);
     }
-    return ToolResult.partial(items, sb.toString(), List.of());
+    return ToolResult.partial(
+        ToolResultCode.PARTIAL_FAILURE,
+        items,
+        sb.toString(),
+        List.of(),
+        ok + fail,
+        ok,
+        skipped > 0 ? skipped : null);
   }
 
   /** 单条行编辑动作（ToolResult 边界），由各写工具 lambda 提供。 */
@@ -440,7 +470,10 @@ public final class TableTools extends ToolkitToolContext {
 
   /** 行级写工具的批量循环骨架（ToolResult 版），与 {@link #applyCellEditResults} 对称。 */
   private static ToolResult<List<BatchItemResult<Void>>> applyRowEditResults(
-      Document doc, List<Map<String, Object>> edits, RowEditResultAction action) {
+      Document doc,
+      List<Map<String, Object>> edits,
+      boolean stopOnError,
+      RowEditResultAction action) {
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
       return ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空")
@@ -450,6 +483,7 @@ public final class TableTools extends ToolkitToolContext {
     List<BatchItemResult<Void>> items = new ArrayList<>();
     int ok = 0;
     int fail = 0;
+    int stoppedAt = -1;
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -462,6 +496,10 @@ public final class TableTools extends ToolkitToolContext {
         ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
         items.add(BatchItemResult.of(i, r));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -477,6 +515,10 @@ public final class TableTools extends ToolkitToolContext {
         ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
         items.add(BatchItemResult.of(i, r));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       var tables = doc.tables();
@@ -486,6 +528,10 @@ public final class TableTools extends ToolkitToolContext {
         ToolResult<Void> r = indexErrorResult("表格索引", tableIndex, tables.size());
         items.add(BatchItemResult.of(i, r));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       var rows = tables.get(tableIndex).rows();
@@ -495,6 +541,10 @@ public final class TableTools extends ToolkitToolContext {
         ToolResult<Void> r = indexErrorResult("行索引", rowIndex, rows.size());
         items.add(BatchItemResult.of(i, r));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       Row row = rows.get(rowIndex);
@@ -510,13 +560,25 @@ public final class TableTools extends ToolkitToolContext {
         ok++;
       } else {
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
       }
     }
+    int skipped = stoppedAt >= 0 ? list.size() - stoppedAt - 1 : 0;
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
     if (fail == 0) {
-      return ToolResult.ok(items, sb.toString(), ok, null);
+      return ToolResult.ok(items, sb.toString(), ok, ok, null);
     }
-    return ToolResult.partial(items, sb.toString(), List.of());
+    return ToolResult.partial(
+        ToolResultCode.PARTIAL_FAILURE,
+        items,
+        sb.toString(),
+        List.of(),
+        ok + fail,
+        ok,
+        skipped > 0 ? skipped : null);
   }
 
   /** 单条段落编辑动作（ToolResult 边界），由各段落样式工具 lambda 提供。 */
@@ -527,7 +589,10 @@ public final class TableTools extends ToolkitToolContext {
 
   /** 单元格内段落级写工具的批量循环骨架（ToolResult 版）。 */
   private static ToolResult<List<BatchItemResult<Void>>> applyCellParagraphEditResults(
-      Document doc, List<Map<String, Object>> edits, CellParagraphEditResultAction action) {
+      Document doc,
+      List<Map<String, Object>> edits,
+      boolean stopOnError,
+      CellParagraphEditResultAction action) {
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
       return ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空")
@@ -537,6 +602,7 @@ public final class TableTools extends ToolkitToolContext {
     List<BatchItemResult<Void>> items = new ArrayList<>();
     int ok = 0;
     int fail = 0;
+    int stoppedAt = -1;
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -549,6 +615,10 @@ public final class TableTools extends ToolkitToolContext {
         ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
         items.add(BatchItemResult.of(i, r));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -568,6 +638,10 @@ public final class TableTools extends ToolkitToolContext {
         ToolResult<Void> r = ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg);
         items.add(BatchItemResult.of(i, r));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
@@ -575,6 +649,10 @@ public final class TableTools extends ToolkitToolContext {
         sb.append(tag).append(locate.message());
         items.add(BatchItemResult.of(i, locate));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       var paras = locateCellObj(doc, tableIndex, rowIndex, cellIndex).paragraphs();
@@ -584,6 +662,10 @@ public final class TableTools extends ToolkitToolContext {
         ToolResult<Void> r = indexErrorResult("单元格内段落索引", paragraphIndex, paras.size());
         items.add(BatchItemResult.of(i, r));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       Paragraph p = paras.get(paragraphIndex);
@@ -599,13 +681,25 @@ public final class TableTools extends ToolkitToolContext {
         ok++;
       } else {
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
       }
     }
+    int skipped = stoppedAt >= 0 ? list.size() - stoppedAt - 1 : 0;
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
     if (fail == 0) {
-      return ToolResult.ok(items, sb.toString(), ok, null);
+      return ToolResult.ok(items, sb.toString(), ok, ok, null);
     }
-    return ToolResult.partial(items, sb.toString(), List.of());
+    return ToolResult.partial(
+        ToolResultCode.PARTIAL_FAILURE,
+        items,
+        sb.toString(),
+        List.of(),
+        ok + fail,
+        ok,
+        skipped > 0 ? skipped : null);
   }
 
   /**
@@ -1087,7 +1181,8 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "批量给表格单元格设置纯色背景底纹(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int)、cell_index(int)、fill(string,十六进制 RGB 如 F1F5F9,不带 #)。"
-              + "强制纯色填充(跨 Word/WPS 安全,不为黑块)。单个对象用长度 1 的数组。部分失败不中断。")
+              + "强制纯色填充(跨 Word/WPS 安全,不为黑块)。单个对象用长度 1 的数组。部分失败不中断。"
+              + "可选 on_error=stop 遇首条失败即停;expected_generation 防止旧快照修改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "cell")
   public String updateTableCellShading(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -1101,15 +1196,31 @@ public final class TableTools extends ToolkitToolContext {
           @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.cell_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.fill", type = ParamType.STRING)
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(type = ParamType.ENUM, enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     return ToolResultRenderer.render(
         applyCellEditResults(
             doc,
             edits,
+            "stop".equalsIgnoreCase(onError),
             (m, cell) -> {
               String fill = getStr(m, "fill");
               cell.shading(fill);
@@ -1131,7 +1242,8 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "批量设置表格单元格内容的垂直对齐(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int)、cell_index(int)、vertical_align(string,TOP/CENTER/BOTTOM,大小写不敏感)。"
-              + "注意:固定(exact)行高时 CENTER/BOTTOM 在 WPS 可能不生效。单个对象用长度 1 的数组。部分失败不中断。")
+              + "注意:固定(exact)行高时 CENTER/BOTTOM 在 WPS 可能不生效。单个对象用长度 1 的数组。部分失败不中断。"
+              + "可选 on_error=stop 遇首条失败即停;expected_generation 防止旧快照修改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "cell", needsRecalc = true)
   public String updateTableCellVerticalAlign(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -1148,15 +1260,31 @@ public final class TableTools extends ToolkitToolContext {
               path = "edits.vertical_align",
               type = ParamType.ENUM,
               enumValues = {"TOP", "CENTER", "BOTTOM"})
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(type = ParamType.ENUM, enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     return ToolResultRenderer.render(
         applyCellEditResults(
             doc,
             edits,
+            "stop".equalsIgnoreCase(onError),
             (m, cell) -> {
               VerticalAlign va = parseVerticalAlign(getStr(m, "vertical_align"));
               cell.verticalAlign(va);
@@ -1272,9 +1400,9 @@ public final class TableTools extends ToolkitToolContext {
       Run run = runs.get(runIndex);
       List<String> changed = applyRunStyleFields(m, run);
       if (changed == null) {
-        String msg = "错误:未提供任何样式字段";
+        String msg = "未提供任何样式字段";
         sb.append(tag).append(msg);
-        items.add(BatchItemResult.of(i, ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, msg)));
+        items.add(BatchItemResult.of(i, noChangesAppliedResult(msg)));
         fail++;
         continue;
       }
@@ -1538,7 +1666,8 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "批量标记/取消表格表头行(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int,0 起)、header_row(bool,true=标记表头行跨页重复、false=取消)。"
-              + "单个对象用长度 1 的数组。部分失败不中断。")
+              + "单个对象用长度 1 的数组。部分失败不中断。"
+              + "可选 on_error=stop 遇首条失败即停;expected_generation 防止旧快照修改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "row")
   public String updateTableHeaderRow(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -1551,15 +1680,31 @@ public final class TableTools extends ToolkitToolContext {
           @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.header_row", type = ParamType.BOOLEAN)
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(type = ParamType.ENUM, enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     return ToolResultRenderer.render(
         applyRowEditResults(
             doc,
             edits,
+            "stop".equalsIgnoreCase(onError),
             (m, row) -> {
               boolean on = boolVal(m.get("header_row"));
               row.headerRow(on);
@@ -1583,7 +1728,8 @@ public final class TableTools extends ToolkitToolContext {
       description =
           "批量标记/取消行的禁止跨页拆分(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "table_index(int)、row_index(int,0 起)、cant_split(bool,true=禁止跨页拆分、false=允许)。"
-              + "单个对象用长度 1 的数组。部分失败不中断。")
+              + "单个对象用长度 1 的数组。部分失败不中断。"
+              + "可选 on_error=stop 遇首条失败即停;expected_generation 防止旧快照修改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "row")
   public String updateTableRowCantSplit(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -1596,15 +1742,31 @@ public final class TableTools extends ToolkitToolContext {
           @NestedParamCapability(path = "edits.table_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.row_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.cant_split", type = ParamType.BOOLEAN)
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(type = ParamType.ENUM, enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     return ToolResultRenderer.render(
         applyRowEditResults(
             doc,
             edits,
+            "stop".equalsIgnoreCase(onError),
             (m, row) -> {
               boolean on = boolVal(m.get("cant_split"));
               row.cantSplit(on);
@@ -1907,7 +2069,8 @@ public final class TableTools extends ToolkitToolContext {
       name = "remove_table_row",
       description =
           "删除指定表格的某行(改完需 save_docx 落盘)。参数:table_index(int,表格索引 0 起)、row_index(int,行索引 0 起)。"
-              + "注意:删行后后续行索引前移,批量删建议从大到小删或删后重读行数。")
+              + "注意:删行后后续行索引前移,批量删建议从大到小删或删后重读行数。"
+              + "可选 expected_generation 防止旧快照修改新状态。返回含 index_shifted warning。")
   @ToolCapability(operation = CapabilityOperation.REMOVE, element = "row")
   public String removeTableRow(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -1917,10 +2080,19 @@ public final class TableTools extends ToolkitToolContext {
           int tableIndex,
       @ToolParam(name = "row_index", description = "行索引(0 起)")
           @ParamCapability(type = ParamType.INTEGER)
-          int rowIndex) {
+          int rowIndex,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     var tables = doc.tables();
     if (outOfBounds(tableIndex, tables.size())) {
@@ -1937,9 +2109,10 @@ public final class TableTools extends ToolkitToolContext {
           ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e)));
     }
     int remain = tables.get(tableIndex).rows().size();
-    return ToolResultRenderer.render(
-        ToolResult.ok(
-            "已删除表格 " + tableIndex + " 第 " + rowIndex + " 行,剩余 " + remain + " 行(后续行索引已前移)"));
+    ToolResult<Void> result =
+        ToolResult.ok("已删除表格 " + tableIndex + " 第 " + rowIndex + " 行,剩余 " + remain + " 行(后续行索引已前移)")
+            .withWarning(ToolWarning.of("index_shifted", "删除行后该表后续行索引前移,批量删除请从大到小执行或删后重读行数"));
+    return ToolResultRenderer.render(result);
   }
 
   /**
@@ -1997,7 +2170,8 @@ public final class TableTools extends ToolkitToolContext {
       name = "remove_table_cell",
       description =
           "删除指定单元格(改完需 save_docx 落盘)。参数:table_index(int)、row_index(int)、cell_index(int,单元格索引 0 起)。"
-              + "注意:删单元格后同行后续单元格索引前移。")
+              + "注意:删单元格后同行后续单元格索引前移。"
+              + "可选 expected_generation 防止旧快照修改新状态。返回含 index_shifted warning。")
   @ToolCapability(operation = CapabilityOperation.REMOVE, element = "cell")
   public String removeTableCell(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -2010,10 +2184,19 @@ public final class TableTools extends ToolkitToolContext {
           int rowIndex,
       @ToolParam(name = "cell_index", description = "单元格索引(0 起)")
           @ParamCapability(type = ParamType.INTEGER)
-          int cellIndex) {
+          int cellIndex,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return ToolResultRenderer.render(docNotFoundResult(docId));
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     ToolResult<Void> locate = locateCellResult(doc, tableIndex, rowIndex, cellIndex);
     if (!locate.success()) {
@@ -2027,17 +2210,19 @@ public final class TableTools extends ToolkitToolContext {
           ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "错误:" + rootMessage(e)));
     }
     int remain = tablesRow(doc, tableIndex, rowIndex).cells().size();
-    return ToolResultRenderer.render(
+    ToolResult<Void> result =
         ToolResult.ok(
-            "已删除表格 "
-                + tableIndex
-                + " 行 "
-                + rowIndex
-                + " 第 "
-                + cellIndex
-                + " 单元格,剩余 "
-                + remain
-                + " 个(后续单元格索引已前移)"));
+                "已删除表格 "
+                    + tableIndex
+                    + " 行 "
+                    + rowIndex
+                    + " 第 "
+                    + cellIndex
+                    + " 单元格,剩余 "
+                    + remain
+                    + " 个(后续单元格索引已前移)")
+            .withWarning(ToolWarning.of("index_shifted", "删除单元格后同行后续单元格索引前移,批量删除请从大到小执行或删后重读行数"));
+    return ToolResultRenderer.render(result);
   }
 
   /**
@@ -2082,6 +2267,7 @@ public final class TableTools extends ToolkitToolContext {
         applyCellParagraphEditResults(
             doc,
             edits,
+            false,
             (m, p) -> {
               boolean clear = boolVal(m.get("clear"));
               if (clear) {
@@ -2135,6 +2321,7 @@ public final class TableTools extends ToolkitToolContext {
         applyCellParagraphEditResults(
             doc,
             edits,
+            false,
             (m, p) -> {
               int left = getInt(m, "left_twips");
               int firstLine = getInt(m, "first_line_twips");
@@ -2179,6 +2366,7 @@ public final class TableTools extends ToolkitToolContext {
         applyCellParagraphEditResults(
             doc,
             edits,
+            false,
             (m, p) -> {
               double ls = getDouble(m, "line_spacing");
               p.lineSpacing(ls);
@@ -2229,6 +2417,7 @@ public final class TableTools extends ToolkitToolContext {
         applyCellParagraphEditResults(
             doc,
             edits,
+            false,
             (m, p) -> {
               boolean clear = boolVal(m.get("clear"));
               if (clear) {
@@ -2278,6 +2467,7 @@ public final class TableTools extends ToolkitToolContext {
         applyCellParagraphEditResults(
             doc,
             edits,
+            false,
             (m, p) -> {
               String fill = getStr(m, "fill");
               p.shading(fill);
@@ -2333,5 +2523,40 @@ public final class TableTools extends ToolkitToolContext {
       throw new IllegalArgumentException("缺少必填字段 " + key);
     }
     throw new IllegalArgumentException("字段 " + key + " 不是数值:" + v);
+  }
+  /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
+  @Deprecated
+  public String updateTableCellShading(String docId, List<Map<String, Object>> edits) {
+    return updateTableCellShading(docId, edits, null, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
+  @Deprecated
+  public String updateTableCellVerticalAlign(String docId, List<Map<String, Object>> edits) {
+    return updateTableCellVerticalAlign(docId, edits, null, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
+  @Deprecated
+  public String updateTableHeaderRow(String docId, List<Map<String, Object>> edits) {
+    return updateTableHeaderRow(docId, edits, null, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
+  @Deprecated
+  public String updateTableRowCantSplit(String docId, List<Map<String, Object>> edits) {
+    return updateTableRowCantSplit(docId, edits, null, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于未传 expected_generation。 */
+  @Deprecated
+  public String removeTableRow(String docId, int tableIndex, int rowIndex) {
+    return removeTableRow(docId, tableIndex, rowIndex, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于未传 expected_generation。 */
+  @Deprecated
+  public String removeTableCell(String docId, int tableIndex, int rowIndex, int cellIndex) {
+    return removeTableCell(docId, tableIndex, rowIndex, cellIndex, null);
   }
 }

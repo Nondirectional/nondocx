@@ -95,17 +95,27 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       name = "set_tracked_changes_enabled",
       description =
           "开启或关闭修订模式开关(enabled=true 写入 <w:trackChanges/>,=false 移除)。"
-              + "用于文档交还人接力编辑时让后续手动改动也被追踪;对 Agent 已创作的修订无影响。幂等。")
+              + "用于文档交还人接力编辑时让后续手动改动也被追踪;对 Agent 已创作的修订无影响。幂等。"
+              + "可选 expected_generation 防止旧快照修改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "document")
   public String setTrackedChangesEnabled(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
           String docId,
       @ToolParam(name = "enabled", description = "true=开启修订模式,false=关闭")
           @ParamCapability(type = ParamType.BOOLEAN)
-          boolean enabled) {
+          boolean enabled,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     try {
       if (enabled) {
@@ -206,7 +216,8 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       description =
           "批量处理修订(ids 可传 list_tracked_changes 返回的 RevisionRef 或兼容 stable id)。"
               + "action 支持 ACCEPT/REJECT;"
-              + "target 支持 TEXT_OR_MOVE/PROPERTY/CELL。部分失败不中断,返回每条成功/失败明细。")
+              + "target 支持 TEXT_OR_MOVE/PROPERTY/CELL。部分失败不中断,返回每条成功/失败明细。"
+              + "on_error=stop 时遇首条失败即停;expected_generation 防止旧快照修改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String applyTrackedChanges(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -223,7 +234,21 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
           String target,
       @ToolParam(name = "ids", description = "stable id 数组,如 [\"ins:1\",\"rpr_change:...\"]")
           @ParamCapability(type = ParamType.STRING_ARRAY)
-          List<String> ids) {
+          List<String> ids,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     boolean accept;
     if ("ACCEPT".equalsIgnoreCase(action)) {
       accept = true;
@@ -234,23 +259,33 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
           ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "action 仅支持 ACCEPT/REJECT");
       return ToolResultRenderer.render(result);
     }
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
+    Document doc = document(docId);
+    if (doc == null) {
+      return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
+    }
 
     if ("TEXT_OR_MOVE".equalsIgnoreCase(target) || "TEXT".equalsIgnoreCase(target)) {
-      return applyRevisionsBatch(docId, ids, accept);
+      return applyRevisionsBatch(docId, ids, accept, stopOnError);
     }
     if ("PROPERTY".equalsIgnoreCase(target)) {
       return applyRevisionsByIds(
           docId,
           ids,
           accept ? TrackedChanges::acceptProperty : TrackedChanges::rejectProperty,
-          accept ? "应用属性类" : "撤销属性类");
+          accept ? "应用属性类" : "撤销属性类",
+          stopOnError);
     }
     if ("CELL".equalsIgnoreCase(target)) {
       return applyRevisionsByIds(
           docId,
           ids,
           accept ? TrackedChanges::acceptCell : TrackedChanges::rejectCell,
-          accept ? "应用单元格类" : "撤销单元格类");
+          accept ? "应用单元格类" : "撤销单元格类",
+          stopOnError);
     }
     ToolResult<Void> result =
         ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "target 仅支持 TEXT_OR_MOVE/PROPERTY/CELL");
@@ -267,7 +302,9 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       description =
           "按范围批量处理文本/移动类修订。action=ACCEPT/REJECT。"
               + "scope=ALL 表示全部文本/移动类修订;scope=AUTHOR 表示只处理指定 author。"
-              + "仅作用于文本(ins/del)与移动类;属性类与单元格类不受影响。")
+              + "仅作用于文本(ins/del)与移动类;属性类与单元格类不受影响。"
+              + "scope=ALL 时需显式传 confirm_all=true 确认(防止意外全量修改)。"
+              + "expected_generation 防止旧快照修改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String applyTextRevisions(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -284,7 +321,19 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
           String scope,
       @ToolParam(name = "author", description = "scope=AUTHOR 时必填,大小写敏感精确匹配", required = false)
           @ParamCapability(type = ParamType.STRING)
-          String author) {
+          String author,
+      @ToolParam(
+              name = "confirm_all",
+              description = "scope=ALL 时必填 true 以确认全量修改(防止意外批量处理全部修订)",
+              required = false)
+          @ParamCapability(type = ParamType.BOOLEAN)
+          Boolean confirmAll,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     if (action == null || action.isBlank()) {
       ToolResult<Void> r =
           ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "action 仅支持 ACCEPT 或 REJECT");
@@ -298,6 +347,21 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
     String normalizedAction = action.trim().toUpperCase(java.util.Locale.ROOT);
     String normalizedScope = scope.trim().toUpperCase(java.util.Locale.ROOT);
     if ("ALL".equals(normalizedScope)) {
+      if (!Boolean.TRUE.equals(confirmAll)) {
+        ToolResult<Void> r =
+            ToolResult.fail(
+                ToolResultCode.INVALID_ARGUMENT,
+                "scope=ALL 会一次性处理全部文本/移动类修订,需显式传 confirm_all=true 确认",
+                "传 confirm_all=true 确认全量修改,或改用 scope=AUTHOR 限定范围");
+        return ToolResultRenderer.render(r);
+      }
+      Document doc = document(docId);
+      if (doc == null) {
+        return renderDocNotFound(docId);
+      }
+      if (!checkExpectedGeneration(docId, expectedGeneration)) {
+        return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
+      }
       return applyAllTextRevisions(docId, normalizedAction);
     }
     if ("AUTHOR".equals(normalizedScope)) {
@@ -305,6 +369,13 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
         ToolResult<Void> r =
             ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "scope=AUTHOR 时 author 必填");
         return ToolResultRenderer.render(r);
+      }
+      Document doc = document(docId);
+      if (doc == null) {
+        return renderDocNotFound(docId);
+      }
+      if (!checkExpectedGeneration(docId, expectedGeneration)) {
+        return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
       }
       return applyTextRevisionsByAuthor(docId, normalizedAction, author);
     }
@@ -408,10 +479,15 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
    *
    * <p>委托给通用 {@link #applyRevisionsByIds},传入 {@code TrackedChanges::accept}/{@code reject} 回调。
    */
-  private String applyRevisionsBatch(String docId, List<String> ids, boolean accept) {
+  private String applyRevisionsBatch(
+      String docId, List<String> ids, boolean accept, boolean stopOnError) {
     // 结果串用自然的"已应用/已撤销"。
     return applyRevisionsByIds(
-        docId, ids, accept ? TrackedChanges::accept : TrackedChanges::reject, accept ? "应用" : "撤销");
+        docId,
+        ids,
+        accept ? TrackedChanges::accept : TrackedChanges::reject,
+        accept ? "应用" : "撤销",
+        stopOnError);
   }
 
   /**
@@ -422,10 +498,14 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
    *
    * <p><b>为何可安全逐条循环(id 不漂移)。</b> 探针验证:修订 id 是路径坐标编码(如 {@code cell_ins:body0.table0.row0.cell0:1}),
    * accept/reject 一条后,其余修订的 id 不变——即使 cellDel 的 accept 会移除整个单元格,剩余修订的坐标与 w:id 也不受影响。 故无需排序、去重或重新
-   * list。某条抛异常(family 不符/id 不存在)记错误不中断(collect-errors)。
+   * list。某条抛异常(family 不符/id 不存在)记错误不中断(collect-errors)。 {@code stopOnError=true} 时遇首条失败即停。
    */
   private String applyRevisionsByIds(
-      String docId, List<String> ids, BiConsumer<TrackedChanges, String> action, String verb) {
+      String docId,
+      List<String> ids,
+      BiConsumer<TrackedChanges, String> action,
+      String verb,
+      boolean stopOnError) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
@@ -440,6 +520,7 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    int stoppedAt = -1;
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -462,6 +543,10 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       } catch (RefResolutionException e) {
         sb.append("[").append(i).append("] ").append(e.render());
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
       } catch (RuntimeException e) {
         sb.append("[")
             .append(i)
@@ -471,17 +556,26 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
             .append(rootMessage(e))
             .append(")");
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
       }
     }
+    int skipped = stoppedAt >= 0 ? list.size() - stoppedAt - 1 : 0;
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
+    int matchedCount = ok + fail;
     ToolResult<Integer> result =
         fail > 0
             ? ToolResult.partial(
                 ToolResultCode.PARTIAL_FAILURE,
                 ok,
                 sb.toString(),
-                java.util.Collections.emptyList())
-            : ToolResult.ok(ok, sb.toString());
+                java.util.Collections.emptyList(),
+                matchedCount,
+                ok,
+                skipped > 0 ? skipped : null)
+            : ToolResult.ok(ok, sb.toString(), matchedCount, ok, null);
     return ToolResultRenderer.render(result);
   }
 
@@ -498,5 +592,25 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
       throw new RefResolutionException(RefResolutionCode.REF_TYPE_MISMATCH, "该操作只接受 RevisionRef");
     }
     return elementResolver(docId).resolve((RevisionRef) parsed);
+  }
+  /** 兼容旧 Java 调用；等价于未传 expected_generation。 */
+  @Deprecated
+  public String setTrackedChangesEnabled(String docId, boolean enabled) {
+    return setTrackedChangesEnabled(docId, enabled, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
+  @Deprecated
+  public String applyTrackedChanges(
+      String docId, String action, String target, List<String> ids) {
+    return applyTrackedChanges(docId, action, target, ids, null, null);
+  }
+
+  /**
+   * 兼容旧 Java 调用；scope=ALL 仍必须通过新 API 显式传 confirmAll=true。
+   */
+  @Deprecated
+  public String applyTextRevisions(String docId, String action, String scope, String author) {
+    return applyTextRevisions(docId, action, scope, author, false, null);
   }
 }

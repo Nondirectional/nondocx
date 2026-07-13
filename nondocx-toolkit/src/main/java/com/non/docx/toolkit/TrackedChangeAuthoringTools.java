@@ -86,7 +86,9 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
               + "author 是共享修订作者(必填)。edits 是对象数组,每个对象含:"
               + "paragraph_index(int,目标段落索引 0 起)、text(string,插入文本),"
               + "以及可选 bold(bool)、italic(bool)、color(string,十六进制如 FF0000)。"
-              + "单个对象用长度 1 的数组。部分失败不中断,返回每条成功/失败明细。")
+              + "单个对象用长度 1 的数组。部分失败不中断,返回每条成功/失败明细。"
+              + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停);"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态。")
   @ToolCapability(operation = CapabilityOperation.ADD, element = "tracked_change")
   public String insertTrackedRun(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -105,19 +107,38 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
           @NestedParamCapability(path = "edits.bold", type = ParamType.BOOLEAN)
           @NestedParamCapability(path = "edits.italic", type = ParamType.BOOLEAN)
           @NestedParamCapability(path = "edits.color", type = ParamType.STRING)
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     List<Paragraph> paragraphs = doc.paragraphs();
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
       return renderInvalidArgument("edits 为空");
     }
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    int skipped = 0;
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -127,6 +148,10 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       if (!(item instanceof Map)) {
         sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -139,11 +164,19 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(e.getMessage());
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       if (outOfBounds(paragraphIndex, paragraphs.size())) {
         sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       boolean bold = boolVal(m.get("bold"));
@@ -170,9 +203,13 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(rootMessage(e));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
       }
     }
-    return renderBatchSummary(sb, ok, fail);
+    return renderBatchSummary(sb, ok, fail, skipped);
   }
 
   /**
@@ -197,7 +234,9 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
               + "author 是共享修订作者(必填)。edits 是对象数组,每个对象含 "
               + "paragraph_index(int,段落索引 0 起)、run_index(int,run 索引 0 起)。"
               + "单个对象用长度 1 的数组。不是立即删除,accept 后才真正消失。"
-              + "部分失败不中断,返回每条成功/失败明细。")
+              + "部分失败不中断,返回每条成功/失败明细。"
+              + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停);"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态。")
   @ToolCapability(operation = CapabilityOperation.REMOVE, element = "tracked_change")
   public String deleteRunTracked(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -212,19 +251,38 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
                       + "如 [{\"paragraph_index\":0,\"run_index\":0}]")
           @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
       return renderInvalidArgument("edits 为空");
     }
     var paragraphs = doc.paragraphs();
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    int skipped = 0;
     // 按坐标去重:同一 (paragraphIndex, runIndex) 只删一次。
     // 注意 runs().get(i) 每次返回新的 Run 包装对象,不能用 identity 比较;改用坐标字符串。
     // 重复 addDeletion 同一 run 会抛 XmlValueDisconnectedException(见探针验证),故必须去重。
@@ -238,6 +296,10 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       if (!(item instanceof Map)) {
         sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -250,17 +312,29 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(e.getMessage());
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       if (outOfBounds(paragraphIndex, paragraphs.size())) {
         sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       var runs = paragraphs.get(paragraphIndex).runs();
       if (outOfBounds(runIndex, runs.size())) {
         sb.append(tag).append(indexError("run 索引", runIndex, runs.size()));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       String coord = paragraphIndex + ":" + runIndex;
@@ -273,6 +347,10 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
             .append(runIndex)
             .append(" 在本批已处理");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       Run target = runs.get(runIndex);
@@ -293,9 +371,13 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(rootMessage(e));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
       }
     }
-    return renderBatchSummary(sb, ok, fail);
+    return renderBatchSummary(sb, ok, fail, skipped);
   }
 
   /**
@@ -318,7 +400,9 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
           "批量以修订方式替换正文若干 run 的文本(tracked:每个删旧 + 插新两条配对修订)。"
               + "author 是共享修订作者(必填)。edits 是对象数组,每个对象含 "
               + "paragraph_index(int,段落索引 0 起)、run_index(int,run 索引 0 起)、new_text(string,新文本)。"
-              + "新文本复制原 run 样式。单个对象用长度 1 的数组。部分失败不中断,返回每条成功/失败明细。")
+              + "新文本复制原 run 样式。单个对象用长度 1 的数组。部分失败不中断,返回每条成功/失败明细。"
+              + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停);"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String replaceRunTracked(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -334,10 +418,27 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
           @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.new_text", type = ParamType.STRING)
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     // replace 比 delete 多一个 new_text 参数,无法直接复用三参回调;在回调闭包里按条解析。
     List<Object> list = coerceList(edits);
@@ -347,9 +448,11 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
     // 先把每条解析成 (para,run,newText) 或错误标记,再交给共享执行框架。
     // 这里复用 applyRunTrackedBatch 的核心思路,但需要 newText;为避免过度抽象,就地实现(结构与共享方法一致)。
     var paragraphs = doc.paragraphs();
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    int skipped = 0;
     // 按坐标去重:同一 (paragraphIndex, runIndex) 只替换一次。runs().get(i) 每次返回新包装,
     // 不能 identity 比较,改用坐标字符串。重复 replaceTracked 同一 run 会抛 XmlValueDisconnectedException。
     Set<String> seen = new HashSet<>();
@@ -362,6 +465,10 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       if (!(item instanceof Map)) {
         sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -376,17 +483,29 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(e.getMessage());
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       if (outOfBounds(paragraphIndex, paragraphs.size())) {
         sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       var runs = paragraphs.get(paragraphIndex).runs();
       if (outOfBounds(runIndex, runs.size())) {
         sb.append(tag).append(indexError("run 索引", runIndex, runs.size()));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       String coord = paragraphIndex + ":" + runIndex;
@@ -399,6 +518,10 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
             .append(runIndex)
             .append(" 在本批已处理");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       Run target = runs.get(runIndex);
@@ -419,9 +542,13 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(rootMessage(e));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
       }
     }
-    return renderBatchSummary(sb, ok, fail);
+    return renderBatchSummary(sb, ok, fail, skipped);
   }
 
   /**
@@ -434,7 +561,8 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       name = "mark_style_change_tracked",
       description =
           "把一个 run 的样式变更记为被追踪的属性修订(rPrChange)。"
-              + "内部:快照改前样式→应用目标样式→commitStyleAsTracked。reject 会回到旧样式。仅改你显式提供的样式参数。")
+              + "内部:快照改前样式→应用目标样式→commitStyleAsTracked。reject 会回到旧样式。仅改你显式提供的样式参数。"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String markStyleChangeTracked(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -455,10 +583,19 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
           boolean italic,
       @ToolParam(name = "color", description = "目标颜色十六进制(可选)", required = false)
           @ParamCapability(type = ParamType.STRING)
-          String color) {
+          String color,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
     }
     List<Paragraph> paragraphs = doc.paragraphs();
     if (outOfBounds(paragraphIndex, paragraphs.size())) {
@@ -498,7 +635,9 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
               + "author 是共享修订作者(必填)。cells 是对象数组,每个对象含 "
               + "table_index(int,表格索引 0 起)、row_index(int,行索引 0 起)、cell_index(int,单元格索引 0 起)。"
               + "单个对象用长度 1 的数组。"
-              + "部分失败不中断,返回每条成功/失败明细。")
+              + "部分失败不中断,返回每条成功/失败明细。"
+              + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停);"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String markTrackedCells(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -519,20 +658,38 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
           @NestedParamCapability(path = "cells.table_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "cells.row_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "cells.cell_index", type = ParamType.INTEGER)
-          List<Map<String, Object>> cells) {
+          List<Map<String, Object>> cells,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     if (changeType == null || changeType.isBlank()) {
       return renderInvalidArgument("change_type 仅支持 INSERTED 或 DELETED");
     }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      return renderGenerationMismatch(expectedGeneration, generations.getOrDefault(docId, 1L));
+    }
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
     String normalized = changeType.trim().toUpperCase(java.util.Locale.ROOT);
     if ("INSERTED".equals(normalized)
         || "INSERT".equals(normalized)
         || "CELL_INS".equals(normalized)) {
-      return markCellsBatch(docId, author, cells, true);
+    return markCellsBatch(docId, author, cells, true, stopOnError);
     }
     if ("DELETED".equals(normalized)
         || "DELETE".equals(normalized)
         || "CELL_DEL".equals(normalized)) {
-      return markCellsBatch(docId, author, cells, false);
+    return markCellsBatch(docId, author, cells, false, stopOnError);
     }
     return renderInvalidArgument("change_type 仅支持 INSERTED 或 DELETED");
   }
@@ -603,19 +760,28 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
   /**
    * 把批量 collect-errors 的中文摘要渲染为双段格式。
    *
-   * <p>有失败项时用 {@code PARTIAL_FAILURE}；全成功用 {@code OK}。
+   * <p>有失败项时用 {@code PARTIAL_FAILURE}；全成功用 {@code OK}。 P0-05: 汇总带 matchedCount(=ok+fail)/
+   * changedCount(=ok)/skippedCount(stop 模式未执行数)。
    *
    * @param sb 含逐条明细的中文摘要（不含末尾汇总行）
    * @param ok 成功条数
    * @param fail 失败条数
+   * @param skipped stop 模式下因前面失败而未执行的条目数（continue 模式传 0）
    */
-  private static String renderBatchSummary(StringBuilder sb, int ok, int fail) {
+  private static String renderBatchSummary(StringBuilder sb, int ok, int fail, int skipped) {
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
+    int matchedCount = ok + fail;
     ToolResult<Integer> result =
         fail > 0
             ? ToolResult.partial(
-                ToolResultCode.PARTIAL_FAILURE, ok, sb.toString(), Collections.emptyList())
-            : ToolResult.ok(ok, sb.toString());
+                ToolResultCode.PARTIAL_FAILURE,
+                ok,
+                sb.toString(),
+                Collections.emptyList(),
+                matchedCount,
+                ok,
+                skipped > 0 ? skipped : null)
+            : ToolResult.ok(ok, sb.toString(), matchedCount, ok, Collections.emptyList());
     return ToolResultRenderer.render(result);
   }
 
@@ -627,7 +793,11 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
    * core 自身语义决定,这里不做额外拦截)。
    */
   private String markCellsBatch(
-      String docId, String author, List<Map<String, Object>> cells, boolean inserter) {
+      String docId,
+      String author,
+      List<Map<String, Object>> cells,
+      boolean inserter,
+      boolean stopOnError) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
@@ -640,6 +810,7 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    int stoppedAt = -1;
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -649,6 +820,10 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       if (!(item instanceof Map)) {
         sb.append(prefix).append("错误:该条不是对象(").append(item).append(")");
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -663,12 +838,20 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(prefix).append("错误:").append(e.getMessage());
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       Cell cell = resolveCell(docId, tableIndex, rowIndex, cellIndex);
       if (cell == null) {
         sb.append(prefix).append(cellResolveError(docId, tableIndex, rowIndex, cellIndex));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
         continue;
       }
       try {
@@ -691,8 +874,51 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(prefix).append("错误:").append(rootMessage(e));
         fail++;
+        if (stopOnError) {
+          stoppedAt = i;
+          break;
+        }
       }
     }
-    return renderBatchSummary(sb, ok, fail);
+    int skipped = stoppedAt >= 0 ? list.size() - stoppedAt - 1 : 0;
+    return renderBatchSummary(sb, ok, fail, skipped);
+  }
+  /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
+  @Deprecated
+  public String insertTrackedRun(String docId, String author, List<Map<String, Object>> edits) {
+    return insertTrackedRun(docId, author, edits, null, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
+  @Deprecated
+  public String deleteRunTracked(String docId, String author, List<Map<String, Object>> edits) {
+    return deleteRunTracked(docId, author, edits, null, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
+  @Deprecated
+  public String replaceRunTracked(String docId, String author, List<Map<String, Object>> edits) {
+    return replaceRunTracked(docId, author, edits, null, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于未传 expected_generation。 */
+  @Deprecated
+  public String markStyleChangeTracked(
+      String docId,
+      int paragraphIndex,
+      int runIndex,
+      String author,
+      boolean bold,
+      boolean italic,
+      String color) {
+    return markStyleChangeTracked(
+        docId, paragraphIndex, runIndex, author, bold, italic, color, null);
+  }
+
+  /** 兼容旧 Java 调用；等价于 on_error=continue 且未传 expected_generation。 */
+  @Deprecated
+  public String markTrackedCells(
+      String docId, String changeType, String author, List<Map<String, Object>> cells) {
+    return markTrackedCells(docId, changeType, author, cells, null, null);
   }
 }

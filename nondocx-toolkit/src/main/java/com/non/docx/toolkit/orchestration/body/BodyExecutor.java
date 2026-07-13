@@ -88,7 +88,7 @@ public final class BodyExecutor implements OperationExecutor {
         case "replace_run_text":
           {
             Map<String, Object> edit = pickedEdit(payload, "paragraph_index", "run_index", "text");
-            return checkResult(body.replaceRunText(docId, List.of(edit)), operation);
+            return checkResult(body.replaceRunText(docId, List.of(edit), null, null), operation);
           }
         case "update_run_style":
           {
@@ -103,12 +103,13 @@ public final class BodyExecutor implements OperationExecutor {
                     "font",
                     "font_size",
                     "color");
-            return checkResult(body.updateRunStyle(docId, List.of(edit)), operation);
+            return checkResult(body.updateRunStyle(docId, List.of(edit), null, null), operation);
           }
         case "update_paragraph_alignment":
           {
             Map<String, Object> edit = pickedEdit(payload, "paragraph_index", "alignment");
-            return checkResult(body.updateParagraphAlignment(docId, List.of(edit)), operation);
+            return checkResult(
+                body.updateParagraphAlignment(docId, List.of(edit), null, null), operation);
           }
         case "insert_paragraph":
           {
@@ -116,7 +117,7 @@ public final class BodyExecutor implements OperationExecutor {
             // 有表格时两者不可互换，必须用 body_index（否则段落会落在错误的表格侧）。
             normalizeBodyIndex(payload, session, operation);
             Map<String, Object> edit = pickedEdit(payload, "body_index", "text");
-            return checkResult(body.insertParagraph(docId, List.of(edit)), operation);
+            return checkResult(body.insertParagraph(docId, List.of(edit), null, null), operation);
           }
         case "insert_heading":
           return executeInsertHeading(session, payload, operation);

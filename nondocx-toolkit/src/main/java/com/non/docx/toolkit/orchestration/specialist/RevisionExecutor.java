@@ -65,7 +65,8 @@ public final class RevisionExecutor implements OperationExecutor {
     }
     try {
       String result =
-          trackedChangeQuery.applyTrackedChanges(docId, action, target, new ArrayList<>(ids));
+          trackedChangeQuery.applyTrackedChanges(
+              docId, action, target, new ArrayList<>(ids), null, null);
       if (com.non.docx.toolkit.orchestration.commit.ToolResultChecks.isFailure(result)) {
         throw new OperationExecutionException(result);
       }

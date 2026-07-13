@@ -177,7 +177,9 @@ public final class BodyTools extends ToolkitToolContext {
       description =
           "批量修改正文若干段落的水平对齐方式(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
               + "paragraph_index(int,段落索引 0 起)、alignment(string,LEFT/CENTER/RIGHT/JUSTIFY,大小写不敏感)。"
-              + "部分失败不中断,返回每条成功/失败明细。")
+              + "部分失败不中断,返回每条成功/失败明细。"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态;"
+              + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停)。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
   public String updateParagraphAlignment(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -192,11 +194,30 @@ public final class BodyTools extends ToolkitToolContext {
               path = "edits.alignment",
               type = ParamType.ENUM,
               enumValues = {"LEFT", "CENTER", "RIGHT", "JUSTIFY"})
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
     }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      long current = generations.getOrDefault(docId, 1L);
+      return renderGenerationMismatch(expectedGeneration, current);
+    }
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
     var paragraphs = doc.paragraphs();
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
@@ -207,6 +228,7 @@ public final class BodyTools extends ToolkitToolContext {
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    int skipped = 0;
     List<String> changedRefs = new ArrayList<>();
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
@@ -217,6 +239,10 @@ public final class BodyTools extends ToolkitToolContext {
       if (!(item instanceof Map)) {
         sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -229,6 +255,10 @@ public final class BodyTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append(renderError(e));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       try {
@@ -236,6 +266,10 @@ public final class BodyTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(rootMessage(e));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       sb.append(tag)
@@ -253,8 +287,15 @@ public final class BodyTools extends ToolkitToolContext {
     int matchedCount = ok + fail;
     ToolResult<List<String>> result =
         fail > 0
-            ? ToolResult.partial(ToolResultCode.PARTIAL_FAILURE, changedRefs, sb.toString(), null)
-            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, changedRefs);
+            ? ToolResult.partial(
+                ToolResultCode.PARTIAL_FAILURE,
+                changedRefs,
+                sb.toString(),
+                null,
+                matchedCount,
+                ok,
+                stopOnError ? skipped : null)
+            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, ok, changedRefs);
     return ToolResultRenderer.render(result);
   }
 
@@ -356,7 +397,9 @@ public final class BodyTools extends ToolkitToolContext {
           "批量替换正文若干 run 的文本(改完需 save_docx 落盘)。edits 是对象数组,每个对象含字段:"
               + "paragraph_index(整数,段落索引 0 起)、run_index(整数,run 索引 0 起,不含超链接)、"
               + "text(字符串,新文本)。单个对象用长度 1 的数组。可一次改多处;部分失败不中断,"
-              + "返回每条成功/失败明细。")
+              + "返回每条成功/失败明细。"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态;"
+              + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停)。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "run")
   public String replaceRunText(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -369,11 +412,30 @@ public final class BodyTools extends ToolkitToolContext {
           @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.text", type = ParamType.STRING)
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
     }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      long current = generations.getOrDefault(docId, 1L);
+      return renderGenerationMismatch(expectedGeneration, current);
+    }
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
     var paragraphs = doc.paragraphs();
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
@@ -384,6 +446,7 @@ public final class BodyTools extends ToolkitToolContext {
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    int skipped = 0;
     List<String> changedRefs = new ArrayList<>();
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
@@ -394,6 +457,10 @@ public final class BodyTools extends ToolkitToolContext {
       if (!(item instanceof Map)) {
         sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -406,6 +473,10 @@ public final class BodyTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append(renderError(e));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       target.run.text(text);
@@ -426,8 +497,15 @@ public final class BodyTools extends ToolkitToolContext {
     int matchedCount = ok + fail;
     ToolResult<List<String>> result =
         fail > 0
-            ? ToolResult.partial(ToolResultCode.PARTIAL_FAILURE, changedRefs, sb.toString(), null)
-            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, changedRefs);
+            ? ToolResult.partial(
+                ToolResultCode.PARTIAL_FAILURE,
+                changedRefs,
+                sb.toString(),
+                null,
+                matchedCount,
+                ok,
+                stopOnError ? skipped : null)
+            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, ok, changedRefs);
     return ToolResultRenderer.render(result);
   }
 
@@ -568,7 +646,9 @@ public final class BodyTools extends ToolkitToolContext {
               + "canonical RunRef 字段 ref,或 paragraph_index(int)+run_index(int);"
               + "ref 与索引同时提供时必须指向同一 run。另含可选样式字段:"
               + "bold(bool)、italic(bool)、underline(bool)、font(string)、font_size(int)、color(string,十六进制如 FF0000)。"
-              + "布尔字段显式传 false 可清除样式;未传字段不改。部分失败不中断,返回每条成功/失败明细。")
+              + "布尔字段显式传 false 可清除样式;未传字段不改。部分失败不中断,返回每条成功/失败明细。"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态;"
+              + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停)。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "run")
   public String updateRunStyle(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -588,11 +668,30 @@ public final class BodyTools extends ToolkitToolContext {
           @NestedParamCapability(path = "edits.font", type = ParamType.STRING)
           @NestedParamCapability(path = "edits.font_size", type = ParamType.INTEGER, unit = "pt")
           @NestedParamCapability(path = "edits.color", type = ParamType.STRING)
-          List<Map<String, Object>> edits) {
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
     }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      long current = generations.getOrDefault(docId, 1L);
+      return renderGenerationMismatch(expectedGeneration, current);
+    }
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
     var paragraphs = doc.paragraphs();
     List<Object> list = coerceList(edits);
     if (list.isEmpty()) {
@@ -603,6 +702,7 @@ public final class BodyTools extends ToolkitToolContext {
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    int skipped = 0;
     List<String> changedRefs = new ArrayList<>();
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
@@ -613,6 +713,10 @@ public final class BodyTools extends ToolkitToolContext {
       if (!(item instanceof Map)) {
         sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -623,6 +727,10 @@ public final class BodyTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append(renderError(e));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       Run run = target.run;
@@ -661,11 +769,20 @@ public final class BodyTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(rootMessage(e));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       if (changed.isEmpty()) {
-        sb.append(tag).append("错误:未提供任何样式字段");
+        // R1 空更新:用 NO_CHANGES_APPLIED 语义,但单条失败仍计入 fail。
+        sb.append(tag).append(noChangesAppliedResult("未提供任何样式字段").message());
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       sb.append(tag)
@@ -685,8 +802,15 @@ public final class BodyTools extends ToolkitToolContext {
     int matchedCount = ok + fail;
     ToolResult<List<String>> result =
         fail > 0
-            ? ToolResult.partial(ToolResultCode.PARTIAL_FAILURE, changedRefs, sb.toString(), null)
-            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, changedRefs);
+            ? ToolResult.partial(
+                ToolResultCode.PARTIAL_FAILURE,
+                changedRefs,
+                sb.toString(),
+                null,
+                matchedCount,
+                ok,
+                stopOnError ? skipped : null)
+            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, ok, changedRefs);
     return ToolResultRenderer.render(result);
   }
 
@@ -714,7 +838,9 @@ public final class BodyTools extends ToolkitToolContext {
           "按正文 body 顺序批量插入若干单 run 段落(改完需 save_docx 落盘)。"
               + "paragraphs 是对象数组,每个对象含 body_index(int,正文 body 顺序索引 0 起;body 元素总数表示末尾)、"
               + "text(string,新段落文本)。body_index=0 可在文档开头插入;中间索引可插在段落或表格前。"
-              + "部分失败不中断,返回每条成功/失败明细。")
+              + "部分失败不中断,返回每条成功/失败明细。"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态;"
+              + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停)。")
   @ToolCapability(operation = CapabilityOperation.ADD, element = "paragraph")
   public String insertParagraph(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -726,11 +852,30 @@ public final class BodyTools extends ToolkitToolContext {
                       + "如 [{\"body_index\":0,\"text\":\"标题\"},{\"body_index\":3,\"text\":\"中间段\"}]")
           @NestedParamCapability(path = "paragraphs.body_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "paragraphs.text", type = ParamType.STRING)
-          List<Map<String, Object>> paragraphs) {
+          List<Map<String, Object>> paragraphs,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     Document doc = document(docId);
     if (doc == null) {
       return renderDocNotFound(docId);
     }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      long current = generations.getOrDefault(docId, 1L);
+      return renderGenerationMismatch(expectedGeneration, current);
+    }
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
     List<Object> list = coerceList(paragraphs);
     if (list.isEmpty()) {
       ToolResult<Void> result =
@@ -740,6 +885,7 @@ public final class BodyTools extends ToolkitToolContext {
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
+    int skipped = 0;
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -749,6 +895,10 @@ public final class BodyTools extends ToolkitToolContext {
       if (!(item instanceof Map)) {
         sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       @SuppressWarnings("unchecked")
@@ -761,6 +911,10 @@ public final class BodyTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(e.getMessage());
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       int bodySize = doc.bodyElements().size();
@@ -772,6 +926,10 @@ public final class BodyTools extends ToolkitToolContext {
             .append(bodySize)
             .append("）");
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       try {
@@ -779,6 +937,10 @@ public final class BodyTools extends ToolkitToolContext {
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(rootMessage(e));
         fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
         continue;
       }
       sb.append(tag)
@@ -793,8 +955,15 @@ public final class BodyTools extends ToolkitToolContext {
     int matchedCount = ok + fail;
     ToolResult<Integer> result =
         fail > 0
-            ? ToolResult.partial(ToolResultCode.PARTIAL_FAILURE, ok, sb.toString(), null)
-            : ToolResult.ok(ok, sb.toString(), matchedCount, null);
+            ? ToolResult.partial(
+                ToolResultCode.PARTIAL_FAILURE,
+                ok,
+                sb.toString(),
+                null,
+                matchedCount,
+                ok,
+                stopOnError ? skipped : null)
+            : ToolResult.ok(ok, sb.toString(), matchedCount, ok, null);
     return ToolResultRenderer.render(result);
   }
 
@@ -842,7 +1011,8 @@ public final class BodyTools extends ToolkitToolContext {
       description =
           "修改正文第 paragraph_index 段第 hyperlink_index 个超链接(均 0 起)的显示文本和/或目标 URL。"
               + "text 与 url 都可选,至少传一个:只传 text 改显示文本、只传 url 改地址、都传则一次改齐。"
-              + "改完需 save_docx 落盘。")
+              + "改完需 save_docx 落盘。"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "hyperlink")
   public String updateHyperlink(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -858,12 +1028,24 @@ public final class BodyTools extends ToolkitToolContext {
           String text,
       @ToolParam(name = "url", description = "新的目标 URL(可选,不传则不改)", required = false)
           @ParamCapability(type = ParamType.STRING)
-          String url) {
+          String url,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
     if ((text == null || text.isEmpty()) && (url == null || url.isEmpty())) {
-      ToolResult<Void> result =
-          ToolResult.fail(
-              ToolResultCode.INVALID_ARGUMENT, "错误:text 和 url 至少传一个", "传 text 改显示文本、传 url 改地址");
-      return ToolResultRenderer.render(result);
+      // R1 空更新:text 与 url 都未提供 → NO_CHANGES_APPLIED(非参数错误)。
+      return renderNoChangesApplied("未提供 text 或 url");
+    }
+    Document doc = document(docId);
+    if (doc == null) {
+      return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      long current = generations.getOrDefault(docId, 1L);
+      return renderGenerationMismatch(expectedGeneration, current);
     }
     Hyperlink link = locateHyperlink(docId, paragraphIndex, hyperlinkIndex);
     if (link == null) {
@@ -1181,5 +1363,11 @@ public final class BodyTools extends ToolkitToolContext {
         ToolResultCode.INDEX_OUT_OF_RANGE,
         "错误：超链接索引 " + hyperlinkIndex + " 越界（该段含 " + count + " 个超链接）",
         "使用 0.." + Math.max(0L, count - 1L));
+  }
+  /** 兼容旧 Java 调用；等价于未传 expected_generation。 */
+  @Deprecated
+  public String updateHyperlink(
+      String docId, int paragraphIndex, int hyperlinkIndex, String text, String url) {
+    return updateHyperlink(docId, paragraphIndex, hyperlinkIndex, text, url, null);
   }
 }

@@ -73,7 +73,7 @@ public final class TableExecutor implements OperationExecutor {
           {
             Map<String, Object> edit =
                 pickedEdit(payload, "table_index", "row_index", "cell_index", "fill");
-            String result = table.updateTableCellShading(docId, List.of(edit));
+            String result = table.updateTableCellShading(docId, List.of(edit), null, null);
             return checkResult(result, operation);
           }
         case "update_table_cell_run_style":

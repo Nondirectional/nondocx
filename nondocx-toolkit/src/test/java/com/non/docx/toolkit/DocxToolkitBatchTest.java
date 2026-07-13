@@ -70,7 +70,9 @@ class DocxToolkitBatchTest {
             List.of(
                 paragraphAlignment(0, "center"),
                 paragraphAlignment(1, "RIGHT"),
-                paragraphAlignment(99, "LEFT")));
+                paragraphAlignment(99, "LEFT")),
+            null,
+            null);
     assertThat(result).contains("段落 0 对齐 → CENTER");
     assertThat(result).contains("段落 1 对齐 → RIGHT");
     assertThat(result).contains("[2]").contains("越界");
@@ -93,7 +95,7 @@ class DocxToolkitBatchTest {
             tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result =
-        tk.body.updateParagraphAlignment(docId, List.of(paragraphAlignment(0, "MIDDLE")));
+        tk.body.updateParagraphAlignment(docId, List.of(paragraphAlignment(0, "MIDDLE")), null, null);
     assertThat(result).contains("仅支持 LEFT/CENTER/RIGHT/JUSTIFY").contains("成功 0 条,失败 1 条");
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("对齐: LEFT");
   }
@@ -115,7 +117,7 @@ class DocxToolkitBatchTest {
     Map<String, Object> e0 = edit(0, 0, "新 A");
     Map<String, Object> e1 = edit(1, 0, "新 B");
     Map<String, Object> e2 = edit(99, 0, "不应写入");
-    String result = tk.body.replaceRunText(docId, List.of(e0, e1, e2));
+    String result = tk.body.replaceRunText(docId, List.of(e0, e1, e2), null, null);
 
     assertThat(result).contains("[0]").contains("新 A").contains("✓");
     assertThat(result).contains("[1]").contains("新 B").contains("✓");
@@ -149,7 +151,7 @@ class DocxToolkitBatchTest {
     Map<String, Object> edit = new LinkedHashMap<>();
     edit.put("ref", ref);
     edit.put("text", "已按 ref 修改");
-    assertThat(tk.body.replaceRunText(docId, List.of(edit)))
+    assertThat(tk.body.replaceRunText(docId, List.of(edit), null, null))
         .contains("已按 ref 修改")
         .contains("ref=" + ref)
         .contains("成功 1 条,失败 0 条");
@@ -157,7 +159,7 @@ class DocxToolkitBatchTest {
     Map<String, Object> style = new LinkedHashMap<>();
     style.put("ref", ref);
     style.put("bold", true);
-    assertThat(tk.body.updateRunStyle(docId, List.of(style)))
+    assertThat(tk.body.updateRunStyle(docId, List.of(style), null, null))
         .contains("bold=true")
         .contains("ref=" + ref);
     assertThat(tk.body.readRun(docId, List.of(Map.of("ref", ref))))
@@ -170,7 +172,7 @@ class DocxToolkitBatchTest {
     mismatch.put("paragraph_index", 1);
     mismatch.put("run_index", 0);
     mismatch.put("text", "不应写入");
-    assertThat(tk.body.replaceRunText(docId, List.of(mismatch)))
+    assertThat(tk.body.replaceRunText(docId, List.of(mismatch), null, null))
         .contains("错误[stale_ref]")
         .contains("成功 0 条,失败 1 条");
     assertThat(tk.body.readParagraph(docId, List.of(1))).contains("保留");
@@ -201,7 +203,7 @@ class DocxToolkitBatchTest {
     Map<String, Object> bad = styleEdit(99, 0);
     bad.put("italic", true);
 
-    String result = tk.body.updateRunStyle(docId, List.of(title, body, bad));
+    String result = tk.body.updateRunStyle(docId, List.of(title, body, bad), null, null);
     assertThat(result).contains("bold=true").contains("italic=true").contains("color=FF0000");
     assertThat(result).contains("bold=false");
     assertThat(result).contains("[2]").contains("越界");
@@ -229,7 +231,7 @@ class DocxToolkitBatchTest {
         com.non.docx.toolkit.ToolTestSupport.extractDocId(
             tk.session.openDocx(file.toAbsolutePath().toString()));
 
-    String result = tk.body.updateRunStyle(docId, List.of(styleEdit(0, 0)));
+    String result = tk.body.updateRunStyle(docId, List.of(styleEdit(0, 0)), null, null);
     assertThat(result).contains("未提供任何样式字段").contains("成功 0 条,失败 1 条");
   }
 
@@ -249,7 +251,7 @@ class DocxToolkitBatchTest {
     Map<String, Object> bad = new LinkedHashMap<>();
     bad.put("paragraph_index", 0);
     bad.put("run_index", 0);
-    String result = tk.body.replaceRunText(docId, List.of(bad));
+    String result = tk.body.replaceRunText(docId, List.of(bad), null, null);
     assertThat(com.non.docx.toolkit.ToolTestSupport.parse(result).code())
         .isEqualTo(com.non.docx.toolkit.result.ToolResultCode.PARTIAL_FAILURE);
     assertThat(result).contains("text");
@@ -455,7 +457,8 @@ class DocxToolkitBatchTest {
             tk.session.openDocx(file.toAbsolutePath().toString()));
 
     String result =
-        tk.body.insertParagraph(docId, List.of(paragraphInsert(0, "标题"), paragraphInsert(2, "结尾")));
+        tk.body.insertParagraph(
+            docId, List.of(paragraphInsert(0, "标题"), paragraphInsert(2, "结尾")), null, null);
     assertThat(result).contains("body 0").contains("标题").contains("body 2").contains("结尾");
     assertThat(result).contains("成功 2 条,失败 0 条");
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("标题");
@@ -479,7 +482,7 @@ class DocxToolkitBatchTest {
         com.non.docx.toolkit.ToolTestSupport.extractDocId(
             tk.session.openDocx(file.toAbsolutePath().toString()));
 
-    String result = tk.body.insertParagraph(docId, List.of(paragraphInsert(1, "表格前说明")));
+    String result = tk.body.insertParagraph(docId, List.of(paragraphInsert(1, "表格前说明")), null, null);
     assertThat(result).contains("body 1").contains("表格前说明").contains("成功 1 条,失败 0 条");
     assertThat(tk.body.readParagraph(docId, List.of(0))).contains("开头");
     assertThat(tk.body.readParagraph(docId, List.of(1))).contains("表格前说明");
@@ -507,7 +510,7 @@ class DocxToolkitBatchTest {
 
     String result =
         tk.trackedChangeQuery.applyTrackedChanges(
-            docId, "ACCEPT", "TEXT_OR_MOVE", List.of(realId, "ins:not-exist"));
+            docId, "ACCEPT", "TEXT_OR_MOVE", List.of(realId, "ins:not-exist"), null, null);
     assertThat(result).contains(realId).contains("已应用");
     assertThat(result).contains("ins:not-exist");
     assertThat(com.non.docx.toolkit.ToolTestSupport.parse(result).code())
@@ -548,14 +551,15 @@ class DocxToolkitBatchTest {
             tk.session.openDocx(file.toAbsolutePath().toString()));
     // 空数组:返回提示而非 NPE。
     assertThat(tk.body.readParagraph(docId, List.of())).contains("为空");
-    assertThat(tk.body.updateParagraphAlignment(docId, List.of())).contains("为空");
-    assertThat(tk.body.replaceRunText(docId, List.of())).contains("为空");
-    assertThat(tk.body.updateRunStyle(docId, List.of())).contains("为空");
-    assertThat(tk.body.insertParagraph(docId, List.of())).contains("为空");
+    assertThat(tk.body.updateParagraphAlignment(docId, List.of(), null, null)).contains("为空");
+    assertThat(tk.body.replaceRunText(docId, List.of(), null, null)).contains("为空");
+    assertThat(tk.body.updateRunStyle(docId, List.of(), null, null)).contains("为空");
+    assertThat(tk.body.insertParagraph(docId, List.of(), null, null)).contains("为空");
     assertThat(tk.table.createTable(docId, List.of())).contains("为空");
     assertThat(tk.table.mergeTableCells(docId, array())).contains("为空");
     assertThat(
-            tk.trackedChangeQuery.applyTrackedChanges(docId, "ACCEPT", "TEXT_OR_MOVE", List.of()))
+            tk.trackedChangeQuery.applyTrackedChanges(
+                docId, "ACCEPT", "TEXT_OR_MOVE", List.of(), null, null))
         .contains("为空");
   }
 
@@ -565,11 +569,13 @@ class DocxToolkitBatchTest {
     assertThat(tk.session.getDocumentOverview("doc-999")).contains("不存在");
     assertThat(tk.body.readParagraph("doc-999", List.of(0))).contains("不存在");
     assertThat(
-            tk.body.updateParagraphAlignment("doc-999", List.of(paragraphAlignment(0, "CENTER"))))
+            tk.body.updateParagraphAlignment(
+                "doc-999", List.of(paragraphAlignment(0, "CENTER")), null, null))
         .contains("不存在");
-    assertThat(tk.body.replaceRunText("doc-999", List.of())).contains("不存在");
-    assertThat(tk.body.updateRunStyle("doc-999", List.of(styleEdit(0, 0)))).contains("不存在");
-    assertThat(tk.body.insertParagraph("doc-999", List.of(paragraphInsert(0, "x"))))
+    assertThat(tk.body.replaceRunText("doc-999", List.of(), null, null)).contains("不存在");
+    assertThat(tk.body.updateRunStyle("doc-999", List.of(styleEdit(0, 0)), null, null))
+        .contains("不存在");
+    assertThat(tk.body.insertParagraph("doc-999", List.of(paragraphInsert(0, "x")), null, null))
         .contains("不存在");
     assertThat(tk.table.createTable("doc-999", List.of(List.of("x")))).contains("不存在");
     assertThat(tk.table.setTableBorders("doc-999", 0, "NONE")).contains("不存在");
@@ -577,7 +583,7 @@ class DocxToolkitBatchTest {
         .contains("不存在");
     assertThat(
             tk.trackedChangeQuery.applyTrackedChanges(
-                "doc-999", "ACCEPT", "TEXT_OR_MOVE", List.of("ins:1")))
+                "doc-999", "ACCEPT", "TEXT_OR_MOVE", List.of("ins:1"), null, null))
         .contains("不存在");
   }
 
@@ -831,7 +837,7 @@ class DocxToolkitBatchTest {
     // 批量 accept:真实 id + 不存在的 id。
     String result =
         tk.trackedChangeQuery.applyTrackedChanges(
-            docId, "ACCEPT", "PROPERTY", List.of(propId, "rpr_change:not-exist"));
+            docId, "ACCEPT", "PROPERTY", List.of(propId, "rpr_change:not-exist"), null, null);
     assertThat(result).contains(propId).contains("已应用");
     assertThat(result).contains("not-exist");
     assertThat(com.non.docx.toolkit.ToolTestSupport.parse(result).code())
@@ -910,7 +916,8 @@ class DocxToolkitBatchTest {
             tk.session.openDocx(file.toAbsolutePath().toString()));
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
 
-    String result = tk.trackedChangeQuery.applyTextRevisions(docId, "ACCEPT", "ALL", null);
+    String result =
+        tk.trackedChangeQuery.applyTextRevisions(docId, "ACCEPT", "ALL", null, true, null);
     assertThat(result).contains("已应用 2 条文本/移动类修订");
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("无修订");
   }
@@ -948,7 +955,7 @@ class DocxToolkitBatchTest {
         com.non.docx.toolkit.ToolTestSupport.extractDocId(
             tk.session.openDocx(file.toAbsolutePath().toString()));
 
-    assertThat(tk.trackedChangeQuery.applyTextRevisions(docId, "MERGE", "ALL", null))
+    assertThat(tk.trackedChangeQuery.applyTextRevisions(docId, "MERGE", "ALL", null, true, null))
         .contains("action 仅支持");
     assertThat(tk.trackedChangeQuery.applyTextRevisions(docId, "ACCEPT", "IDS", null))
         .contains("scope 仅支持");
@@ -1039,7 +1046,7 @@ class DocxToolkitBatchTest {
             tk.session.openDocx(file.toAbsolutePath().toString()));
 
     // 两个都不传 → 报错,文档不变。
-    assertThat(tk.body.updateHyperlink(docId, 0, 0, null, null)).contains("至少传一个");
+    assertThat(tk.body.updateHyperlink(docId, 0, 0, null, null)).contains("未提供 text 或 url");
     assertThat(tk.body.readHyperlink(docId, 0, 0)).contains("旧文本");
   }
 
