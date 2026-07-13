@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 24
-- **Last Active**: 2026-07-12
+- **Total Sessions**: 25
+- **Last Active**: 2026-07-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1124 | Active |
+| `journal-1.md` | ~1158 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 25 | 2026-07-13 | P0-05 写安全协议落地 + 批量归档全部 router 子代理任务 | `805530d`, `fd209cb` | `main` |
 | 24 | 2026-07-12 | 完成 Router 编排协议基建 | `b399b74`, `c9acef7` | `main` |
 | 23 | 2026-07-12 | P0-04 统一语义视图 | `3ee1393`, `2247b7b`, `7ad6194` | `main` |
 | 22 | 2026-07-12 | P0-03 机器可读能力契约 | `b6d25cf`, `5e7b13d`, `5eb682b` | `main` |

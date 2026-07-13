@@ -1122,3 +1122,37 @@ Consolidated the nondocx toolkit Agent tool surface into intention-oriented entr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: P0-05 写安全协议落地 + 批量归档全部 router 子代理任务
+
+**Date**: 2026-07-13
+**Task**: P0-05 写安全协议落地 + 批量归档全部 router 子代理任务
+**Branch**: `main`
+
+### Summary
+
+落地 P0-05 写操作安全协议：ToolResult 新增 changedCount/skippedCount 计数字段；ToolkitToolContext 增 noChangesApplied/generationMismatch/checkExpectedGeneration 协议工厂；BodyTools/TableTools/TrackedChangeAuthoringTools/TrackedChangeQueryTools 全部写工具接入 expected_generation/on_error(stop)/confirm_all 参数与计数回报；BodyExecutor/TableExecutor/RevisionExecutor 调用点适配新签名；DocxToolkitBatchTest 40 用例全通过。会话内还批量归档了全部 8 个已完成任务（07-09 router 子代理系列 5 个 + 07-10 两个修复 + p0-05）。demo 模块的 VLLM 联调与 prompt 日志改动保留为工作区 WIP 未提交。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `805530d` | (see git log) |
+| `fd209cb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
