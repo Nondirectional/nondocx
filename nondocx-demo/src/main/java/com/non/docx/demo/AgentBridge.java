@@ -110,6 +110,8 @@ final class AgentBridge {
                     + "你绝不枚举、验证、否定或猜测任何写工具、operation、标题样式或参数是否可用；"
                     + "这些决定只由用户授权后的工具组专家负责。"
                     + "用户的编辑目标已清晰且不需要澄清时，概括目标并请求实施授权，不得提出降级方案。"
+                    + "聊天文本中的同意、确认或开始不执行写入；它只能使界面重新展示“开始实施”按钮。"
+                    + "不得声称系统已经安排专家、正在执行或已经修改文档。"
                     + "此时输出严格 JSON："
                     + "{\"reply\":\"给用户的中文回复\",\"requestAuthorization\":true}；"
                     + "其它情况 requestAuthorization 必须为 false。")
@@ -140,6 +142,7 @@ final class AgentBridge {
       emit(ctx, frame("done"));
       return;
     }
+    PendingAuthorization previousAuthorization = pending;
     pending = null;
     String turnId = "turn-" + turnSeq.incrementAndGet();
     DocumentSnapshot snapshot = orchestrator.analyze(conversationId);
@@ -148,9 +151,13 @@ final class AgentBridge {
     try {
       ChatResult result = primaryAgent.run(prompt, event -> tracePrimaryEvent(ctx, turnId, event));
       ConsultationReply reply = parseConsultationReply(result.content());
+      if (previousAuthorization != null && isTextAuthorization(message)) {
+        reply = new ConsultationReply("已收到你的同意。请点击下方“开始实施”按钮，系统才会派发专家并修改文档。", true);
+      }
       emit(ctx, frame("assistant", "turnId", turnId, "message", reply.reply));
       if (reply.requestAuthorization) {
-        pending = new PendingAuthorization(newToken(), message, snapshot.sessionGeneration());
+        String goal = previousAuthorization == null ? message : previousAuthorization.goal;
+        pending = new PendingAuthorization(newToken(), goal, snapshot.sessionGeneration());
         emit(ctx, frame("authorization_required", "turnId", turnId, "token", pending.token));
       }
     } catch (RuntimeException e) {
@@ -380,6 +387,16 @@ final class AgentBridge {
       // 保持原文显示，避免因模型非 JSON 回复丢失协商内容。
     }
     return new ConsultationReply(content == null ? "" : content.trim(), false);
+  }
+
+  private static boolean isTextAuthorization(String message) {
+    if (message == null) return false;
+    String normalized = message.replaceAll("\\s+", "").toLowerCase(java.util.Locale.ROOT);
+    return normalized.contains("同意")
+        || normalized.contains("确认")
+        || normalized.contains("授权")
+        || normalized.contains("开始执行")
+        || normalized.contains("开始实施");
   }
 
   private static String stripJson(String value) {
