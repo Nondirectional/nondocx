@@ -297,73 +297,18 @@ tk.session.closeDocx(docId);
 
 ---
 
-## 9. 多子代理编排层（orchestration）
+## 9. Agent + SubAgent
 
-七组工具 + 门面是「单 Agent 直连全部工具」的用法。当编辑任务变复杂（多轮、多领域、需计划/审查/提交层）时，toolkit 还提供一套更可控的编排层：**RouterAgent + 多专业子代理 + 唯一提交通道**。
+toolkit 提供共享会话的文档工具；调用方决定 Agent 拓扑。推荐把只读工具给主 Agent，把写入工具给无状态 SubAgent，并由主 Agent 的工具调用触发实施。
 
-### 9.1 为什么需要编排层
-
-| 单 Agent 直连 | 多子代理编排 |
-|---|---|
-| 一个 Agent 持有全部工具，prompt 负担重 | 按工具组拆专家，每个专家只懂本组 |
-| LLM 直接调写工具，无统一提交边界 | 写入经 `CommitCoordinator` 串行提交 |
-| 多轮编辑缺计划/审查层 | 有 `ExpertPlan` → `MergedPlan` → review → commit 显式阶段 |
-| 无冲突检测 | 分层冲突检测（强类型 `ConflictKey` + 字段级判断） |
-
-### 9.2 架构总览
-
-```
-调用方
-  ↓
-DocxOrchestrator（对外 facade）
-  ↓
-RouterAgent（调度核心，状态机 ANALYZE→PLAN→REVIEW→COMMIT→DONE/FAILED）
-  ├─ SnapshotBuilder（构建 DocumentSnapshot 共享事实层）
-  ├─ ReadCoordinator（限流只读补读：per-doc=1, global=4）
-  ├─ Expert SubAgents（BodyAgent / TableAgent / RevisionAgent / HeaderTocAgent / QualityAgent）
-  ├─ Review Engine（条件触发，APPROVED/WARNED/BLOCKED/SKIPPED）
-  └─ CommitCoordinator（唯一写入口，非事务、遇错即停）
-        ↓
-     DocxToolkit → nondocx-core → Apache POI
+```text
+主 Agent（view_*）
+  └─ invoke_subagent(task)
+       └─ SubAgent（读、写、质量检查、受限保存）
+            └─ DocxToolkit -> nondocx-core -> Apache POI
 ```
 
-### 9.3 两层 API
-
-**高层** `run(...)` / `chat(...)`——默认只返回 `RunSummary`（摘要 + 精简操作清单 + 统计）：
-
-```java
-DocxOrchestrator orch = DocxOrchestrator.create();
-orch.experts().register(new BodyAgent());
-orch.executors().register(new BodyExecutor(orch.toolkit().body));
-String conv = orch.open(Path.of("a.docx"));
-RunSummary summary = orch.run(conv, "把『你好』改成『Hello』");
-// summary.executedCount() / warnedCount() / skippedCount() / blockedCount()
-```
-
-**低层** `analyze(...)` / `plan(...)`——返回完整阶段产物（snapshot / mergedPlan / review / commitResult），用于调试与精细控制：
-
-```java
-DocumentSnapshot snap = orch.analyze(conv);
-RouterResult result = orch.plan(conv, "...");
-// result.snapshot() / result.mergedPlan() / result.commitResult()
-```
-
-### 9.4 会话模型
-
-- **单会话单文档**：一个 `conversationId` 只服务一份活跃文档。
-- **切文档新会话**：切换到另一份文档必须新开会话，不复用旧 memory。
-- **reopen 递增代次**：close + reopen 同一文档，`sessionGeneration++`，使旧快照与旧 plan 失效。
-- **docId 不外露**：对外只暴露 `conversationId`；底层 `docId` 只在 orchestrator/coordinator 内部流转。
-- **snapshot version 2**：段落/表格 preview 同时包含强类型 ref、投影索引和 body 索引。
-- **冲突键强类型化**：`ConflictKey.targetRef` 保存 `ElementRef`；plan/review/commit 沿用同一 canonical ref。
-
-### 9.5 提交与失败语义
-
-- **非事务**：`CommitCoordinator` 按固定优先级（结构→文本/样式→修订→质量→保存前检查）顺序执行，遇错即停，**不自动回滚**。
-- **BLOCKED 整批停**：`MergedPlan` 中存在任一 `BLOCKED` operation，整批不进 commit。
-- **WARNED 可提交**：允许提交但 warning 显式暴露在结果/日志/trace。
-- **SKIPPED 保留记录**：被去重/超范围跳过的 operation 保留原因与来源链（`mergedIntoOperationId`）。
-- **失败后 reopen**：提交失败不在半修改内存态上补救，必须 close + reopen 重新打开文档基线。
+SubAgent 应只获得当前文档的句柄和受限保存工具，不能打开、关闭或切换任意路径文档。保存前由应用层运行质量检查：错误阻止保存，警告随结果返回。失败或取消时，应用层重开磁盘文档，丢弃未保存的内存修改。
 
 ---
 
@@ -372,11 +317,10 @@ RouterResult result = orch.plan(conv, "...");
 | 示例 | 演示 |
 |---|---|
 | [`StableSemanticReferenceExample.java`](../nondocx-examples/src/main/java/com/non/docx/examples/StableSemanticReferenceExample.java) | P0-01：前插不漂移、删除 `element_removed`、SESSION 跨代失效、PERSISTENT reopen 后仍命中 |
-| [`DocxOrchestratorExample.java`](../nondocx-examples/src/main/java/com/non/docx/examples/agent/DocxOrchestratorExample.java) | 编排层高层 run / 低层 plan / debug 三条路径（启发式专家，无需 API key） |
 | [`DocxAgentExample.java`](../nondocx-examples/src/main/java/com/non/docx/examples/agent/DocxAgentExample.java) | LLM 直连工具的两段流程：读结构 → 执行编辑（直接编辑 + 修订模式） |
 | [`InteractiveDocxAgentExample.java`](../nondocx-examples/src/main/java/com/non/docx/examples/agent/InteractiveDocxAgentExample.java) | LLM 交互式对话，不限迭代次数 |
 
-`DocxAgentExample` / `InteractiveDocxAgentExample` 需 `DASHSCOPE_API_KEY` 环境变量；`DocxOrchestratorExample` 用启发式专家，无需 key 即可运行。
+`DocxAgentExample` / `InteractiveDocxAgentExample` 需 `DASHSCOPE_API_KEY` 环境变量。
 
 稳定语义引用示例无需 API key：
 

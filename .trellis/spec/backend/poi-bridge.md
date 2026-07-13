@@ -180,8 +180,7 @@ assertions break.
 
 **toolkit 层下游影响**: 此剥离在 toolkit 层产生连锁约束——`add_table_row` / `add_table_cell`
 返回的是**真空结构**（新行 0 单元格、新单元格 0 段落），无法直接被 `replace_table_cell_run_text`
-等 run 文本工具填充（会报段落索引越界）。详见 `orchestration-layer.md` 的「add_table_row /
-add_table_cell 返回空结构」Gotcha。
+等 run 文本工具填充（会报段落索引越界）。SubAgent 遇到该结构时需先创建可写段落。
 
 ### N3 — `XWPFRun.addPicture` width/height are EMU, not pixels
 POI 5.2.5 stores the `width`/`height` args of `addPicture(...)` **verbatim as EMU** on

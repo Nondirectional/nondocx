@@ -203,7 +203,7 @@ ToolResult<T> {
 - [x] 定义 element、operation、property、enum、example 模型。 → `CapabilityOperation`/`CapabilityLevel`/`ParamType` 枚举 + `@ToolCapability`/`@ParamCapability`/`@NestedParamCapability` 注解
 - [x] 为 toolkit 增加 `describe_capabilities`。 → `CapabilityTools.describeCapabilities(element,operation,level)`
 - [x] 构建时生成 `capabilities.json`。 → `CapabilityManifestGenerator` + exec-maven-plugin(process-classes)
-- [x] 文档中的工具表从 schema 生成或校验。 → spec `orchestration-layer.md` 记录硬契约；manifest 是唯一来源
+- [x] 文档中的工具表从 schema 生成或校验。 → `CapabilityManifestGenerator` 生成 manifest；manifest 是唯一来源
 - [x] CI 增加能力契约测试：声明支持的能力必须有真实执行测试。 → `CapabilityContractTest`（全覆盖/测试覆盖/enum 完整性/digest 稳定）
 - [x] 输出 schema digest，能力未变化时 Agent 可复用缓存。 → `CapabilityDigest`(SHA-256，排除 generatedAt)
 
@@ -597,7 +597,7 @@ DocumentIssue {
 
 **目标**
 
-统一 toolkit batch、orchestration commit 和未来 CLI/API 的执行协议。
+统一 toolkit batch 和未来 CLI/API 的执行协议。
 
 **实施清单**
 
@@ -840,4 +840,3 @@ DocumentIssue {
 - Agent 安全约束。
 - 元素能力边界。
 - 兼容性和验证策略。
-

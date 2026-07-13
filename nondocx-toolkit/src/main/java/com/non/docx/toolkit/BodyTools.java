@@ -7,6 +7,7 @@ import com.non.docx.core.api.InlineElement;
 import com.non.docx.core.api.header.Footer;
 import com.non.docx.core.api.header.Header;
 import com.non.docx.core.api.style.Alignment;
+import com.non.docx.core.api.style.HeadingLevel;
 import com.non.docx.core.api.text.Hyperlink;
 import com.non.docx.core.api.text.Paragraph;
 import com.non.docx.core.api.text.Run;
@@ -520,6 +521,17 @@ public final class BodyTools extends ToolkitToolContext {
     }
   }
 
+  private static HeadingLevel parseHeadingLevel(String raw) {
+    if (raw == null || raw.isBlank()) {
+      throw new IllegalArgumentException("heading_level 不能为空");
+    }
+    try {
+      return HeadingLevel.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+    } catch (IllegalArgumentException e) {
+      throw new IllegalArgumentException("heading_level 仅支持 H1/H2/H3/H4/H5/H6:" + raw);
+    }
+  }
+
   private ParagraphTarget resolveParagraphTarget(
       String docId, List<Paragraph> paragraphs, Map<String, Object> payload) {
     ElementResolver resolver = elementResolver(docId);
@@ -827,6 +839,8 @@ public final class BodyTools extends ToolkitToolContext {
    * <ul>
    *   <li>{@code body_index}:整数,必填,正文 body 顺序索引(0 起);{@code bodyElements().size()} 表示末尾
    *   <li>{@code text}:字符串,必填,新段落文本
+   *   <li>{@code heading_level}:可选，H1 到 H6
+   *   <li>{@code alignment}:可选，LEFT/CENTER/RIGHT/JUSTIFY
    * </ul>
    *
    * <p>按数组顺序执行。若多条使用同一个 {@code body_index},第二条会插在第一条之后,从而保持 Agent 传入顺序。 越界/缺字段按 collect-errors
@@ -837,7 +851,8 @@ public final class BodyTools extends ToolkitToolContext {
       description =
           "按正文 body 顺序批量插入若干单 run 段落(改完需 save_docx 落盘)。"
               + "paragraphs 是对象数组,每个对象含 body_index(int,正文 body 顺序索引 0 起;body 元素总数表示末尾)、"
-              + "text(string,新段落文本)。body_index=0 可在文档开头插入;中间索引可插在段落或表格前。"
+              + "text(string,新段落文本),可选 heading_level(H1-H6) 和 alignment(LEFT/CENTER/RIGHT/JUSTIFY)。"
+              + "body_index=0 可在文档开头插入;中间索引可插在段落或表格前。"
               + "部分失败不中断,返回每条成功/失败明细。"
               + "可选 expected_generation 校验文档代次防止旧快照改新状态;"
               + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停)。")
@@ -849,9 +864,17 @@ public final class BodyTools extends ToolkitToolContext {
               name = "paragraphs",
               description =
                   "对象数组,每个对象含 body_index(int)、text(string),"
-                      + "如 [{\"body_index\":0,\"text\":\"标题\"},{\"body_index\":3,\"text\":\"中间段\"}]")
+                      + "可选 heading_level、alignment，如 [{\"body_index\":0,\"text\":\"标题\",\"heading_level\":\"H1\",\"alignment\":\"CENTER\"}]")
           @NestedParamCapability(path = "paragraphs.body_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "paragraphs.text", type = ParamType.STRING)
+          @NestedParamCapability(
+              path = "paragraphs.heading_level",
+              type = ParamType.ENUM,
+              enumValues = {"H1", "H2", "H3", "H4", "H5", "H6"})
+          @NestedParamCapability(
+              path = "paragraphs.alignment",
+              type = ParamType.ENUM,
+              enumValues = {"LEFT", "CENTER", "RIGHT", "JUSTIFY"})
           List<Map<String, Object>> paragraphs,
       @ToolParam(
               name = "on_error",
@@ -905,9 +928,14 @@ public final class BodyTools extends ToolkitToolContext {
       Map<String, Object> m = (Map<String, Object>) item;
       int bodyIndex;
       String text;
+      HeadingLevel headingLevel;
+      Alignment alignment;
       try {
         bodyIndex = getInt(m, "body_index");
         text = getStr(m, "text");
+        headingLevel =
+            m.containsKey("heading_level") ? parseHeadingLevel(getStr(m, "heading_level")) : null;
+        alignment = m.containsKey("alignment") ? parseAlignment(getStr(m, "alignment")) : null;
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(e.getMessage());
         fail++;
@@ -933,7 +961,10 @@ public final class BodyTools extends ToolkitToolContext {
         continue;
       }
       try {
-        doc.insertParagraph(bodyIndex).addRun(text);
+        Paragraph inserted = doc.insertParagraph(bodyIndex);
+        inserted.addRun(text);
+        if (headingLevel != null) inserted.heading(headingLevel);
+        if (alignment != null) inserted.alignment(alignment);
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(rootMessage(e));
         fail++;
@@ -948,7 +979,10 @@ public final class BodyTools extends ToolkitToolContext {
           .append(bodyIndex)
           .append(" 插入段落 → \"")
           .append(text)
-          .append("\" ✓");
+          .append("\"");
+      if (headingLevel != null) sb.append(" heading=").append(headingLevel);
+      if (alignment != null) sb.append(" alignment=").append(alignment);
+      sb.append(" ✓");
       ok++;
     }
     sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");

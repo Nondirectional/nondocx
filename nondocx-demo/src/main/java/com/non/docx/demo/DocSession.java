@@ -24,13 +24,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>本类<b>不</b>持有 POI 活文档({@code Document})—— 那是 {@code DocxToolkit.sessions} map 的事,Agent 在对话里 自己
  * {@code open_docx}。这里只管「磁盘上现在摆着哪个文件、OO 该用哪个 key」。
  *
- * <p><b>刷新机制核心:换 key。</b> OnlyOffice 不能直接 reload 同一实例。每次文档改动(Agent {@code save_docx} 或用户 上传),后端调
- * {@link #bumpKey()} 让 key 变成「新版本 + 当前落盘内容指纹」,前端收到新 key 后 {@code destroyEditor()} + {@code new
+ * <p><b>刷新机制核心:换 key。</b> OnlyOffice 不能直接 reload 同一实例。每次文档改动(SubAgent 受限保存或用户上传),后端调 {@link
+ * #bumpKey()} 让 key 变成「新版本 + 当前落盘内容指纹」,前端收到新 key 后 {@code destroyEditor()} + {@code new
  * DocsAPI.DocEditor(新key)},OO 因 key 变化而重新拉文件、重新转换。详见 design.md §3。
  *
  * <p><b>原子写。</b> {@link #replaceWith(byte[])} 用「临时文件 + {@code Files.move(ATOMIC_MOVE)}」替换磁盘文件,避免
- * OnlyOffice 在文件写到一半时拉取到损坏 docx。{@code save_docx}(POI 写)本身不经过本类,但同样建议在 toolkit 侧或 路由侧做原子替换 —— demo
- * 期 POI 直接覆盖写已可接受,上传路径必须原子。
+ * OnlyOffice 在文件写到一半时拉取到损坏 docx。受限保存(POI 写)本身不经过本类,但同样建议在 toolkit 侧或应用层做原子替换 —— demo 期 POI
+ * 直接覆盖写已可接受,上传路径必须原子。
  *
  * <p><b>线程模型。</b> key 版本用 {@link AtomicInteger} 保证自增原子;{@link #replaceWith(byte[])} 的文件替换本身原子。
  * 但「换文件 + bump key」这一对操作<b>不是</b>原子的——由 {@code AgentBridge} / 路由层的串行化 (demo 单对话队列)保证不会并发触发。

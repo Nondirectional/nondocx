@@ -1,6 +1,6 @@
 package com.non.docx.toolkit.view.dto;
 
-import com.non.docx.toolkit.orchestration.DocumentSnapshot;
+import com.non.docx.toolkit.view.snapshot.DocumentSnapshot;
 import java.util.Objects;
 
 /**

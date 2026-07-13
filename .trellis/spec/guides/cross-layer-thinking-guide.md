@@ -288,25 +288,18 @@ When a CLI auto-detects a mode by probing a remote resource (e.g., checking if `
 
 ---
 
-## Toolkit → Orchestration Coverage Gap
+## Toolkit → SubAgent 覆盖检查
 
-When a toolkit method exists (e.g., `TableTools.setTableBorders`) but the orchestration
-executor doesn't wire it, the LLM has no way to reach it. Every new operation kind must be
-covered in **four** places simultaneously.
+当 toolkit 新增写工具时，SubAgent 的 registry 和提示词必须能发现它；否则工具虽已存在，模型仍无法调用。
 
-### Checklist: After Adding A New Operation Kind
+### Checklist: After Adding A New Agent Tool
 
-- [ ] Added `case "kind":` to the executor's `execute()` switch
-- [ ] Documented the operation + payload fields in `LlmDocxExpert.buildPrompt()`
-- [ ] Added a human-readable case to `OperationDescriptor.describe()`
-- [ ] Added a static `Operation` constructor on the executor class
+- [ ] 声明 `@ToolDef`、能力注解和嵌套参数能力。
+- [ ] 将工具加入需要该能力的 SubAgent registry，不能加入主 Agent registry。
+- [ ] 在 SubAgent system prompt 中说明关键参数和保存顺序。
+- [ ] 添加工具级测试及真实模型委派测试。
 
-See [orchestration-layer.md → Four-Point Coverage Rule](../backend/orchestration-layer.md) for
-the full contract, error matrix, and wrong-vs-correct examples.
-
-**Real-world example**: `set_table_borders` existed in `TableTools` but was never wired into
-`TableExecutor`. When the user said "去掉表格边框", the LLM hallucinated `update_table_style`
-(non-existent kind) and commit FAILED. Fix: added all four coverage points.
+完整边界见 [agent-subagent.md](../backend/agent-subagent.md)。
 
 ---
 

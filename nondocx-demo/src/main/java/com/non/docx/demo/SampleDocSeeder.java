@@ -9,9 +9,9 @@ import java.nio.file.StandardCopyOption;
 /**
  * 把 classpath 里的内置样例 {@code .docx} 落到磁盘工作目录。
  *
- * <p><b>为什么需要这一步。</b> Agent 工具（{@code open_docx}/{@code save_docx}）操作的是<b>磁盘文件路径</b>， 而内置样例打包在 jar
- * 里（classpath 资源），Agent 不能直接 {@code open_docx("/classpath/...")}。 故启动时把样例 复制一份到工作目录 {@code
- * target/demo-work/current.docx}，Agent 再对这个磁盘文件 {@code open_docx}。
+ * <p><b>为什么需要这一步。</b> demo 的受限文档工具操作的是<b>磁盘文件</b>，而内置样例打包在 jar 里（classpath 资源），Agent 不能直接 {@code
+ * open_docx("/classpath/...")}。 故启动时把样例 复制一份到工作目录 {@code target/demo-work/current.docx}，Agent
+ * 再对这个磁盘文件 {@code open_docx}。
  *
  * <p><b>样例 vs 上传。</b> 样例是 demo 的「空白起步」文档；用户点「上传文档」会用自有 .docx 覆盖同一个 {@code current.docx}（见 {@code
  * DocSession}）。两者落到同一文件，只是来源不同。

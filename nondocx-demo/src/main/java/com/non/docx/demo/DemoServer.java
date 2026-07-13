@@ -161,23 +161,9 @@ public final class DemoServer {
         });
   }
 
-  /** 显式实施与取消入口；普通聊天永远不会写入文档。 */
+  /** 取消当前 SubAgent 实施与 trace 回放入口。 */
   private static void registerExecutionRoutes(
       Javalin app, DocSession session, AgentBridge agentBridge) {
-    app.post(
-        "/api/execute",
-        ctx -> {
-          String token = extractString(ctx.body(), "token");
-          if (token == null || token.isBlank()) {
-            ctx.status(400);
-            ctx.json(java.util.Map.of("ok", false, "error", "授权 token 不能为空"));
-            return;
-          }
-          setupSseResponse(ctx);
-          synchronized (CHAT_LOCK) {
-            agentBridge.executeStream(token, ctx, session);
-          }
-        });
     app.post(
         "/api/cancel",
         ctx -> {

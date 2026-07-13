@@ -69,7 +69,7 @@ function mountEditor(config) {
 /**
  * 刷新编辑器:从后端拉最新 key,销毁旧实例,重建。
  *
- * <p>这是 Phase 5 刷新机制的入口。后端 save_docx 成功后会推 doc_changed 事件(带新 key),
+ * <p>这是 Phase 5 刷新机制的入口。后端受限保存成功后会推 doc_changed 事件(带新 key),
  * 前端收到后调本函数。也可不依赖事件,直接拉 /api/doc/config 重建。
  */
 async function refreshFromBackend(newKey) {
@@ -121,6 +121,15 @@ chatForm.addEventListener('submit', async (e) => {
   appendMsg('user', message);
   chatInput.value = '';
   setChatting(true);
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'tool-btn';
+  cancelButton.textContent = '取消';
+  cancelButton.addEventListener('click', async () => {
+    cancelButton.disabled = true;
+    await fetch('/api/cancel', { method: 'POST' });
+  });
+  chatForm.appendChild(cancelButton);
 
   // 2) 按 SSE 到达顺序渲染助手文字与工具卡片。
   // text 连续到达时续写当前气泡；工具调用后再来的 text 会新建气泡，保持时间轴顺序。
@@ -159,6 +168,7 @@ chatForm.addEventListener('submit', async (e) => {
     appendMsg('error', '网络错误:' + err.message);
     console.error(err);
   } finally {
+    cancelButton.remove();
     setChatting(false);
   }
 });
@@ -191,7 +201,7 @@ function handleSseFrame(frame, assistantState) {
   }
 }
 
-// ============ 协商/实施时间线 reducer ============
+// ============ SubAgent 实施时间线 reducer ============
 
 const timelineRuns = new Map();
 
@@ -209,15 +219,14 @@ function reduceTimelineEvent(data, replay) {
   run.events.push(data);
   switch (data.type) {
     case 'assistant': run.reply = data.message || ''; break;
-    case 'authorization_required': run.status = 'awaiting_authorization'; run.token = replay ? null : data.token; break;
-    case 'dispatch': run.status = 'executing'; run.assignments = data.assignments || []; break;
-    case 'review': run.operations = data.operations || []; break;
-    case 'commit': run.status = 'completed'; run.commit = data.detail || ''; break;
-    case 'quality': run.quality = data.detail || ''; if (/未通过|错误|❌/.test(run.quality)) run.status = 'quality_failed'; break;
-    case 'blocked': run.status = 'blocked'; run.message = data.message || ''; break;
-    case 'rolled_back': run.status = 'rolled_back'; run.message = data.message || ''; break;
+    case 'subagent_result':
+      run.status = data.success ? 'completed' : 'rolled_back';
+      run.result = data.error || '';
+      run.quality = data.qualityReport || '';
+      break;
     case 'error': run.status = 'blocked'; run.message = data.message || '未知错误'; break;
     case 'trace': {
+      if (data.event === 'tool_start' && data.tool === 'invoke_subagent') run.status = 'executing';
       const agent = data.agent || 'unknown';
       if (!run.traces.has(agent)) run.traces.set(agent, []);
       run.traces.get(agent).push(data);
@@ -235,24 +244,21 @@ function renderTimelineRun(run) {
     card.className = 'timeline-run';
     messagesEl.appendChild(card);
   }
-  card.open = !run.replay && !['completed', 'blocked', 'rolled_back', 'quality_failed'].includes(run.status);
+  card.open = !run.replay && !['completed', 'blocked', 'rolled_back'].includes(run.status);
   card.innerHTML = '';
   const summary = document.createElement('summary');
   summary.textContent = statusLabel(run.status) + ' · ' + run.id;
   summary.className = 'timeline-summary ' + run.status;
   card.appendChild(summary);
-  addTimelineText(card, '协商', run.reply);
-  if (run.status === 'awaiting_authorization') renderAuthorization(card, run);
-  if (run.assignments.length) addTimelineText(card, 'DispatchPlan', run.assignments.map(a => a.toolGroup + '：' + a.task).join('\n'));
-  if (run.operations.length) addTimelineText(card, 'Review', run.operations.map(o => o.description || o.shortLabel || JSON.stringify(o)).join('\n'));
-  addTimelineText(card, '提交', run.commit || run.message);
+  addTimelineText(card, '主 Agent', run.reply);
+  addTimelineText(card, '实施结果', run.result || run.message);
   addTimelineText(card, '质量验收', run.quality);
   for (const [agent, events] of run.traces) renderTimelineTrace(card, agent, events, card.open);
   scrollToBottom();
 }
 
 function statusLabel(status) {
-  return ({ consulting: '协商中', awaiting_authorization: '等待授权', executing: '实施中', completed: '已实施', quality_failed: '已实施，验收未通过', blocked: '已阻断', rolled_back: '已回滚' })[status] || status;
+  return ({ consulting: '处理中', executing: '实施中', completed: '已实施', blocked: '已阻断', rolled_back: '已回滚' })[status] || status;
 }
 
 function addTimelineText(card, title, value) {
@@ -263,63 +269,12 @@ function addTimelineText(card, title, value) {
   section.append(label, pre); card.appendChild(section);
 }
 
-function renderAuthorization(card, run) {
-  const section = document.createElement('section'); section.className = 'timeline-actions';
-  const start = document.createElement('button'); start.type = 'button'; start.textContent = '开始实施';
-  start.disabled = !run.token;
-  start.addEventListener('click', () => executeWithToken(run.token, run, start));
-  section.append('协商完成。', start); card.appendChild(section);
-}
-
 function renderTimelineTrace(card, agent, events, open) {
   const details = document.createElement('details'); details.className = 'timeline-trace'; details.open = open;
   const summary = document.createElement('summary'); summary.textContent = 'Trace · ' + agent; details.appendChild(summary);
   const pre = document.createElement('pre');
   pre.textContent = events.map(e => e.event === 'prompt' ? '[Prompt]\n' + (e.prompt || '') : e.event === 'tool_start' ? '[工具] ' + e.tool + '\n' + (e.arguments || '') : e.event === 'tool_end' ? '[结果] ' + e.tool + '\n' + (e.result || '') : e.event === 'thinking_delta' ? e.delta || '' : e.event === 'content_delta' ? e.delta || '' : '[' + e.event + ']').join('');
   details.appendChild(pre); card.appendChild(details);
-}
-
-async function executeWithToken(token, run, button) {
-  if (chatting) return;
-  button.disabled = true;
-  run.status = 'executing';
-  run.token = null;
-  renderTimelineRun(run);
-  setChatting(true);
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.textContent = '取消实施';
-  cancelButton.addEventListener('click', async () => {
-    cancelButton.disabled = true;
-    await fetch('/api/cancel', { method: 'POST' });
-  });
-  const card = document.getElementById('timeline-' + run.id);
-  card.appendChild(cancelButton);
-  const assistantState = { currentTextEl: null };
-  try {
-    const resp = await fetch('/api/execute', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
-    });
-    if (!resp.ok) { appendMsg('error', '实施请求失败:' + await resp.text()); return; }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let sep;
-      while ((sep = buffer.indexOf('\n\n')) >= 0) {
-        handleSseFrame(buffer.slice(0, sep), assistantState);
-        buffer = buffer.slice(sep + 2);
-      }
-    }
-  } catch (err) {
-    appendMsg('error', '实施网络错误:' + err.message);
-  } finally {
-    cancelButton.remove();
-    setChatting(false);
-  }
 }
 
 // ============ DOM 辅助 ============

@@ -1,6 +1,5 @@
 package com.non.docx.toolkit;
 
-import com.non.docx.toolkit.orchestration.commit.ToolResultChecks;
 import com.non.docx.toolkit.result.ToolResultParser;
 
 /**
@@ -22,7 +21,8 @@ public final class ToolTestSupport {
    * @return docId（如 {@code "doc-1"}）
    */
   public static String extractDocId(String raw) {
-    return ToolResultChecks.extractData(raw);
+    ToolResultParser.Snapshot parsed = ToolResultParser.parse(raw);
+    return parsed != null && parsed.dataText() != null ? parsed.dataText() : raw;
   }
 
   /**
@@ -34,7 +34,8 @@ public final class ToolTestSupport {
    * @return true 表示失败
    */
   public static boolean isFailure(String raw) {
-    return ToolResultChecks.isFailure(raw);
+    ToolResultParser.Snapshot parsed = ToolResultParser.parse(raw);
+    return parsed != null && parsed.isFailure();
   }
 
   /**

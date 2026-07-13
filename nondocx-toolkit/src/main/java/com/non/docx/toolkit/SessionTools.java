@@ -77,8 +77,7 @@ public final class SessionTools extends ToolkitToolContext {
   /**
    * 按 docId 取活文档（公共 API）。
    *
-   * <p>供 orchestration 编排层（{@code DocxOrchestrator} / {@code ReadCoordinator}）查询当前会话的活文档。 这是编排层访问活
-   * {@code Document} 的受控入口——不暴露整个 sessions Map，只给按 id 查询。
+   * <p>供应用层的受限保存、质量检查和语义视图查询当前会话的活文档。不暴露整个 sessions Map，只给按 id 查询。
    *
    * @param docId 文档句柄
    * @return 活文档；句柄不存在返回 null

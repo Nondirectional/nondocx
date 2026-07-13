@@ -28,7 +28,7 @@ quality.
 | [Logging](./logging.md) | 库不日志走异常；demo 用 SLF4J；POI 5.x log4j-api 桥接陷阱 | Done |
 | [Quality Guidelines](./quality-guidelines.md) | No Lombok, content-equal semantics, testing, forbidden patterns | Done |
 | [Renderer Compatibility](./renderer-compatibility.md) | WPS/Word 双引擎兼容性陷阱清单（shading/列宽/pgNumType/...），每条带稳定锚点 | Done |
-| [Orchestration Layer](./orchestration-layer.md) | LLM operation → toolkit 桥接：四点覆盖、payload 容错、快照双索引、稳定语义引用、结构化工具结果、机器可读能力契约 | Done |
+| [Agent + SubAgent](./agent-subagent.md) | 主 Agent 通过受限、无状态 SubAgent 实施当前文档编辑；保存、取消、质量和 SSE 契约 | Done |
 
 Also relevant: [../guides/](../guides/) — general thinking guides (code reuse, cross-layer).
 
