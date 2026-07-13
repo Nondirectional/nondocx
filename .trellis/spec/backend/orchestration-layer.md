@@ -34,7 +34,7 @@ Demo 出现多轮沟通需求时，普通聊天不得复用旧 `ANALYZE → PLAN
 
 ### 3. Contracts
 
-- 主 Agent registry 只能 scan `ViewTools` 与 `CapabilityTools`；写工具不进入 LLM schema。每个协商 prompt 提供当前 `doc_id`。
+- 主 Agent registry 只能 scan `ViewTools`；写工具和全量 `CapabilityTools` 都不进入 LLM schema。每个协商 prompt 提供当前 `doc_id`。主 Agent 不得判断写 operation 是否存在或可行。
 - 主 Agent 的回复为 `{"reply":"...","requestAuthorization":boolean}`。只有 `true` 才下发 token；文本中的“确认”不执行写入。
 - 授权后由主 Agent 输出 `DispatchPlan` JSON；仅允许 `body/table/header-toc/revision/quality`，专家输出必须和其分配组相同。
 - Trace 同时 SSE 和 JSONL 追加；落盘前删除 `apiKey`、`authorization`、`Authorization`。

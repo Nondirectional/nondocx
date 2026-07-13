@@ -7,8 +7,8 @@ import com.non.chain.Message;
 import com.non.chain.agent.Agent;
 import com.non.chain.agent.AgentEvent;
 import com.non.chain.memory.MessageWindowChatMemory;
+import com.non.chain.provider.DashscopeLLM;
 import com.non.chain.provider.LLM;
-import com.non.chain.provider.VLLM;
 import com.non.chain.tool.ToolRegistry;
 import com.non.docx.toolkit.orchestration.DocumentSnapshot;
 import com.non.docx.toolkit.orchestration.DocxOrchestrator;
@@ -82,10 +82,7 @@ final class AgentBridge {
       return;
     }
     enabled = true;
-    llm =
-        new VLLM("http://10.100.10.21:40002/v1", "qwen3-14b")
-            .maxCompletionTokens(65536)
-            .thinkingBudget(512);
+    llm = new DashscopeLLM("qwen3.7-plus").maxCompletionTokens(65536).thinkingBudget(512);
     orchestrator = DocxOrchestrator.create();
     orchestrator
         .executors()
@@ -103,17 +100,17 @@ final class AgentBridge {
     conversationId = orchestrator.open(this.currentDocPath);
     primaryMemory =
         MessageWindowChatMemory.builder().conversationId(conversationId).maxMessages(24).build();
-    ToolRegistry readTools =
-        new ToolRegistry()
-            .scan(orchestrator.toolkit().view)
-            .scan(orchestrator.toolkit().capability);
+    ToolRegistry readTools = new ToolRegistry().scan(orchestrator.toolkit().view);
     primaryAgent =
         Agent.builder(llm, readTools)
             .memory(primaryMemory)
             .maxIterations(6)
             .systemPrompt(
-                "你是主文档协商 Agent。仅可调用已注册的只读工具，不得写文档、不得调度专家。"
-                    + "信息充分且用户明确要求修改时，输出严格 JSON："
+                "你是主文档协商 Agent。仅可调用已注册的只读文档视图工具，不得写文档、不得调度专家。"
+                    + "你绝不枚举、验证、否定或猜测任何写工具、operation、标题样式或参数是否可用；"
+                    + "这些决定只由用户授权后的工具组专家负责。"
+                    + "用户的编辑目标已清晰且不需要澄清时，概括目标并请求实施授权，不得提出降级方案。"
+                    + "此时输出严格 JSON："
                     + "{\"reply\":\"给用户的中文回复\",\"requestAuthorization\":true}；"
                     + "其它情况 requestAuthorization 必须为 false。")
             .build();
@@ -326,7 +323,7 @@ final class AgentBridge {
   private String consultationPrompt(String message, DocumentSnapshot snapshot) {
     return "当前文档句柄："
         + orchestratorSession().docId()
-        + "。你可调用 view_* 和 describe_capabilities 读取内容。"
+        + "。你可调用 view_* 读取内容。"
         + "\n文档初始快照："
         + snapshot.overview()
         + "\n用户："
