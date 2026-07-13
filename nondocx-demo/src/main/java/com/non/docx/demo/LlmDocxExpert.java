@@ -346,7 +346,11 @@ final class LlmDocxExpert implements ExpertAgent {
           llmOutput.replaceAll("^```(?:json)?\\s*", "").replaceAll("\\s*```$", "").trim();
       JsonNode root = json.readTree(cleaned);
       JsonNode arr = root.path("operations");
-      if (!arr.isArray()) return ops;
+      if (!arr.isArray()) {
+        log.warn("专家 {} 输出不含 operations 数组: {}", name(), abbreviate(cleaned));
+        return ops;
+      }
+      log.info("专家 {} 开始解析 {} 条 operation JSON", name(), arr.size());
       for (JsonNode item : arr) {
         try {
           Operation op = parseOne(item);
@@ -364,6 +368,10 @@ final class LlmDocxExpert implements ExpertAgent {
           ex);
     }
     return ops;
+  }
+
+  private static String abbreviate(String value) {
+    return value.length() > 500 ? value.substring(0, 500) + "..." : value;
   }
 
   private Operation parseOne(JsonNode item) {
