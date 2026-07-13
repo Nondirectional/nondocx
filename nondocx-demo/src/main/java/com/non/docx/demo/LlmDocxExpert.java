@@ -266,6 +266,7 @@ final class LlmDocxExpert implements ExpertAgent {
     try {
       Message message = Message.user(prompt);
       StringBuilder streamedContent = new StringBuilder();
+      StringBuilder streamedThinking = new StringBuilder();
       log.info("发送 LLM prompt:\n----- PROMPT BEGIN -----\n{}\n----- PROMPT END -----", prompt);
       ChatResult result =
           llm.streamChat(
@@ -283,8 +284,11 @@ final class LlmDocxExpert implements ExpertAgent {
                 }
                 if (chunk.hasThinking()) {
                   String delta = chunk.deltaThinking();
-                  if (delta != null && !delta.isEmpty() && traceCallback != null) {
-                    traceCallback.accept(LlmTraceEvent.ofThinkingDelta(name(), delta));
+                  if (delta != null && !delta.isEmpty()) {
+                    streamedThinking.append(delta);
+                    if (traceCallback != null) {
+                      traceCallback.accept(LlmTraceEvent.ofThinkingDelta(name(), delta));
+                    }
                   }
                 }
               });
@@ -293,13 +297,15 @@ final class LlmDocxExpert implements ExpertAgent {
         traceCallback.accept(LlmTraceEvent.ofComplete(name(), result.tokenUsage()));
       }
       String streamed = streamedContent.toString().trim();
+      String thinking = streamedThinking.toString().trim();
       String completed = result.content() == null ? "" : result.content().trim();
-      String selected = streamed.isEmpty() ? completed : streamed;
+      String selected = selectOperationOutput(streamed, completed, thinking);
       log.info(
-          "LLM 输出来源: streamedChars={}, completedChars={}, 使用={}",
+          "LLM 输出来源: streamedChars={}, completedChars={}, thinkingChars={}, 使用={}",
           streamed.length(),
           completed.length(),
-          streamed.isEmpty() ? "completed" : "streamed");
+          thinking.length(),
+          selected == thinking ? "thinking" : (selected == streamed ? "streamed" : "completed"));
       return selected;
     } catch (RuntimeException e) {
       // LLM 调用失败——返回空 plan，不阻断流程；推 failure 事件让前端标红
@@ -308,6 +314,26 @@ final class LlmDocxExpert implements ExpertAgent {
         traceCallback.accept(LlmTraceEvent.ofFailure(name(), rootMessage(e)));
       }
       return "{\"operations\":[]}";
+    }
+  }
+
+  /** response 优先；仅 thinking 自身是完整 operation JSON 时才采用，防止把普通思考当操作。 */
+  private String selectOperationOutput(String streamed, String completed, String thinking) {
+    if (hasOperations(streamed)) return streamed;
+    if (hasOperations(completed)) return completed;
+    if (hasOperations(thinking)) return thinking;
+    return !streamed.isEmpty() ? streamed : completed;
+  }
+
+  private boolean hasOperations(String output) {
+    if (output == null || output.isBlank()) return false;
+    try {
+      JsonNode root =
+          json.readTree(
+              output.replaceAll("^```(?:json)?\\s*", "").replaceAll("\\s*```$", "").trim());
+      return root.path("operations").isArray();
+    } catch (Exception ignored) {
+      return false;
     }
   }
 
