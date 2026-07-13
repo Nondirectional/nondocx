@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/orchestration-layer.md", "reason": "编排协议、Operation、review 与提交约束"}
+{"file": "nondocx-demo/src/main/java/com/non/docx/demo/AgentBridge.java", "reason": "现有 Demo SSE、单专家和保存链路"}
+{"file": "nondocx-demo/src/main/resources/static/app.js", "reason": "现有聊天、SSE trace 与前端状态渲染"}
+{"file": "/Users/non/.codex/skills/skills/nonchain-agent/SKILL.md", "reason": "主 Agent memory、只读工具与流式事件 API"}

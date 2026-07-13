@@ -2,7 +2,6 @@ package com.non.docx.demo;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.non.chain.ChatChunk;
 import com.non.chain.ChatResult;
 import com.non.chain.Message;
 import com.non.chain.provider.LLM;
@@ -18,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -52,14 +52,22 @@ final class LlmDocxExpert implements ExpertAgent {
   private final LLM llm;
   private final ObjectMapper json = new ObjectMapper();
   private final AtomicLong opIdSeq = new AtomicLong();
+  private final String expertName;
+  private final Set<String> allowedToolGroups;
 
   LlmDocxExpert(LLM llm) {
+    this(llm, "LlmDocxExpert", Set.of("body", "table", "header-toc", "revision", "quality"));
+  }
+
+  LlmDocxExpert(LLM llm, String expertName, Set<String> allowedToolGroups) {
     this.llm = llm;
+    this.expertName = expertName;
+    this.allowedToolGroups = Set.copyOf(allowedToolGroups);
   }
 
   @Override
   public String name() {
-    return "LlmDocxExpert";
+    return expertName;
   }
 
   @Override
@@ -111,6 +119,9 @@ final class LlmDocxExpert implements ExpertAgent {
   private String buildPrompt(DocumentSnapshot snapshot, String intent) {
     StringBuilder sb = new StringBuilder();
     sb.append("你是一个 docx 文档编辑计划生成器。基于以下文档快照与用户意图，" + "产出要执行的编辑操作列表（严格 JSON，不要输出任何解释文本）。\n\n");
+    sb.append("你是工具组专家，只能输出以下 toolGroup：")
+        .append(String.join(", ", allowedToolGroups))
+        .append("。输出其它工具组操作视为无效。\n\n");
     sb.append("## 文档快照\n");
     sb.append("- 段落数: ").append(snapshot.overview().paragraphCount()).append('\n');
     sb.append("- 表格数: ").append(snapshot.overview().tableCount()).append('\n');
@@ -325,6 +336,11 @@ final class LlmDocxExpert implements ExpertAgent {
     String kind = text(item, "kind");
     String targetRef = text(item, "targetRef");
     if (toolGroup.isEmpty() || kind.isEmpty() || targetRef.isEmpty()) return null;
+    toolGroup = toolGroup.toLowerCase(Locale.ROOT);
+    if (!allowedToolGroups.contains(toolGroup)) {
+      log.warn("专家 {} 拒绝越界操作 toolGroup={}", name(), toolGroup);
+      return null;
+    }
 
     Map<String, Object> payload = new LinkedHashMap<>();
     JsonNode payloadNode = item.path("payload");
@@ -337,11 +353,11 @@ final class LlmDocxExpert implements ExpertAgent {
 
     return Operation.of(
         "llm-op-" + opIdSeq.incrementAndGet(),
-        toolGroup.toLowerCase(Locale.ROOT),
+        toolGroup,
         kind,
         targetRef,
         payload,
-        new ConflictKey(toolGroup.toLowerCase(Locale.ROOT), kind, targetRef),
+        new ConflictKey(toolGroup, kind, targetRef),
         intentText,
         reason,
         riskNote);

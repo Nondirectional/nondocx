@@ -191,6 +191,29 @@ function handleSseFrame(frame, assistantState) {
       handleTraceFrame(data);
       break;
     }
+    case 'assistant': {
+      appendMsg('assistant', data.message || '');
+      break;
+    }
+    case 'authorization_required': {
+      renderExecuteButton(data.token);
+      break;
+    }
+    case 'dispatch': {
+      appendMsg('system', '已生成实施分派：' + (data.assignments || []).map(a => a.toolGroup + '（' + a.task + '）').join('；'));
+      break;
+    }
+    case 'review': {
+      appendMsg('system', '专家计划已合并，正在集中提交。');
+      break;
+    }
+    case 'commit':
+    case 'quality':
+    case 'blocked':
+    case 'rolled_back': {
+      appendMsg(data.type === 'rolled_back' ? 'error' : 'system', data.detail || data.message || data.type);
+      break;
+    }
     case 'doc_changed': {
       // save 成功，用新 key 刷新 OnlyOffice
       console.log('[刷新] save 成功,新 key:', data.key);
@@ -204,6 +227,58 @@ function handleSseFrame(frame, assistantState) {
     case 'done': {
       break;
     }
+  }
+}
+
+/** 只有服务端签发 token 后才出现；普通输入不会触发实施。 */
+function renderExecuteButton(token) {
+  const wrap = document.createElement('div');
+  wrap.className = 'authorization-action';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = '开始实施';
+  button.addEventListener('click', () => executeWithToken(token, button));
+  wrap.append('信息已协商完成。', button);
+  messagesEl.appendChild(wrap);
+  scrollToBottom();
+}
+
+async function executeWithToken(token, button) {
+  if (chatting) return;
+  button.disabled = true;
+  setChatting(true);
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.textContent = '取消实施';
+  cancelButton.addEventListener('click', async () => {
+    cancelButton.disabled = true;
+    await fetch('/api/cancel', { method: 'POST' });
+  });
+  button.parentElement.appendChild(cancelButton);
+  const assistantState = { currentTextEl: null };
+  try {
+    const resp = await fetch('/api/execute', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
+    });
+    if (!resp.ok) { appendMsg('error', '实施请求失败:' + await resp.text()); return; }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep;
+      while ((sep = buffer.indexOf('\n\n')) >= 0) {
+        handleSseFrame(buffer.slice(0, sep), assistantState);
+        buffer = buffer.slice(sep + 2);
+      }
+    }
+  } catch (err) {
+    appendMsg('error', '实施网络错误:' + err.message);
+  } finally {
+    cancelButton.remove();
+    setChatting(false);
   }
 }
 
@@ -353,6 +428,12 @@ function handleTraceFrame(data) {
       break;
     case 'thinking_delta':
       panel.thinkingEl.append(document.createTextNode(data.delta || ''));
+      break;
+    case 'tool_start':
+      panel.responseEl.append(document.createTextNode('\n[调用工具] ' + (data.tool || '') + '\n' + (data.arguments || '') + '\n'));
+      break;
+    case 'tool_end':
+      panel.responseEl.append(document.createTextNode('[工具结果] ' + (data.tool || '') + '\n' + (data.result || '') + '\n'));
       break;
     case 'complete':
       if (data.success === false) {
@@ -557,6 +638,25 @@ function clearChatHistory() {
   messagesEl.appendChild(welcome);
 }
 
+/** 页面重载后重放服务端 JSONL；坏行跳过，不影响当前对话。 */
+async function replayTrace() {
+  try {
+    const resp = await fetch('/api/trace');
+    if (!resp.ok) return;
+    const text = await resp.text();
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        handleSseFrame('data: ' + line, { currentTextEl: null });
+      } catch (e) {
+        console.warn('跳过无法回放的 trace 事件', e);
+      }
+    }
+  } catch (e) {
+    console.warn('trace 回放失败', e);
+  }
+}
+
 // ============ 启动 ============
 // 确认 OnlyOffice api.js 已加载(DocsAPI 全局存在)
 if (typeof DocsAPI === 'undefined') {
@@ -580,3 +680,5 @@ fetch('/api/status')
     }
   })
   .catch((e) => console.warn('检查状态失败', e));
+
+replayTrace();

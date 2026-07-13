@@ -18,6 +18,69 @@ LLM → ExpertPlan(JSON) → MergedPlan → CommitCoordinator → OperationExecu
 
 ---
 
+## Scenario: 协商与显式授权实施
+
+### 1. Scope / Trigger
+
+Demo 出现多轮沟通需求时，普通聊天不得复用旧 `ANALYZE → PLAN → COMMIT` 自动路径。协商只读；写入只发生在单独的授权端点。
+
+### 2. Signatures
+
+- `POST /api/chat`：`{"message":"..."}`，只进入 `PrimaryConversationAgent`。
+- `POST /api/execute`：`{"token":"..."}`，仅接受服务器签发的一次性授权 token。
+- `POST /api/cancel`：请求当前实施取消。
+- `GET /api/trace`：返回 JSONL trace 回放。
+- `DocxOrchestrator.commitPlan(conversationId, mergedPlan)`：实施协调器唯一的显式提交入口。
+
+### 3. Contracts
+
+- 主 Agent registry 只能 scan `ViewTools` 与 `CapabilityTools`；写工具不进入 LLM schema。每个协商 prompt 提供当前 `doc_id`。
+- 主 Agent 的回复为 `{"reply":"...","requestAuthorization":boolean}`。只有 `true` 才下发 token；文本中的“确认”不执行写入。
+- 授权后由主 Agent 输出 `DispatchPlan` JSON；仅允许 `body/table/header-toc/revision/quality`，专家输出必须和其分配组相同。
+- Trace 同时 SSE 和 JSONL 追加；落盘前删除 `apiKey`、`authorization`、`Authorization`。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+|---|---|
+| token 缺失、失效、重复使用或正在执行 | 拒绝 `/api/execute`，零写入 |
+| 文档 generation 与授权时不同 | `blocked`，回到协商 |
+| 无专家分派、跨组输出或空操作 | `blocked`，不提交 |
+| 提交失败或取消 | reopen 未保存磁盘文件，发 `rolled_back` |
+| 保存后质量检查失败 | 保留已保存编辑，发 `quality` 报告，不自动修复 |
+
+### 5. Good/Base/Bad Cases
+
+- Good：用户多轮询问文档，主 Agent 调 `view_text`；用户点“开始实施”后才派发 `body` 专家。
+- Base：主 Agent 无需工具即可回答，仍只产生协商文本。
+- Bad：`/api/chat` 收到“确认执行”即调用 `commitPlan`；这是越过授权边界。
+
+### 6. Tests Required
+
+- 未获得 token 的聊天后，文件字节与会话 generation 不变。
+- 失效 token、文档切换、取消、提交失败均不保存部分文档。
+- 主 Agent 工具 schema 不包含 `ADD/UPDATE/REMOVE` 工具。
+- JSONL 可回放且不含密钥；SSE 包含主 Agent、工具、专家、提交和质量事件。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```java
+// 普通聊天直接跑完整旧管线
+orchestrator.run(conversationId, message);
+```
+
+#### Correct
+
+```java
+// chat 仅协商；token 只由 UI 授权端点消费
+ChatResult reply = primaryAgent.run(message, trace);
+CommitResult result = orchestrator.commitPlan(conversationId, mergedPlan);
+```
+
+---
+
 ## Scenario: Adding a new Operation kind to an Executor
 
 ### 1. Scope / Trigger

@@ -5,6 +5,7 @@ import com.non.docx.toolkit.DocxToolkit;
 import com.non.docx.toolkit.orchestration.agent.ExpertRegistry;
 import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.commit.CommitCoordinator;
+import com.non.docx.toolkit.orchestration.commit.CommitResult;
 import com.non.docx.toolkit.orchestration.commit.OperationExecutors;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
 import com.non.docx.toolkit.orchestration.snapshot.SnapshotBuilder;
@@ -250,6 +251,20 @@ public final class DocxOrchestrator {
       Consumer<LlmTraceEvent> traceCb) {
     OrchestratorSession session = requireSession(conversationId);
     return router.run(session, intent, phaseCallback, traceCb);
+  }
+
+  /**
+   * 提交已由显式分派计划生成并完成 review 的操作。
+   *
+   * <p>协商入口不得调用此方法；它只服务于已经完成用户授权的实施协调器。
+   */
+  public CommitResult commitPlan(String conversationId, MergedPlan plan) {
+    return commitCoordinator.commit(requireSession(conversationId), plan);
+  }
+
+  /** 当前会话，仅供实施协调器向只读专家传递文档句柄。 */
+  public OrchestratorSession session(String conversationId) {
+    return requireSession(conversationId);
   }
 
   // 低层 commit 由 RouterResult 已包含 commitResult；若需单独提交某个 MergedPlan，

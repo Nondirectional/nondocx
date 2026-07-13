@@ -94,6 +94,7 @@ public final class DemoServer {
     // 4) 路由
     registerDocRoutes(app, session, agentBridge);
     registerChatRoute(app, session, agentBridge);
+    registerExecutionRoutes(app, session, agentBridge);
     registerDocSwitchRoutes(app, session, agentBridge, seeder);
   }
 
@@ -157,6 +158,37 @@ public final class DemoServer {
             agentBridge.runStream(message, ctx, session);
           }
           // runStream 内部 flush 完所有帧后,响应自然结束
+        });
+  }
+
+  /** 显式实施与取消入口；普通聊天永远不会写入文档。 */
+  private static void registerExecutionRoutes(
+      Javalin app, DocSession session, AgentBridge agentBridge) {
+    app.post(
+        "/api/execute",
+        ctx -> {
+          String token = extractString(ctx.body(), "token");
+          if (token == null || token.isBlank()) {
+            ctx.status(400);
+            ctx.json(java.util.Map.of("ok", false, "error", "授权 token 不能为空"));
+            return;
+          }
+          setupSseResponse(ctx);
+          synchronized (CHAT_LOCK) {
+            agentBridge.executeStream(token, ctx, session);
+          }
+        });
+    app.post(
+        "/api/cancel",
+        ctx -> {
+          agentBridge.cancel();
+          ctx.json(java.util.Map.of("ok", true));
+        });
+    app.get(
+        "/api/trace",
+        ctx -> {
+          ctx.contentType("application/x-ndjson");
+          ctx.result(agentBridge.traceReplay());
         });
   }
 
@@ -248,11 +280,16 @@ public final class DemoServer {
 
   /** 简易 JSON 提取:从 {"message":"..."} 取 message 值(不引 JSON 库)。 */
   private static String extractMessage(String json) {
+    return extractString(json, "message");
+  }
+
+  /** 从扁平 JSON 对象提取一个字符串字段。 */
+  private static String extractString(String json, String key) {
     if (json == null || json.isBlank()) {
       return null;
     }
     // 找 "message":"..." 模式
-    int idx = json.indexOf("\"message\"");
+    int idx = json.indexOf("\"" + key + "\"");
     if (idx < 0) {
       return null;
     }

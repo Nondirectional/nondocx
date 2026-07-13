@@ -1,336 +1,513 @@
 package com.non.docx.demo;
 
-import com.non.chain.provider.DashscopeLLM;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.non.chain.ChatResult;
+import com.non.chain.Message;
+import com.non.chain.agent.Agent;
+import com.non.chain.agent.AgentEvent;
+import com.non.chain.memory.MessageWindowChatMemory;
 import com.non.chain.provider.LLM;
 import com.non.chain.provider.VLLM;
+import com.non.chain.tool.ToolRegistry;
+import com.non.docx.toolkit.orchestration.DocumentSnapshot;
 import com.non.docx.toolkit.orchestration.DocxOrchestrator;
+import com.non.docx.toolkit.orchestration.ExpertPlan;
+import com.non.docx.toolkit.orchestration.MergedPlan;
 import com.non.docx.toolkit.orchestration.Operation;
-import com.non.docx.toolkit.orchestration.PhaseCallback;
-import com.non.docx.toolkit.orchestration.RouterResult;
-import com.non.docx.toolkit.orchestration.RouterState;
 import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.body.BodyExecutor;
+import com.non.docx.toolkit.orchestration.commit.CommitResult;
 import com.non.docx.toolkit.orchestration.specialist.HeaderTocExecutor;
+import com.non.docx.toolkit.orchestration.specialist.QualityAgent;
 import com.non.docx.toolkit.orchestration.specialist.QualityExecutor;
 import com.non.docx.toolkit.orchestration.specialist.RevisionExecutor;
 import com.non.docx.toolkit.orchestration.table.TableExecutor;
 import io.javalin.http.Context;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Agent 桥接层（orchestrator 版）：持有 {@link DocxOrchestrator}，在每个编排阶段完成时推送 step 帧 给前端，前端据此渲染嵌入式进度卡。
+ * Demo 的协商入口。
  *
- * <p><b>架构。</b> LLM 只产出编辑计划（JSON operation），由 RouterAgent 合并、review、经 CommitCoordinator
- * 串行提交——写入有唯一安全边界。本桥接把编排过程的三阶段（分析→计划→提交） 实时推送给前端，让用户看到分步进度而非黑盒等待。
- *
- * <p><b>SSE 帧序列（一轮对话）：</b>
- *
- * <ol>
- *   <li>{@code step(analyze)} —— 分析完成，推文档结构摘要
- *   <li>{@code trace(prompt)} —— LLM prompt 构造完成（PLAN 进行中，一次性）
- *   <li>{@code trace(thinking_delta)} × N —— LLM thinking 逐字（PLAN 进行中）
- *   <li>{@code trace(content_delta)} × N —— LLM response 逐字（PLAN 进行中）
- *   <li>{@code trace(complete)} —— LLM 调用结束（成功/失败）
- *   <li>{@code step(plan)} —— 计划完成，推人话操作清单（PLAN 完成后，与 trace 共存）
- *   <li>{@code step(commit)} —— 提交完成（或失败），推执行结果
- *   <li>{@code doc_changed} —— save 成功后刷新 OO（仅 DONE）
- *   <li>{@code done} —— 本轮结束
- * </ol>
- *
- * <p><b>线程模型。</b> {@code DocxOrchestrator} 与底层 toolkit 为单会话设计，非线程安全；由路由层串行化保证。
+ * <p>普通聊天只允许主 LLM 读取快照并协商；只有 {@link #executeStream(String, Context, DocSession)} 接收一次性授权 token
+ * 后才会调度专家与写入文档。
  */
 final class AgentBridge {
 
   private static final Logger log = LoggerFactory.getLogger(AgentBridge.class);
+  private static final Set<String> TOOL_GROUPS =
+      Set.of("body", "table", "header-toc", "revision", "quality");
 
-  /** Agent 是否可用（有无 API key）。 */
   private final boolean enabled;
-
-  /** orchestrator 单例（若 enabled）。 */
   private final DocxOrchestrator orchestrator;
-
-  /** 当前会话的 conversationId（绑定单活跃文档）。 */
-  private String conversationId;
-
-  /** 当前文档磁盘路径。 */
+  private final LLM llm;
   private final Path currentDocPath;
-
-  /** turnId 自增序号，每轮对话一个。 */
+  private final ObjectMapper json = new ObjectMapper();
+  private final Agent primaryAgent;
+  private final MessageWindowChatMemory primaryMemory;
+  private final Map<String, LlmDocxExpert> experts = new LinkedHashMap<>();
   private final AtomicLong turnSeq = new AtomicLong();
+  private final AtomicLong dispatchSeq = new AtomicLong();
+  private final AtomicBoolean cancelRequested = new AtomicBoolean();
+  private final TraceJournal journal = new TraceJournal(Path.of("target", "demo-work"));
+
+  private String conversationId;
+  private PendingAuthorization pending;
+  private boolean executing;
 
   AgentBridge(String apiKey, String currentDocPath) {
     this.currentDocPath = Path.of(currentDocPath);
-
     if (apiKey == null || apiKey.isBlank()) {
-      this.enabled = false;
-      this.orchestrator = null;
-      this.conversationId = null;
-      log.warn("未配置 DASHSCOPE_API_KEY,Agent 对话禁用(预览仍可用)");
+      enabled = false;
+      orchestrator = null;
+      llm = null;
+      primaryAgent = null;
+      primaryMemory = null;
+      conversationId = null;
       return;
     }
-
-    this.enabled = true;
-    LLM llm = new VLLM("http://10.100.10.21:40002/v1","qwen3-14b").maxCompletionTokens(65536).thinkingBudget(512);
-    log.info("AgentBridge 初始化: model=qwen3.7-plus, maxTokens=65536, thinkingBudget=512");
-
-    this.orchestrator = DocxOrchestrator.create();
-    this.orchestrator.experts().register(new LlmDocxExpert(llm));
-    this.orchestrator
+    enabled = true;
+    llm =
+        new VLLM("http://10.100.10.21:40002/v1", "qwen3-14b")
+            .maxCompletionTokens(65536)
+            .thinkingBudget(512);
+    orchestrator = DocxOrchestrator.create();
+    orchestrator
         .executors()
         .register(new BodyExecutor(orchestrator.toolkit().body, orchestrator.toolkit()));
-    this.orchestrator.executors().register(new TableExecutor(orchestrator.toolkit().table));
-    this.orchestrator
+    orchestrator.executors().register(new TableExecutor(orchestrator.toolkit().table));
+    orchestrator
         .executors()
         .register(new RevisionExecutor(orchestrator.toolkit().trackedChangeQuery));
-    this.orchestrator.executors().register(new QualityExecutor());
-    this.orchestrator.executors().register(new HeaderTocExecutor());
-    log.debug("已注册专家: LlmDocxExpert; 执行器: Body/Table/Revision/Quality/HeaderToc");
-
-    this.conversationId = orchestrator.open(this.currentDocPath);
-    log.info("已打开文档会话: conversationId={}, path={}", conversationId, this.currentDocPath);
+    orchestrator.executors().register(new QualityExecutor());
+    orchestrator.executors().register(new HeaderTocExecutor());
+    for (String group : TOOL_GROUPS) {
+      String name = "Llm" + group.replace("-", "_") + "Expert";
+      experts.put(group, new LlmDocxExpert(llm, name, Set.of(group)));
+    }
+    conversationId = orchestrator.open(this.currentDocPath);
+    primaryMemory =
+        MessageWindowChatMemory.builder().conversationId(conversationId).maxMessages(24).build();
+    ToolRegistry readTools =
+        new ToolRegistry()
+            .scan(orchestrator.toolkit().view)
+            .scan(orchestrator.toolkit().capability);
+    primaryAgent =
+        Agent.builder(llm, readTools)
+            .memory(primaryMemory)
+            .maxIterations(6)
+            .systemPrompt(
+                "你是主文档协商 Agent。仅可调用已注册的只读工具，不得写文档、不得调度专家。"
+                    + "信息充分且用户明确要求修改时，输出严格 JSON："
+                    + "{\"reply\":\"给用户的中文回复\",\"requestAuthorization\":true}；"
+                    + "其它情况 requestAuthorization 必须为 false。")
+            .build();
   }
 
-  /** Agent 是否可用（有无 API key）。 */
   boolean enabled() {
     return enabled;
   }
 
-  /** 重置会话：reopen 文档（代次递增，旧快照失效）。 */
   void clearMemory() {
     if (!enabled) return;
+    primaryMemory.clear();
+    pending = null;
+    cancelRequested.set(true);
     orchestrator.reopen(conversationId);
-    log.info("已清空 Agent 对话记忆 (reopen conversationId={})", conversationId);
   }
 
-  /**
-   * 在给定 HTTP 上下文上跑一轮 orchestrator 对话，分阶段推 step 帧到响应输出流。
-   *
-   * @param message 用户消息
-   * @param ctx 当前请求的 Javalin 上下文
-   * @param session 文档会话（用于 save 后 bumpKey）
-   */
+  /** 协商消息；绝不调度专家或写文档。 */
   void runStream(String message, Context ctx, DocSession session) {
     if (!enabled) {
-      writeFrame(ctx, frame("error", "message", "未配置 DASHSCOPE_API_KEY，无法对话。"));
-      writeFrame(ctx, frame("done"));
-      flush(ctx);
+      emit(ctx, frame("error", "message", "未配置 DASHSCOPE_API_KEY，无法对话。"));
+      emit(ctx, frame("done"));
       return;
     }
+    if (executing) {
+      emit(ctx, frame("error", "message", "正在实施，请取消或等待完成。"));
+      emit(ctx, frame("done"));
+      return;
+    }
+    pending = null;
     String turnId = "turn-" + turnSeq.incrementAndGet();
+    DocumentSnapshot snapshot = orchestrator.analyze(conversationId);
+    String prompt = consultationPrompt(message, snapshot);
+    emitTrace(ctx, turnId, LlmTraceEvent.ofPrompt("PrimaryConversationAgent", prompt));
     try {
-      // 用阶段回调分步推送 step 帧
-      PhaseCallback callback =
-          event -> {
-            Map<String, Object> stepFrame = buildStepFrame(turnId, event);
-            writeFrame(ctx, stepFrame);
-            flush(ctx);
-          };
-
-      // 用 trace 回调推送 LLM 内部过程（prompt / response delta / thinking delta / complete）
-      Consumer<LlmTraceEvent> traceCb =
-          trace -> {
-            Map<String, Object> traceFrame = buildTraceFrame(turnId, trace);
-            writeFrame(ctx, traceFrame);
-            flush(ctx);
-          };
-
-      RouterResult result = orchestrator.run(conversationId, message, callback, traceCb);
-      log.info("编排完成: state={}", result.state());
-      if (result.state() == RouterState.FAILED) {
-        // FAILED 时打印失败详情，方便排查（commit 异常、操作执行失败等）
-        log.warn("编排失败摘要: {}", result.summaryText());
-        for (Operation op : result.mergedPlan().operations()) {
-          log.warn(
-              "  操作: id={}, toolGroup={}, kind={}, payload={}, status={}",
-              op.operationId(),
-              op.toolGroup(),
-              op.kind(),
-              op.payload(),
-              op.reviewStatus());
-        }
-      }
-
-      if (result.state() == RouterState.DONE) {
-        // DONE：save 落盘并推 doc_changed
-        log.debug("状态 DONE,执行 save 落盘: {}", currentDocPath);
-        String saveResult = orchestrator.save(conversationId, currentDocPath);
-        boolean saved = saveResult != null && saveResult.contains("已保存");
-        log.info("save 结果: {}", saveResult);
-        if (saved) {
-          String newKey = session.bumpKey();
-          log.debug("文档已变更,bumpKey: {}", newKey);
-          writeFrame(ctx, frame("doc_changed", "key", newKey));
-          flush(ctx);
-        }
+      ChatResult result = primaryAgent.run(prompt, event -> tracePrimaryEvent(ctx, turnId, event));
+      ConsultationReply reply = parseConsultationReply(result.content());
+      emit(ctx, frame("assistant", "turnId", turnId, "message", reply.reply));
+      if (reply.requestAuthorization) {
+        pending = new PendingAuthorization(newToken(), message, snapshot.sessionGeneration());
+        emit(ctx, frame("authorization_required", "turnId", turnId, "token", pending.token));
       }
     } catch (RuntimeException e) {
-      log.error("编排异常: conversationId={}", conversationId, e);
-      writeFrame(ctx, frame("error", "message", rootMessage(e)));
-      flush(ctx);
+      emit(ctx, frame("error", "message", rootMessage(e)));
+    }
+    emit(ctx, frame("done"));
+  }
+
+  /** 仅由“开始实施”按钮调用。 */
+  void executeStream(String token, Context ctx, DocSession session) {
+    String turnId = "execution-" + turnSeq.incrementAndGet();
+    if (!enabled || pending == null || !pending.token.equals(token) || executing) {
+      emit(ctx, frame("error", "message", "授权无效、已过期或正在实施。"));
+      emit(ctx, frame("done"));
+      return;
+    }
+    executing = true;
+    cancelRequested.set(false);
+    PendingAuthorization authorization = pending;
+    pending = null;
+    try {
+      DocumentSnapshot snapshot = orchestrator.analyze(conversationId);
+      if (snapshot.sessionGeneration() != authorization.generation) {
+        emit(ctx, frame("blocked", "message", "文档已变化，请重新协商后授权。"));
+        return;
+      }
+      Dispatch dispatch = createDispatch(authorization.goal, snapshot, ctx, turnId);
+      if (dispatch.assignments.isEmpty()) {
+        emit(ctx, frame("blocked", "message", "未生成可执行的专家分派，请继续协商。"));
+        return;
+      }
+      emit(
+          ctx,
+          frame(
+              "dispatch",
+              "turnId",
+              turnId,
+              "dispatchId",
+              dispatch.id,
+              "assignments",
+              dispatch.views()));
+      List<CompletableFuture<ExpertPlan>> futures = new ArrayList<>();
+      for (Assignment assignment : dispatch.assignments) {
+        LlmDocxExpert expert = experts.get(assignment.toolGroup);
+        futures.add(
+            CompletableFuture.supplyAsync(
+                () ->
+                    expert.plan(
+                        orchestratorSession(),
+                        snapshot,
+                        assignment.task,
+                        traceConsumer(ctx, turnId))));
+      }
+      List<ExpertPlan> plans = new ArrayList<>();
+      for (CompletableFuture<ExpertPlan> future : futures) {
+        if (cancelRequested.get()) throw new CancelledException();
+        ExpertPlan plan = future.join();
+        if (plan != null && !plan.operations().isEmpty()) plans.add(plan);
+      }
+      List<String> sources = new ArrayList<>();
+      List<Operation> operations = new ArrayList<>();
+      for (ExpertPlan plan : plans) {
+        sources.add(plan.planId());
+        operations.addAll(plan.operations());
+      }
+      if (operations.isEmpty()) {
+        emit(ctx, frame("blocked", "message", "专家未产生有效操作，请继续协商。"));
+        return;
+      }
+      if (cancelRequested.get()) throw new CancelledException();
+      MergedPlan merged = new MergedPlan(conversationId, dispatch.id, sources, operations);
+      emit(ctx, frame("review", "turnId", turnId, "operations", operationViews(operations)));
+      CommitResult committed = orchestrator.commitPlan(conversationId, merged);
+      if (!committed.allSucceeded()) {
+        orchestrator.reopen(conversationId);
+        emit(ctx, frame("rolled_back", "message", committed.failureMessage()));
+        return;
+      }
+      if (cancelRequested.get()) throw new CancelledException();
+      String save = orchestrator.save(conversationId, currentDocPath);
+      if (save == null || !save.contains("已保存")) {
+        orchestrator.reopen(conversationId);
+        emit(ctx, frame("rolled_back", "message", "保存失败：" + save));
+        return;
+      }
+      emit(
+          ctx,
+          frame("commit", "turnId", turnId, "detail", committed.executed().size() + " 项操作已提交"));
+      ExpertPlan qualityPlan =
+          new QualityAgent(orchestrator.toolkit().qualityCheck)
+              .plan(orchestratorSession(), orchestrator.analyze(conversationId), "质量验收", null);
+      Operation quality = qualityPlan.operations().get(0);
+      emit(
+          ctx,
+          frame(
+              "quality",
+              "turnId",
+              turnId,
+              "detail",
+              String.valueOf(quality.payload().get("report"))));
+      emit(ctx, frame("doc_changed", "key", session.bumpKey()));
+    } catch (CancelledException e) {
+      orchestrator.reopen(conversationId);
+      emit(ctx, frame("rolled_back", "message", "用户已取消，本次修改未保存。"));
+    } catch (RuntimeException e) {
+      orchestrator.reopen(conversationId);
+      emit(ctx, frame("error", "message", rootMessage(e)));
     } finally {
-      writeFrame(ctx, frame("done"));
-      flush(ctx);
+      executing = false;
+      emit(ctx, frame("done"));
     }
   }
 
-  // ==================== step 帧构造 ====================
+  void cancel() {
+    cancelRequested.set(true);
+  }
 
-  /**
-   * 把 {@link LlmTraceEvent} 转成前端可渲染的 trace 帧。
-   *
-   * <p>trace 帧与 step 帧是两种独立帧类型：step 是阶段级汇总，trace 是 token 级增量。前端按 {@code type}
-   * 分发。
-   */
-  private static Map<String, Object> buildTraceFrame(String turnId, LlmTraceEvent trace) {
-    Map<String, Object> m = new LinkedHashMap<>();
-    m.put("type", "trace");
-    m.put("turnId", turnId);
-    m.put("agent", trace.agentName());
-    switch (trace.kind()) {
+  private com.non.docx.toolkit.orchestration.session.OrchestratorSession orchestratorSession() {
+    return orchestrator.session(conversationId);
+  }
+
+  private Dispatch createDispatch(
+      String goal, DocumentSnapshot snapshot, Context ctx, String turnId) {
+    String prompt =
+        "你是实施分派器。用户已明确授权。基于目标和快照，只输出 JSON："
+            + "{\"assignments\":[{\"toolGroup\":\"body|table|header-toc|revision|quality\",\"task\":\"具体任务\"}]}。"
+            + "不得解释，不得输出未列出的工具组。\n目标："
+            + goal
+            + "\n快照："
+            + snapshot.overview();
+    emitTrace(ctx, turnId, LlmTraceEvent.ofPrompt("PrimaryConversationAgent", prompt));
+    ChatResult result =
+        llm.streamChat(
+            List.of(Message.user(prompt)),
+            chunk -> {
+              if (chunk.hasContent())
+                emitTrace(
+                    ctx,
+                    turnId,
+                    LlmTraceEvent.ofContentDelta("PrimaryConversationAgent", chunk.deltaContent()));
+              if (chunk.hasThinking())
+                emitTrace(
+                    ctx,
+                    turnId,
+                    LlmTraceEvent.ofThinkingDelta(
+                        "PrimaryConversationAgent", chunk.deltaThinking()));
+            });
+    emitTrace(
+        ctx, turnId, LlmTraceEvent.ofComplete("PrimaryConversationAgent", result.tokenUsage()));
+    List<Assignment> assignments = new ArrayList<>();
+    try {
+      JsonNode array = json.readTree(stripJson(result.content())).path("assignments");
+      if (array.isArray())
+        for (JsonNode item : array) {
+          String group = item.path("toolGroup").asText("");
+          String task = item.path("task").asText("");
+          if (TOOL_GROUPS.contains(group) && !task.isBlank())
+            assignments.add(new Assignment(group, task));
+        }
+    } catch (Exception e) {
+      log.warn("DispatchPlan 解析失败", e);
+    }
+    return new Dispatch("dispatch-" + dispatchSeq.incrementAndGet(), assignments);
+  }
+
+  private Consumer<LlmTraceEvent> traceConsumer(Context ctx, String turnId) {
+    return event -> emitTrace(ctx, turnId, event);
+  }
+
+  private String consultationPrompt(String message, DocumentSnapshot snapshot) {
+    return "当前文档句柄："
+        + orchestratorSession().docId()
+        + "。你可调用 view_* 和 describe_capabilities 读取内容。"
+        + "\n文档初始快照："
+        + snapshot.overview()
+        + "\n用户："
+        + message;
+  }
+
+  private void tracePrimaryEvent(Context ctx, String turnId, AgentEvent event) {
+    if (event instanceof AgentEvent.TextDelta) {
+      emitTrace(
+          ctx,
+          turnId,
+          LlmTraceEvent.ofContentDelta(
+              "PrimaryConversationAgent", ((AgentEvent.TextDelta) event).delta()));
+      return;
+    }
+    if (event instanceof AgentEvent.ThinkingDelta) {
+      emitTrace(
+          ctx,
+          turnId,
+          LlmTraceEvent.ofThinkingDelta(
+              "PrimaryConversationAgent", ((AgentEvent.ThinkingDelta) event).delta()));
+      return;
+    }
+    Map<String, Object> trace = new LinkedHashMap<>();
+    trace.put("type", "trace");
+    trace.put("turnId", turnId);
+    trace.put("agent", "PrimaryConversationAgent");
+    if (event instanceof AgentEvent.ToolStart) {
+      AgentEvent.ToolStart tool = (AgentEvent.ToolStart) event;
+      trace.put("event", "tool_start");
+      trace.put("tool", tool.toolName());
+      trace.put("arguments", tool.arguments());
+    } else if (event instanceof AgentEvent.ToolEnd) {
+      AgentEvent.ToolEnd tool = (AgentEvent.ToolEnd) event;
+      trace.put("event", "tool_end");
+      trace.put("tool", tool.toolName());
+      trace.put("result", tool.result());
+    } else if (event instanceof AgentEvent.Complete) {
+      trace.put("event", "complete");
+      trace.put("success", true);
+    } else {
+      return;
+    }
+    emit(ctx, trace);
+  }
+
+  private ConsultationReply parseConsultationReply(String content) {
+    try {
+      JsonNode root = json.readTree(stripJson(content));
+      if (root.isObject())
+        return new ConsultationReply(
+            root.path("reply").asText(""), root.path("requestAuthorization").asBoolean(false));
+    } catch (Exception ignored) {
+      // 保持原文显示，避免因模型非 JSON 回复丢失协商内容。
+    }
+    return new ConsultationReply(content == null ? "" : content.trim(), false);
+  }
+
+  private static String stripJson(String value) {
+    return value == null
+        ? ""
+        : value.replaceAll("^```(?:json)?\\s*", "").replaceAll("\\s*```$", "").trim();
+  }
+
+  private static String newToken() {
+    byte[] bytes = new byte[24];
+    new SecureRandom().nextBytes(bytes);
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+  }
+
+  private static List<Map<String, Object>> operationViews(List<Operation> operations) {
+    List<Map<String, Object>> out = new ArrayList<>();
+    for (Operation operation : operations) out.add(operation.shortView());
+    return out;
+  }
+
+  private void emitTrace(Context ctx, String turnId, LlmTraceEvent event) {
+    Map<String, Object> data = new LinkedHashMap<>();
+    data.put("type", "trace");
+    data.put("turnId", turnId);
+    data.put("agent", event.agentName());
+    switch (event.kind()) {
       case PROMPT:
-        m.put("event", "prompt");
-        m.put("prompt", trace.prompt());
+        data.put("event", "prompt");
+        data.put("prompt", event.prompt());
         break;
       case CONTENT_DELTA:
-        m.put("event", "content_delta");
-        m.put("delta", trace.delta());
+        data.put("event", "content_delta");
+        data.put("delta", event.delta());
         break;
       case THINKING_DELTA:
-        m.put("event", "thinking_delta");
-        m.put("delta", trace.delta());
+        data.put("event", "thinking_delta");
+        data.put("delta", event.delta());
         break;
       case COMPLETE:
-        m.put("event", "complete");
-        m.put("success", trace.success());
-        if (!trace.success()) {
-          m.put("error", trace.error());
-        }
-        if (trace.usage() != null) {
-          m.put("usage", trace.usage().toString());
-        }
+        data.put("event", "complete");
+        data.put("success", event.success());
         break;
       default:
-        m.put("event", trace.kind().name().toLowerCase(java.util.Locale.ROOT));
+        data.put("event", event.kind().name().toLowerCase(java.util.Locale.ROOT));
     }
-    return m;
+    emit(ctx, data);
   }
 
-  /** 把 PhaseEvent 转成前端可渲染的 step 帧。 */
-  private static Map<String, Object> buildStepFrame(String turnId, PhaseCallback.PhaseEvent event) {
-    Map<String, Object> m = new LinkedHashMap<>();
-    m.put("type", "step");
-    m.put("turnId", turnId);
-    m.put("phase", event.phase().name().toLowerCase(java.util.Locale.ROOT));
-    m.put("status", event.success() ? "done" : "failed");
-
-    switch (event.phase()) {
-      case ANALYZE:
-        m.put("title", "分析文档结构");
-        m.put("detail", buildAnalyzeDetail(event.snapshot()));
-        break;
-      case PLAN:
-        m.put("title", "生成编辑计划");
-        m.put("operations", buildOperationList(event.mergedPlan()));
-        break;
-      case COMMIT:
-        if (event.success()) {
-          m.put("title", "执行完成");
-          m.put("detail", buildCommitSuccessDetail(event.commitResult()));
-        } else {
-          m.put("title", "执行失败");
-          m.put("error", event.failureMessage());
-        }
-        break;
-      default:
-        m.put("title", event.phase().name());
-    }
-    return m;
-  }
-
-  /** 分析阶段的文档结构摘要。 */
-  private static String buildAnalyzeDetail(
-      com.non.docx.toolkit.orchestration.DocumentSnapshot snapshot) {
-    if (snapshot == null) return "";
-    List<String> parts = new ArrayList<>();
-    int paras = snapshot.overview().paragraphCount();
-    int tables = snapshot.overview().tableCount();
-    if (paras > 0) parts.add(paras + " 个段落");
-    if (tables > 0) parts.add(tables + " 个表格");
-    if (snapshot.overview().trackedChangeCount() > 0) {
-      parts.add(snapshot.overview().trackedChangeCount() + " 处修订");
-    }
-    return parts.isEmpty() ? "空文档" : String.join("，", parts);
-  }
-
-  /** 计划阶段的操作清单（用人话描述）。 */
-  private static List<Map<String, Object>> buildOperationList(
-      com.non.docx.toolkit.orchestration.MergedPlan merged) {
-    if (merged == null) return List.of();
-    List<Map<String, Object>> ops = new ArrayList<>();
-    for (Operation op : merged.operations()) {
-      Map<String, Object> v = new LinkedHashMap<>();
-      v.put("description", OperationDescriptor.describe(op));
-      v.put("status", op.reviewStatus().name().toLowerCase(java.util.Locale.ROOT));
-      ops.add(v);
-    }
-    return ops;
-  }
-
-  /** 提交成功的统计摘要。 */
-  private static String buildCommitSuccessDetail(
-      com.non.docx.toolkit.orchestration.commit.CommitResult commitResult) {
-    if (commitResult == null) return "文档已更新";
-    int n = commitResult.executed().size();
-    return n + " 项操作已执行，文档已更新";
-  }
-
-  // ==================== SSE 帧输出 ====================
-
-  private static void writeFrame(Context ctx, Map<String, Object> data) {
+  private void emit(Context ctx, Map<String, Object> data) {
     try {
-      String json = ctx.jsonMapper().toJsonString(data, Map.class);
+      journal.append(data);
       OutputStream out = ctx.res().getOutputStream();
-      out.write(("data: " + json + "\n\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      out.write(
+          ("data: " + ctx.jsonMapper().toJsonString(data, Map.class) + "\n\n")
+              .getBytes(StandardCharsets.UTF_8));
+      ctx.res().flushBuffer();
     } catch (java.io.IOException e) {
       throw new RuntimeException("写 SSE 帧失败", e);
     }
   }
 
-  private static void flush(Context ctx) {
-    try {
-      ctx.res().flushBuffer();
-    } catch (java.io.IOException e) {
-      throw new RuntimeException("flush 响应失败", e);
-    }
+  String traceReplay() {
+    return journal.readAll();
   }
 
-  private static Map<String, Object> frame(String type, String key, String value) {
-    Map<String, Object> m = new LinkedHashMap<>();
-    m.put("type", type);
-    m.put(key, value);
-    return m;
-  }
-
-  private static Map<String, Object> frame(String type) {
-    Map<String, Object> m = new LinkedHashMap<>();
-    m.put("type", type);
-    return m;
+  private static Map<String, Object> frame(String type, Object... pairs) {
+    Map<String, Object> data = new LinkedHashMap<>();
+    data.put("type", type);
+    for (int i = 0; i < pairs.length; i += 2) data.put((String) pairs[i], pairs[i + 1]);
+    return data;
   }
 
   private static String rootMessage(Throwable e) {
     Throwable cur = e;
-    while (cur.getCause() != null && cur.getCause() != cur) {
-      cur = cur.getCause();
-    }
-    return cur.getMessage();
+    while (cur.getCause() != null && cur.getCause() != cur) cur = cur.getCause();
+    return cur.getMessage() == null ? cur.getClass().getSimpleName() : cur.getMessage();
   }
+
+  private static final class PendingAuthorization {
+    final String token;
+    final String goal;
+    final long generation;
+
+    PendingAuthorization(String token, String goal, long generation) {
+      this.token = token;
+      this.goal = goal;
+      this.generation = generation;
+    }
+  }
+
+  private static final class ConsultationReply {
+    final String reply;
+    final boolean requestAuthorization;
+
+    ConsultationReply(String reply, boolean requestAuthorization) {
+      this.reply = reply;
+      this.requestAuthorization = requestAuthorization;
+    }
+  }
+
+  private static final class Assignment {
+    final String toolGroup;
+    final String task;
+
+    Assignment(String toolGroup, String task) {
+      this.toolGroup = toolGroup;
+      this.task = task;
+    }
+  }
+
+  private static final class Dispatch {
+    final String id;
+    final List<Assignment> assignments;
+
+    Dispatch(String id, List<Assignment> assignments) {
+      this.id = id;
+      this.assignments = List.copyOf(assignments);
+    }
+
+    List<Map<String, String>> views() {
+      List<Map<String, String>> out = new ArrayList<>();
+      for (Assignment a : assignments) out.add(Map.of("toolGroup", a.toolGroup, "task", a.task));
+      return out;
+    }
+  }
+
+  private static final class CancelledException extends RuntimeException {}
 }
