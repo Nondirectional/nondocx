@@ -509,6 +509,96 @@ if (mergedPlan.hasBlocked()) return RouterState.FAILED;
 commitCoordinator.commit(session, mergedPlan);
 ```
 
+## Scenario: LLM Trace Visibility (P0-trace)
+
+> 让调用方（如 demo 的 AgentBridge）实时观测专家内部 LLM 调用的 prompt、response 增量、thinking
+> 增量与完成状态，用于前端可视化。与阶段级 `PhaseCallback` 并行，职责分开。
+
+### 1. Scope / Trigger
+
+当需要把专家内部 LLM 调用过程（prompt/response/thinking）暴露给前端或外部观测者时，经
+`ExpertAgent.plan` 的第 4 参数 `Consumer<LlmTraceEvent> traceCallback` 发送事件。
+
+### 2. Signatures
+
+```java
+// toolkit 值对象（agent 包）
+public final class LlmTraceEvent {
+  public enum Kind { PROMPT, CONTENT_DELTA, THINKING_DELTA, COMPLETE }
+  // 工厂: ofPrompt / ofContentDelta / ofThinkingDelta / ofComplete / ofFailure
+  // accessor: kind() / agentName() / prompt() / delta() / success() / error() / usage()
+}
+
+// ExpertAgent.plan 签名（改原签名，非 default 重载）
+ExpertPlan plan(
+    OrchestratorSession session,
+    DocumentSnapshot snapshot,
+    String intent,
+    Consumer<LlmTraceEvent> traceCallback);  // 可空
+```
+
+### 3. Contracts
+
+- **4 种事件 + agentName**：PROMPT（一次性，prompt 构造后）、CONTENT_DELTA（`ChatChunk.deltaContent()` 逐块）、
+  THINKING_DELTA（`ChatChunk.deltaThinking()` 逐块）、COMPLETE（成功 `ofComplete` 或失败 `ofFailure`）。
+- **agentName 强制携带**：为多专家场景预留前端分组依据。不调 LLM 的启发式专家（BodyAgent/TableAgent/
+  HeaderTocAgent/QualityAgent/RevisionAgent）忽略 traceCallback，但签名必须加（契约统一）。
+- **usage 类型用 Object**：toolkit 不硬绑 nonchain `TokenUsage`，由 demo 侧消费时解释（如 `toString()`）。
+- **双 callback 并行**：`PhaseCallback`（阶段级，ANALYZE/PLAN/COMMIT 完成）与 `traceCallback`（token 级）
+  职责分开。`PhaseCallback` 不含 trace 事件。
+- **传递路径**：`DocxOrchestrator.run(convId, intent, phaseCb, traceCb)` → `RouterAgent.run(session, intent, phaseCb, traceCb)`
+  → `expert.plan(session, snapshot, intent, currentTraceCb)`。RouterAgent 用栈式 `currentTraceCb` 字段
+  （仿 `currentCallback`），try/finally 保存/恢复。
+- **null 安全**：`traceCallback == null` 时实现必须跳过 trace 发送（`if (cb != null)` 守卫）。
+
+### 4. 时序（一轮对话）
+
+```
+step(analyze)   ← PhaseCallback 阶段级
+trace(prompt)   ← traceCb token 级（PLAN 进行中）
+trace(thinking_delta) × N
+trace(content_delta) × N
+trace(complete)
+step(plan)      ← PhaseCallback 阶段级（PLAN 完成后，与 trace 共存）
+step(commit)
+```
+
+trace 帧与 plan step 帧**共存**：trace 是 LLM 思考过程，step 是编排层翻译产物（operation 人话清单），
+语义分层不冲突。
+
+### 5. Demo 实现要点
+
+- `LlmDocxExpert.callLlm` 用 `llm.streamChat(messages, chunk -> {...})`（非阻塞 `chat`），在 consumer
+  里按 chunk 类型发 content/thinking delta。**实际返回值用 `result.content()`**（完整文本），delta 仅用于推 trace。
+- 失败时发 `ofFailure` 再返回空 plan（保持既有 catch 行为，不阻断流程）。
+- `AgentBridge.buildTraceFrame` 把 `LlmTraceEvent` 转成 SSE `type:trace` 帧（event=prompt/content_delta/
+  thinking_delta/complete）。
+
+### 6. Wrong vs Correct
+
+```java
+// Wrong —— 只改 demo 不动 toolkit 接口，trace 靠 demo 内部 ThreadLocal/单例传递
+// （RouterAgent 调 expert.plan 时无法穿透 traceCallback）
+class LlmDocxExpert {
+  void plan(...) {
+    TraceBus.current().emit(...);  // 隐式全局状态，多专家/并发不安全
+  }
+}
+
+// Correct —— toolkit 接口显式传 Consumer<LlmTraceEvent>，RouterAgent 透传
+class RouterAgent {
+  expert.plan(session, snapshot, intent, currentTraceCb);  // 显式参数
+}
+```
+
+### 7. 兼容性
+
+- `ExpertAgent.plan` 签名变更 → 所有实现类必改。当前 6 个实现类（1 个调 LLM：`LlmDocxExpert`；
+  5 个启发式：BodyAgent/TableAgent/HeaderTocAgent/QualityAgent/RevisionAgent）+ 2 个测试 mock。
+- `RouterAgent.run` / `DocxOrchestrator.run` 保留旧重载（传 null traceCb），既有调用方不改也能编译。
+
+---
+
 ## Convention: Demo Observability for FAILED State
 
 **What**: `AgentBridge` must log failure details when `state=FAILED`, not just `state=FAILED`.
