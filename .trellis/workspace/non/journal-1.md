@@ -1156,3 +1156,39 @@ Consolidated the nondocx toolkit Agent tool surface into intention-oriented entr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: Demo 执行链路可视化: LLM trace (prompt/response/thinking) 流式展示
+
+**Date**: 2026-07-13
+**Task**: Demo 执行链路可视化: LLM trace (prompt/response/thinking) 流式展示
+**Branch**: `main`
+
+### Summary
+
+让 Demo 内部 Agent 的 LLM 调用过程可见。新增 LlmTraceEvent 值对象(4 事件 + agentName),ExpertAgent.plan 签名加 Consumer<LlmTraceEvent>,RouterAgent/DocxOrchestrator 增四参 run 重载透传 traceCb(与阶段级 PhaseCallback 并行)。LlmDocxExpert.callLlm 改 streamChat,逐 chunk 推 content/thinking delta。AgentBridge 转 SSE trace 帧。前端 app.js 在进度卡内渲染折叠区:prompt 只读块 + response/thinking 双 tab 逐字追加。6 个 ExpertAgent 实现类 + 2 测试 mock 签名对齐(5 个启发式专家忽略 traceCb)。toolkit 231 测试通过,demo 编译通过,index.html 零改动。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4951b46` | (see git log) |
+| `71bcc3a` | (see git log) |
+| `2c269ea` | (see git log) |
+| `39e2db7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
