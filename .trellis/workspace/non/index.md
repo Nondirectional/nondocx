@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 31
+- **Total Sessions**: 32
 - **Last Active**: 2026-07-13
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1360 | Active |
+| `journal-1.md` | ~1393 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-07-13 | 主 Agent 通过 SubAgent 编辑文档 | `dbae09f` | `main` |
 | 31 | 2026-07-13 | 专家分派与操作解析诊断 | `ed72836`, HEAD | `main` |
 | 30 | 2026-07-13 | 专家流式操作解析修复 | HEAD | `main` |
 | 29 | 2026-07-13 | 主 Agent 协商边界修正 | `6891520` | `main` |
