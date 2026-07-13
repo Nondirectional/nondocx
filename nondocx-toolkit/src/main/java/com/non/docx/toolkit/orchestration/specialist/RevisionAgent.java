@@ -4,11 +4,13 @@ import com.non.docx.toolkit.orchestration.DocumentSnapshot;
 import com.non.docx.toolkit.orchestration.ExpertPlan;
 import com.non.docx.toolkit.orchestration.Operation;
 import com.non.docx.toolkit.orchestration.agent.ExpertAgent;
+import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 /**
  * 修订领域专家：把「接受/拒绝修订」类用户意图翻译成 revision 域的 {@link Operation}。
@@ -47,7 +49,12 @@ public final class RevisionAgent implements ExpertAgent {
   }
 
   @Override
-  public ExpertPlan plan(OrchestratorSession session, DocumentSnapshot snapshot, String intent) {
+  public ExpertPlan plan(
+      OrchestratorSession session,
+      DocumentSnapshot snapshot,
+      String intent,
+      Consumer<LlmTraceEvent> traceCallback) {
+    // 本专家用关键词启发式（非 LLM），不产生 LLM trace，忽略 traceCallback。
     List<Operation> ops = new ArrayList<>();
 
     // 启发式：「接受所有修订」/「全部接受修订」/「拒绝所有修订」

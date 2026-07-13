@@ -94,7 +94,12 @@ class InsertHeadingTest {
     }
 
     @Override
-    public ExpertPlan plan(OrchestratorSession session, DocumentSnapshot snapshot, String intent) {
+    public ExpertPlan plan(
+        OrchestratorSession session,
+        DocumentSnapshot snapshot,
+        String intent,
+        java.util.function.Consumer<com.non.docx.toolkit.orchestration.agent.LlmTraceEvent>
+            traceCallback) {
       // 模拟 LLM 产出的 payload（含 style=Heading1, alignment=center, font_size=28）
       Map<String, Object> payload = new LinkedHashMap<>();
       payload.put("text", "项目周报");

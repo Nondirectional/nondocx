@@ -6,6 +6,7 @@ import com.non.docx.toolkit.orchestration.DocumentSnapshot;
 import com.non.docx.toolkit.orchestration.ExpertPlan;
 import com.non.docx.toolkit.orchestration.Operation;
 import com.non.docx.toolkit.orchestration.agent.ExpertAgent;
+import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.review.ReviewResult;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
 import java.util.LinkedHashMap;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 /**
  * 页眉页脚目录领域专家：偏只读，处理页眉页脚/目录的读取与说明任务。
@@ -57,7 +59,12 @@ public final class HeaderTocAgent implements ExpertAgent {
   }
 
   @Override
-  public ExpertPlan plan(OrchestratorSession session, DocumentSnapshot snapshot, String intent) {
+  public ExpertPlan plan(
+      OrchestratorSession session,
+      DocumentSnapshot snapshot,
+      String intent,
+      Consumer<LlmTraceEvent> traceCallback) {
+    // 本专家为只读分析（非 LLM），不产生 LLM trace，忽略 traceCallback。
     // 只读：读页眉页脚 + 目录，组织成报告 operation
     StringBuilder report = new StringBuilder();
     if (snapshot.overview().hasHeader() || snapshot.overview().hasFooter()) {

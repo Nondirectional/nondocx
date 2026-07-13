@@ -4,12 +4,14 @@ import com.non.docx.toolkit.orchestration.DocumentSnapshot;
 import com.non.docx.toolkit.orchestration.ExpertPlan;
 import com.non.docx.toolkit.orchestration.Operation;
 import com.non.docx.toolkit.orchestration.agent.ExpertAgent;
+import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
 import com.non.docx.toolkit.orchestration.snapshot.ParagraphPreview;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 /**
  * 正文领域专家：把「正文修改」类用户意图翻译成 body 域的 {@link Operation} 列表。
@@ -58,7 +60,12 @@ public final class BodyAgent implements ExpertAgent {
   }
 
   @Override
-  public ExpertPlan plan(OrchestratorSession session, DocumentSnapshot snapshot, String intent) {
+  public ExpertPlan plan(
+      OrchestratorSession session,
+      DocumentSnapshot snapshot,
+      String intent,
+      Consumer<LlmTraceEvent> traceCallback) {
+    // 本专家用关键词启发式（非 LLM），不产生 LLM trace，忽略 traceCallback。
     List<Operation> ops = new ArrayList<>();
 
     // 启发式 1：替换正文文本——「把 X 改成 Y」/「替换 X 为 Y」

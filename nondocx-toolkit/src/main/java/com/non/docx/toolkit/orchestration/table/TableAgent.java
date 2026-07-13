@@ -4,11 +4,13 @@ import com.non.docx.toolkit.orchestration.DocumentSnapshot;
 import com.non.docx.toolkit.orchestration.ExpertPlan;
 import com.non.docx.toolkit.orchestration.Operation;
 import com.non.docx.toolkit.orchestration.agent.ExpertAgent;
+import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -48,7 +50,12 @@ public final class TableAgent implements ExpertAgent {
   }
 
   @Override
-  public ExpertPlan plan(OrchestratorSession session, DocumentSnapshot snapshot, String intent) {
+  public ExpertPlan plan(
+      OrchestratorSession session,
+      DocumentSnapshot snapshot,
+      String intent,
+      Consumer<LlmTraceEvent> traceCallback) {
+    // 本专家用关键词启发式（非 LLM），不产生 LLM trace，忽略 traceCallback。
     List<Operation> ops = new ArrayList<>();
 
     // 启发式：「表格 T 行 R 列 C 写成 X」/「单元格 (T,R,C) 改成 X」

@@ -2,6 +2,7 @@ package com.non.docx.toolkit.orchestration;
 
 import com.non.docx.toolkit.orchestration.agent.ExpertAgent;
 import com.non.docx.toolkit.orchestration.agent.ExpertRegistry;
+import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.commit.CommitCoordinator;
 import com.non.docx.toolkit.orchestration.commit.CommitResult;
 import com.non.docx.toolkit.orchestration.review.ReviewReason;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 /**
  * RouterAgent：编排中枢，驱动 ANALYZE → PLAN → REVIEW → COMMIT → DONE/FAILED 状态机。
@@ -42,8 +44,11 @@ public final class RouterAgent {
   private final DocProvider docProvider;
   private final PhaseCallback phaseCallback;
 
-  /** 当前请求的临时回调（由 run(session, intent, callback) 设置，run 结束后恢复）。 */
+  /** 当前请求的临时阶段回调（由 run(session, intent, callback) 设置，run 结束后恢复）。 */
   private PhaseCallback currentCallback;
+
+  /** 当前请求的临时 LLM trace 回调（由 run(..., traceCb) 设置，run 结束后恢复）。 */
+  private Consumer<LlmTraceEvent> currentTraceCb;
 
   private final AtomicLong planIdSeq = new AtomicLong();
 
@@ -77,7 +82,7 @@ public final class RouterAgent {
    * @return 本轮结果
    */
   public RouterResult run(OrchestratorSession session, String intent) {
-    return run(session, intent, null);
+    return run(session, intent, null, null);
   }
 
   /**
@@ -90,14 +95,36 @@ public final class RouterAgent {
    * @param callback 阶段回调（null 时不回调，即使构造时设了也不调）
    */
   public RouterResult run(OrchestratorSession session, String intent, PhaseCallback callback) {
+    return run(session, intent, callback, null);
+  }
+
+  /**
+   * 带临时阶段回调 + LLM trace 回调的 run。
+   *
+   * <p>{@code traceCb} 让调用方实时接收专家内部 LLM 调用的 prompt/response/thinking 增量（{@link
+   * LlmTraceEvent}），用于前端可视化。trace 回调与阶段回调职责分开：阶段回调是整阶段完成事件， trace 回调是 token 级增量。两者均传 null 时不回调。
+   *
+   * @param session 当前会话
+   * @param intent 用户意图
+   * @param callback 阶段回调（null 时不回调，即使构造时设了也不调）
+   * @param traceCb LLM trace 回调（null 时专家不发 trace）
+   */
+  public RouterResult run(
+      OrchestratorSession session,
+      String intent,
+      PhaseCallback callback,
+      Consumer<LlmTraceEvent> traceCb) {
     Objects.requireNonNull(session, "session 不能为空");
     Objects.requireNonNull(intent, "intent 不能为空");
-    PhaseCallback prev = this.currentCallback;
+    PhaseCallback prevCb = this.currentCallback;
+    Consumer<LlmTraceEvent> prevTrace = this.currentTraceCb;
     this.currentCallback = callback;
+    this.currentTraceCb = traceCb;
     try {
       return runInternal(session, intent);
     } finally {
-      this.currentCallback = prev;
+      this.currentCallback = prevCb;
+      this.currentTraceCb = prevTrace;
     }
   }
 
@@ -114,7 +141,7 @@ public final class RouterAgent {
     List<ExpertAgent> relevant = experts.selectRelevant(intent, snapshot);
     List<ExpertPlan> expertPlans = new ArrayList<>();
     for (ExpertAgent a : relevant) {
-      ExpertPlan ep = a.plan(session, snapshot, intent);
+      ExpertPlan ep = a.plan(session, snapshot, intent, currentTraceCb);
       if (ep != null && !ep.operations().isEmpty()) {
         expertPlans.add(ep);
       }

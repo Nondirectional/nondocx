@@ -5,6 +5,7 @@ import com.non.docx.toolkit.orchestration.DocumentSnapshot;
 import com.non.docx.toolkit.orchestration.ExpertPlan;
 import com.non.docx.toolkit.orchestration.Operation;
 import com.non.docx.toolkit.orchestration.agent.ExpertAgent;
+import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.review.ReviewReason;
 import com.non.docx.toolkit.orchestration.review.ReviewResult;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
@@ -12,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -62,7 +64,12 @@ public final class QualityAgent implements ExpertAgent {
   }
 
   @Override
-  public ExpertPlan plan(OrchestratorSession session, DocumentSnapshot snapshot, String intent) {
+  public ExpertPlan plan(
+      OrchestratorSession session,
+      DocumentSnapshot snapshot,
+      String intent,
+      Consumer<LlmTraceEvent> traceCallback) {
+    // 本专家跑本地质量检查（非 LLM），不产生 LLM trace，忽略 traceCallback。
     // 跑质量检查（全量）
     String report = qualityCheck.checkQuality(session.docId(), List.of());
     int errors = countErrors(report);

@@ -3,6 +3,7 @@ package com.non.docx.toolkit.orchestration;
 import com.non.docx.core.api.Document;
 import com.non.docx.toolkit.DocxToolkit;
 import com.non.docx.toolkit.orchestration.agent.ExpertRegistry;
+import com.non.docx.toolkit.orchestration.agent.LlmTraceEvent;
 import com.non.docx.toolkit.orchestration.commit.CommitCoordinator;
 import com.non.docx.toolkit.orchestration.commit.OperationExecutors;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 /**
  * 对外高层 facade：RouterAgent 多子代理体系的统一入口。
@@ -226,8 +228,28 @@ public final class DocxOrchestrator {
    * @return 本轮完整结果
    */
   public RouterResult run(String conversationId, String intent, PhaseCallback phaseCallback) {
+    return run(conversationId, intent, phaseCallback, null);
+  }
+
+  /**
+   * 高层 run：跑完整状态机（analyze → plan → review → commit），带阶段回调 + LLM trace 回调。
+   *
+   * <p>{@code traceCb} 让调用方实时接收专家内部 LLM 调用的 prompt/response/thinking 增量（{@link
+   * LlmTraceEvent}），用于前端可视化。trace 回调与阶段回调职责分开：阶段回调是整阶段完成事件， trace 回调是 token 级增量。
+   *
+   * @param conversationId 会话标识
+   * @param intent 用户意图
+   * @param phaseCallback 阶段回调（null 时不回调）
+   * @param traceCb LLM trace 回调（null 时专家不发 trace）
+   * @return 本轮完整结果
+   */
+  public RouterResult run(
+      String conversationId,
+      String intent,
+      PhaseCallback phaseCallback,
+      Consumer<LlmTraceEvent> traceCb) {
     OrchestratorSession session = requireSession(conversationId);
-    return router.run(session, intent, phaseCallback);
+    return router.run(session, intent, phaseCallback, traceCb);
   }
 
   // 低层 commit 由 RouterResult 已包含 commitResult；若需单独提交某个 MergedPlan，

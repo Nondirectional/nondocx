@@ -3,6 +3,7 @@ package com.non.docx.toolkit.orchestration.agent;
 import com.non.docx.toolkit.orchestration.DocumentSnapshot;
 import com.non.docx.toolkit.orchestration.ExpertPlan;
 import com.non.docx.toolkit.orchestration.session.OrchestratorSession;
+import java.util.function.Consumer;
 
 /**
  * 领域专家子代理：读取基础快照（必要时经 ReadCoordinator 补读），产出<b>本工具组</b>的 {@link ExpertPlan}。
@@ -49,9 +50,18 @@ public interface ExpertAgent {
    * <p>实现可读取快照，必要时经 {@code ReadCoordinator} 补读；面向 LLM 先输出 JSON plan， 由 RouterAgent 解析校验为强类型
    * ExpertPlan。
    *
+   * <p><b>traceCallback（LLM 可见性）。</b> 调 LLM 的实现（如 demo 的 {@code LlmDocxExpert}）在 prompt 构造后、
+   * response 逐 chunk 时、调用完成时经此回调发出 {@link LlmTraceEvent}，供调用方实时推送前端。 不调 LLM 的启发式实现（如 {@code
+   * BodyAgent}）可忽略此参数。 传 null 时实现必须跳过 trace 发送。
+   *
    * @param session 当前会话（补读用）
    * @param snapshot 文档快照（只读基线）
    * @param intent 用户意图文本
+   * @param traceCallback LLM trace 回调（可空；不调 LLM 的实现可忽略）
    */
-  ExpertPlan plan(OrchestratorSession session, DocumentSnapshot snapshot, String intent);
+  ExpertPlan plan(
+      OrchestratorSession session,
+      DocumentSnapshot snapshot,
+      String intent,
+      Consumer<LlmTraceEvent> traceCallback);
 }

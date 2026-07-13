@@ -88,7 +88,9 @@ class DocxOrchestratorTest {
     public ExpertPlan plan(
         com.non.docx.toolkit.orchestration.session.OrchestratorSession session,
         DocumentSnapshot snapshot,
-        String intent) {
+        String intent,
+        java.util.function.Consumer<com.non.docx.toolkit.orchestration.agent.LlmTraceEvent>
+            traceCallback) {
       return new ExpertPlan(
           name(),
           "noop-plan-1",
