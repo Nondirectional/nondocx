@@ -1192,3 +1192,36 @@ Consolidated the nondocx toolkit Agent tool surface into intention-oriented entr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: 协商与专家实施分离
+
+**Date**: 2026-07-13
+**Task**: 协商与专家实施分离
+**Branch**: `main`
+
+### Summary
+
+Demo 改为主 Agent 只读协商、按钮授权、分组专家实施、集中提交回滚、质量检查与 JSONL trace 回放。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4d75d19` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

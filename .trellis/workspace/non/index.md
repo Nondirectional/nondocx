@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 27
 - **Last Active**: 2026-07-13
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1194 | Active |
+| `journal-1.md` | ~1227 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-07-13 | 协商与专家实施分离 | `4d75d19` | `main` |
 | 26 | 2026-07-13 | Demo 执行链路可视化: LLM trace (prompt/response/thinking) 流式展示 | `4951b46`, `71bcc3a`, `2c269ea`, `39e2db7` | `main` |
 | 25 | 2026-07-13 | P0-05 写安全协议落地 + 批量归档全部 router 子代理任务 | `805530d`, `fd209cb` | `main` |
 | 24 | 2026-07-12 | 完成 Router 编排协议基建 | `b399b74`, `c9acef7` | `main` |
