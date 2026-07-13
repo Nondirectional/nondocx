@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
+- **Total Sessions**: 30
 - **Last Active**: 2026-07-13
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1293 | Active |
+| `journal-1.md` | ~1326 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 30 | 2026-07-13 | 专家流式操作解析修复 | HEAD | `main` |
 | 29 | 2026-07-13 | 主 Agent 协商边界修正 | `6891520` | `main` |
 | 28 | 2026-07-13 | 前端协商实施可视化 | `f5a7695` | `main` |
 | 27 | 2026-07-13 | 协商与专家实施分离 | `4d75d19` | `main` |
