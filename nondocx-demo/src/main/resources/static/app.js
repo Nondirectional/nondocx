@@ -180,72 +180,111 @@ function handleSseFrame(frame, assistantState) {
     console.warn('解析 SSE 帧失败:', frame, e);
     return;
   }
+  reduceTimelineEvent(data, false);
   switch (data.type) {
-    case 'step': {
-      // 分阶段进度卡：按 turnId 创建/更新卡片
-      handleStepFrame(data);
-      break;
-    }
-    case 'trace': {
-      // LLM 推理过程：prompt/response/thinking 的实时展示
-      handleTraceFrame(data);
-      break;
-    }
-    case 'assistant': {
-      appendMsg('assistant', data.message || '');
-      break;
-    }
-    case 'authorization_required': {
-      renderExecuteButton(data.token);
-      break;
-    }
-    case 'dispatch': {
-      appendMsg('system', '已生成实施分派：' + (data.assignments || []).map(a => a.toolGroup + '（' + a.task + '）').join('；'));
-      break;
-    }
-    case 'review': {
-      appendMsg('system', '专家计划已合并，正在集中提交。');
-      break;
-    }
-    case 'commit':
-    case 'quality':
-    case 'blocked':
-    case 'rolled_back': {
-      appendMsg(data.type === 'rolled_back' ? 'error' : 'system', data.detail || data.message || data.type);
-      break;
-    }
     case 'doc_changed': {
       // save 成功，用新 key 刷新 OnlyOffice
       console.log('[刷新] save 成功,新 key:', data.key);
       refreshFromBackend(data.key);
       break;
     }
-    case 'error': {
-      appendMsg('error', data.message || '未知错误');
-      break;
-    }
-    case 'done': {
-      break;
-    }
   }
 }
 
-/** 只有服务端签发 token 后才出现；普通输入不会触发实施。 */
-function renderExecuteButton(token) {
-  const wrap = document.createElement('div');
-  wrap.className = 'authorization-action';
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = '开始实施';
-  button.addEventListener('click', () => executeWithToken(token, button));
-  wrap.append('信息已协商完成。', button);
-  messagesEl.appendChild(wrap);
+// ============ 协商/实施时间线 reducer ============
+
+const timelineRuns = new Map();
+
+function runFor(data, replay) {
+  const id = data.turnId || 'history';
+  if (!timelineRuns.has(id)) {
+    timelineRuns.set(id, { id, replay, status: 'consulting', events: [], traces: new Map(), token: null, assignments: [], operations: [] });
+  }
+  return timelineRuns.get(id);
+}
+
+function reduceTimelineEvent(data, replay) {
+  if (!data || !data.type || data.type === 'done' || data.type === 'doc_changed') return;
+  const run = runFor(data, replay);
+  run.events.push(data);
+  switch (data.type) {
+    case 'assistant': run.reply = data.message || ''; break;
+    case 'authorization_required': run.status = 'awaiting_authorization'; run.token = replay ? null : data.token; break;
+    case 'dispatch': run.status = 'executing'; run.assignments = data.assignments || []; break;
+    case 'review': run.operations = data.operations || []; break;
+    case 'commit': run.status = 'completed'; run.commit = data.detail || ''; break;
+    case 'quality': run.quality = data.detail || ''; if (/未通过|错误|❌/.test(run.quality)) run.status = 'quality_failed'; break;
+    case 'blocked': run.status = 'blocked'; run.message = data.message || ''; break;
+    case 'rolled_back': run.status = 'rolled_back'; run.message = data.message || ''; break;
+    case 'error': run.status = 'blocked'; run.message = data.message || '未知错误'; break;
+    case 'trace': {
+      const agent = data.agent || 'unknown';
+      if (!run.traces.has(agent)) run.traces.set(agent, []);
+      run.traces.get(agent).push(data);
+      break;
+    }
+  }
+  renderTimelineRun(run);
+}
+
+function renderTimelineRun(run) {
+  let card = document.getElementById('timeline-' + run.id);
+  if (!card) {
+    card = document.createElement('details');
+    card.id = 'timeline-' + run.id;
+    card.className = 'timeline-run';
+    messagesEl.appendChild(card);
+  }
+  card.open = !run.replay && !['completed', 'blocked', 'rolled_back', 'quality_failed'].includes(run.status);
+  card.innerHTML = '';
+  const summary = document.createElement('summary');
+  summary.textContent = statusLabel(run.status) + ' · ' + run.id;
+  summary.className = 'timeline-summary ' + run.status;
+  card.appendChild(summary);
+  addTimelineText(card, '协商', run.reply);
+  if (run.status === 'awaiting_authorization') renderAuthorization(card, run);
+  if (run.assignments.length) addTimelineText(card, 'DispatchPlan', run.assignments.map(a => a.toolGroup + '：' + a.task).join('\n'));
+  if (run.operations.length) addTimelineText(card, 'Review', run.operations.map(o => o.description || o.shortLabel || JSON.stringify(o)).join('\n'));
+  addTimelineText(card, '提交', run.commit || run.message);
+  addTimelineText(card, '质量验收', run.quality);
+  for (const [agent, events] of run.traces) renderTimelineTrace(card, agent, events, card.open);
   scrollToBottom();
 }
 
-async function executeWithToken(token, button) {
+function statusLabel(status) {
+  return ({ consulting: '协商中', awaiting_authorization: '等待授权', executing: '实施中', completed: '已实施', quality_failed: '已实施，验收未通过', blocked: '已阻断', rolled_back: '已回滚' })[status] || status;
+}
+
+function addTimelineText(card, title, value) {
+  if (!value) return;
+  const section = document.createElement('section'); section.className = 'timeline-section';
+  const label = document.createElement('strong'); label.textContent = title;
+  const pre = document.createElement('pre'); pre.textContent = value;
+  section.append(label, pre); card.appendChild(section);
+}
+
+function renderAuthorization(card, run) {
+  const section = document.createElement('section'); section.className = 'timeline-actions';
+  const start = document.createElement('button'); start.type = 'button'; start.textContent = '开始实施';
+  start.disabled = !run.token;
+  start.addEventListener('click', () => executeWithToken(run.token, run, start));
+  section.append('协商完成。', start); card.appendChild(section);
+}
+
+function renderTimelineTrace(card, agent, events, open) {
+  const details = document.createElement('details'); details.className = 'timeline-trace'; details.open = open;
+  const summary = document.createElement('summary'); summary.textContent = 'Trace · ' + agent; details.appendChild(summary);
+  const pre = document.createElement('pre');
+  pre.textContent = events.map(e => e.event === 'prompt' ? '[Prompt]\n' + (e.prompt || '') : e.event === 'tool_start' ? '[工具] ' + e.tool + '\n' + (e.arguments || '') : e.event === 'tool_end' ? '[结果] ' + e.tool + '\n' + (e.result || '') : e.event === 'thinking_delta' ? e.delta || '' : e.event === 'content_delta' ? e.delta || '' : '[' + e.event + ']').join('');
+  details.appendChild(pre); card.appendChild(details);
+}
+
+async function executeWithToken(token, run, button) {
   if (chatting) return;
   button.disabled = true;
+  run.status = 'executing';
+  run.token = null;
+  renderTimelineRun(run);
   setChatting(true);
   const cancelButton = document.createElement('button');
   cancelButton.type = 'button';
@@ -254,7 +293,8 @@ async function executeWithToken(token, button) {
     cancelButton.disabled = true;
     await fetch('/api/cancel', { method: 'POST' });
   });
-  button.parentElement.appendChild(cancelButton);
+  const card = document.getElementById('timeline-' + run.id);
+  card.appendChild(cancelButton);
   const assistantState = { currentTextEl: null };
   try {
     const resp = await fetch('/api/execute', {
@@ -647,7 +687,7 @@ async function replayTrace() {
     for (const line of text.split('\n')) {
       if (!line.trim()) continue;
       try {
-        handleSseFrame('data: ' + line, { currentTextEl: null });
+        reduceTimelineEvent(JSON.parse(line), true);
       } catch (e) {
         console.warn('跳过无法回放的 trace 事件', e);
       }

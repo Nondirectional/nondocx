@@ -396,6 +396,21 @@ html, body {
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
 }
 
+/* ============ 协商/实施时间线 ============ */
+.timeline-run { margin: 10px 0; border: 1px solid #d7dce5; border-left: 4px solid #64748b; border-radius: 8px; background: #fff; }
+.timeline-run[open] { box-shadow: 0 2px 10px rgba(15, 23, 42, .08); }
+.timeline-summary { padding: 10px 12px; cursor: pointer; font-weight: 700; }
+.timeline-summary.awaiting_authorization { color: #a16207; }
+.timeline-summary.executing { color: #2563eb; }
+.timeline-summary.completed { color: #15803d; }
+.timeline-summary.quality_failed, .timeline-summary.blocked, .timeline-summary.rolled_back { color: #b91c1c; }
+.timeline-section, .timeline-actions { margin: 8px 12px; padding: 8px 10px; border-radius: 6px; background: #f8fafc; }
+.timeline-section strong { display: block; margin-bottom: 4px; }
+.timeline-section pre, .timeline-trace pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.timeline-actions button { margin-left: 8px; }
+.timeline-trace { margin: 8px 12px; padding: 8px; border: 1px dashed #cbd5e1; border-radius: 6px; }
+.timeline-trace summary { cursor: pointer; font-weight: 600; }
+
 /* ============ 输入区 ============ */
 .chat-input {
   display: flex;
