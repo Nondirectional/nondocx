@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 28
+- **Total Sessions**: 29
 - **Last Active**: 2026-07-13
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1260 | Active |
+| `journal-1.md` | ~1293 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 29 | 2026-07-13 | 主 Agent 协商边界修正 | `6891520` | `main` |
 | 28 | 2026-07-13 | 前端协商实施可视化 | `f5a7695` | `main` |
 | 27 | 2026-07-13 | 协商与专家实施分离 | `4d75d19` | `main` |
 | 26 | 2026-07-13 | Demo 执行链路可视化: LLM trace (prompt/response/thinking) 流式展示 | `4951b46`, `71bcc3a`, `2c269ea`, `39e2db7` | `main` |
