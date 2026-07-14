@@ -199,6 +199,34 @@ public final class SessionTools extends ToolkitToolContext {
   }
 
   /**
+   * 用磁盘上的干净版本替换会话内指定 docId 的活文档，<b>保持 docId 不变</b>。
+   *
+   * <p>供应用层在需要丢弃内存改动（SubAgent 取消/失败、异常）时调用。与 {@code closeDocx + openDocx} 的关键区别：docId 保持稳定，
+   * 不会因 {@code seq} 递增而漂移。这避免了依赖该 docId 的上层（主 Agent 对话记忆、已派发给 SubAgent 的 task 文本） 因 docId 变化而失效。
+   *
+   * <p>语义上等价于「丢弃内存里被改过的 Document，重新从磁盘加载」，但对外契约（docId）不变。 generation 递增以使旧引用缓存（{@link
+   * ReferenceContext}）失效——reopen 后上一轮的元素索引引用不应再命中。
+   *
+   * @param docId 要重开的文档句柄（保持不变）
+   * @param path 磁盘上的 docx 路径（重新加载来源）
+   * @throws DocxIOException 磁盘文件无法打开
+   */
+  public void reopen(String docId, String path) {
+    Document old = sessions.get(docId);
+    Document fresh = Docx.open(Path.of(path));
+    sessions.put(docId, fresh);
+    generations.merge(docId, 1L, Long::sum);
+    references.invalidate(docId);
+    if (old != null) {
+      try {
+        old.close();
+      } catch (RuntimeException ignored) {
+        // 旧文档关闭失败不影响 reopen 语义：fresh 已 put 进 sessions
+      }
+    }
+  }
+
+  /**
    * 返回文档结构概览。
    *
    * <p>P0-04 起委托 {@link DocumentViewService#stats}，data 升级为完整 {@link StatsView}（旧 4 个 int 仍包含在内）。
