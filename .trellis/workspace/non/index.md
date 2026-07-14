@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 32
-- **Last Active**: 2026-07-13
+- **Total Sessions**: 33
+- **Last Active**: 2026-07-14
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1393 | Active |
+| `journal-1.md` | ~1427 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 33 | 2026-07-14 | SubAgent 兜底保存与真相更正 + SessionTools.reopen | `640c4fb`, `0e2bca7` | `main` |
 | 32 | 2026-07-13 | 主 Agent 通过 SubAgent 编辑文档 | `dbae09f` | `main` |
 | 31 | 2026-07-13 | 专家分派与操作解析诊断 | `ed72836`, HEAD | `main` |
 | 30 | 2026-07-13 | 专家流式操作解析修复 | HEAD | `main` |
