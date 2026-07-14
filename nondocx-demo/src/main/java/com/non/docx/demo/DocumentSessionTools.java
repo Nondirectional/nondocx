@@ -35,11 +35,6 @@ final class DocumentSessionTools {
     this.cancelRequested = cancelRequested;
   }
 
-  @ToolDef(name = "current_document", description = "返回本次任务唯一允许操作的文档句柄。")
-  public String currentDocument() {
-    return ToolResultRenderer.render(ToolResult.ok(docId.get(), "当前文档句柄 " + docId.get()));
-  }
-
   @ToolDef(name = "save_current_document", description = "检查当前文档；没有错误时保存到服务端当前文档。必须作为最后一个工具调用。")
   public String saveCurrentDocument() {
     DocumentExecutionState execution = state.get();
