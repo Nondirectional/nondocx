@@ -288,18 +288,19 @@ When a CLI auto-detects a mode by probing a remote resource (e.g., checking if `
 
 ---
 
-## Toolkit → SubAgent 覆盖检查
+## Toolkit → 单 Agent 覆盖检查
 
-当 toolkit 新增写工具时，SubAgent 的 registry 和提示词必须能发现它；否则工具虽已存在，模型仍无法调用。
+当 toolkit 新增写工具时，单 Agent 的 registry 和提示词必须能发现它；否则工具虽已存在，模型仍无法调用。同时该工具名必须被 `isReadonly` 正确分类——只读工具名要命中前缀/精确集合，写工具要被识别为 dirty。
 
 ### Checklist: After Adding A New Agent Tool
 
 - [ ] 声明 `@ToolDef`、能力注解和嵌套参数能力。
-- [ ] 将工具加入需要该能力的 SubAgent registry，不能加入主 Agent registry。
-- [ ] 在 SubAgent system prompt 中说明关键参数和保存顺序。
-- [ ] 添加工具级测试及真实模型委派测试。
+- [ ] 将工具加入单 Agent registry（`scan(toolkit.<域>)`）。
+- [ ] 若是只读工具，确认工具名命中 `isReadonly` 的前缀（`view_`/`read_`/`get_`/`list_`/`search_`/`check_`）或精确集合；否则它会被误判为写工具（多跑 flush，浪费但不丢数据）。
+- [ ] 在单 Agent system prompt 中说明关键参数。
+- [ ] 添加工具级测试及真实模型集成测试。
 
-完整边界见 [agent-subagent.md](../backend/agent-subagent.md)。
+完整边界见 [agent-single.md](../backend/agent-single.md)。
 
 ---
 

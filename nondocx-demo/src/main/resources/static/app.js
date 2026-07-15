@@ -201,7 +201,11 @@ function handleSseFrame(frame, assistantState) {
   }
 }
 
-// ============ SubAgent 实施时间线 reducer ============
+// ============ 文档编辑时间线 reducer ============
+//
+// edit_outcome 是服务端权威的成败系统帧（按 dirty/saved/cancelled/rolled_back 计算），
+// 前端以它为准渲染成败口径；agent 的 assistant 文本仅作辅助（流式 token 不可事后改写，
+// 取消竞态下 agent 文本可能与系统帧矛盾，此时以 edit_outcome 为准）。
 
 const timelineRuns = new Map();
 
@@ -219,14 +223,18 @@ function reduceTimelineEvent(data, replay) {
   run.events.push(data);
   switch (data.type) {
     case 'assistant': run.reply = data.message || ''; break;
-    case 'subagent_result':
-      run.status = data.success ? 'completed' : 'rolled_back';
-      run.result = data.error || '';
+    case 'edit_outcome':
+      // edit_outcome.status: noop(纯咨询) | saved | rolled_back | cancelled
+      // 服务端权威帧：成败口径以此为准，agent 的 assistant 文本仅作辅助。
+      run.outcome = data.status || 'noop';
+      run.status = ({ saved: 'completed', rolled_back: 'rolled_back', cancelled: 'rolled_back', noop: run.status })[run.outcome] || run.status;
+      run.result = data.error || (data.status === 'saved' ? '已保存' : data.status === 'noop' ? '' : '未保存');
       run.quality = data.qualityReport || '';
       break;
     case 'error': run.status = 'blocked'; run.message = data.message || '未知错误'; break;
     case 'trace': {
-      if (data.event === 'tool_start' && data.tool === 'invoke_subagent') run.status = 'executing';
+      // 单 Agent：任意非只读工具 tool_start 即表示进入实施。只读前缀与后端 isReadonly 保持同源。
+      if (data.event === 'tool_start' && isReadonlyTool(data.tool) === false) run.status = 'executing';
       const agent = data.agent || 'unknown';
       if (!run.traces.has(agent)) run.traces.set(agent, []);
       run.traces.get(agent).push(data);
@@ -234,6 +242,13 @@ function reduceTimelineEvent(data, replay) {
     }
   }
   renderTimelineRun(run);
+}
+
+/** 与后端 AgentBridge.isReadonly 同源的只读判定。未知工具视为写（与后端安全默认一致）。 */
+function isReadonlyTool(name) {
+  if (!name) return false;
+  if (['current_document', 'describe_capabilities'].includes(name)) return true;
+  return ['view_', 'read_', 'get_', 'list_', 'search_', 'check_'].some(p => name.startsWith(p));
 }
 
 function renderTimelineRun(run) {
@@ -258,7 +273,7 @@ function renderTimelineRun(run) {
 }
 
 function statusLabel(status) {
-  return ({ consulting: '处理中', executing: '实施中', completed: '已实施', blocked: '已阻断', rolled_back: '已回滚' })[status] || status;
+  return ({ consulting: '处理中', executing: '实施中', completed: '已保存', blocked: '已阻断', rolled_back: '已回滚' })[status] || status;
 }
 
 function addTimelineText(card, title, value) {
@@ -278,269 +293,6 @@ function renderTimelineTrace(card, agent, events, open) {
 }
 
 // ============ DOM 辅助 ============
-
-/**
- * 处理 step 帧：按 turnId 创建或更新进度卡。
- *
- * <p>每个 step 帧携带 turnId（关联同一张卡）、phase（analyze/plan/commit）、status、title。
- * 前端用 turnId 缓存当前卡片引用，收到新 step 时追加或更新对应行。
- *
- * <p>进度卡结构：
- * <pre>
- * ┌ progress-card ─────────────────────┐
- * │ ✅ 分析文档结构                     │
- * │    4 个段落，1 个表格                │
- * │ ✅ 生成编辑计划                      │
- * │    └ 插入 H1 标题「项目周报」，居中    │
- * │ ⏳ 执行中...                        │
- * └────────────────────────────────────┘
- * </pre>
- */
-
-// turnId → 卡片 DOM 元素的缓存
-const progressCards = {};
-
-function handleStepFrame(data) {
-  const turnId = data.turnId;
-  // 首次收到该 turnId 的帧：创建新卡片
-  if (!progressCards[turnId]) {
-    const card = document.createElement('div');
-    card.className = 'progress-card';
-    messagesEl.appendChild(card);
-    progressCards[turnId] = card;
-  }
-  const card = progressCards[turnId];
-
-  // 把上一行的 active 改为 done（视觉收尾）
-  const prevActive = card.querySelector('.step-row.active');
-  if (prevActive) {
-    prevActive.classList.remove('active');
-    prevActive.classList.add('done');
-    const icon = prevActive.querySelector('.step-icon');
-    if (icon) icon.textContent = '✅';
-  }
-
-  // 创建当前阶段行
-  const row = document.createElement('div');
-  const failed = data.status === 'failed';
-  row.className = 'step-row ' + (failed ? 'failed' : 'done');
-  row.dataset.phase = data.phase;
-
-  // 图标
-  const icon = document.createElement('span');
-  icon.className = 'step-icon';
-  icon.textContent = failed ? '❌' : '✅';
-  row.appendChild(icon);
-
-  // 标题
-  const title = document.createElement('span');
-  title.className = 'step-title';
-  title.textContent = failed ? data.title : data.title;
-  row.appendChild(title);
-
-  // detail（分析摘要 / 提交结果）
-  if (data.detail) {
-    const detail = document.createElement('div');
-    detail.className = 'step-detail';
-    detail.textContent = data.detail;
-    row.appendChild(detail);
-  }
-
-  // 操作清单（计划阶段）
-  if (data.operations && data.operations.length > 0) {
-    const opsEl = document.createElement('div');
-    opsEl.className = 'step-ops';
-    for (const op of data.operations) {
-      const opEl = document.createElement('div');
-      opEl.className = 'step-op';
-      const opIcon = op.status === 'approved' ? '▸' :
-                     op.status === 'warned' ? '⚠' :
-                     op.status === 'blocked' ? '✗' :
-                     op.status === 'skipped' ? '⊘' : '▸';
-      opEl.textContent = opIcon + ' ' + op.description;
-      opsEl.appendChild(opEl);
-    }
-    row.appendChild(opsEl);
-  }
-
-  // 失败原因
-  if (failed && data.error) {
-    const errEl = document.createElement('div');
-    errEl.className = 'step-error';
-    errEl.textContent = data.error;
-    row.appendChild(errEl);
-  }
-
-  card.appendChild(row);
-  scrollToBottom();
-}
-
-// ============ LLM trace 折叠区 ============
-//
-// trace 帧穿插在 PLAN 阶段进行中（prompt → thinking_delta×N → content_delta×N → complete），
-// 与阶段级 step 帧共存。前端在 progress-card 内为 LLM 推理过程渲染一个折叠区：
-//   <details class="trace-panel">
-//     <summary>LLM 推理过程</summary>
-//     <div class="trace-tabs"><button>Response</button><button>Thinking</button></div>
-//     <pre class="trace-prompt">...</pre>            ← prompt 只读块（可复制）
-//     <div class="trace-response"></div>             ← response 逐字追加
-//     <div class="trace-thinking" hidden></div>      ← thinking 逐字追加（默认隐藏）
-//   </details>
-// 按 turnId + agent 缓存，确保同一专家的 delta 续写同一区域。
-
-// trace 折叠区缓存：key = turnId + '|' + agent
-const tracePanels = {};
-
-function handleTraceFrame(data) {
-  const turnId = data.turnId;
-  const agent = data.agent || 'unknown';
-  const cacheKey = turnId + '|' + agent;
-
-  // 确保对应的 progress-card 存在（trace 可能在 step 之前到达）
-  if (!progressCards[turnId]) {
-    const card = document.createElement('div');
-    card.className = 'progress-card';
-    messagesEl.appendChild(card);
-    progressCards[turnId] = card;
-  }
-  const card = progressCards[turnId];
-
-  // 首次收到该专家的 trace：在卡片内创建折叠区
-  if (!tracePanels[cacheKey]) {
-    const panel = buildTracePanel(agent);
-    card.appendChild(panel.el);
-    tracePanels[cacheKey] = panel;
-  }
-  const panel = tracePanels[cacheKey];
-
-  switch (data.event) {
-    case 'prompt':
-      panel.promptEl.textContent = data.prompt || '';
-      break;
-    case 'content_delta':
-      panel.responseEl.append(document.createTextNode(data.delta || ''));
-      panel.showTab('response');
-      break;
-    case 'thinking_delta':
-      panel.thinkingEl.append(document.createTextNode(data.delta || ''));
-      break;
-    case 'tool_start':
-      panel.responseEl.append(document.createTextNode('\n[调用工具] ' + (data.tool || '') + '\n' + (data.arguments || '') + '\n'));
-      break;
-    case 'tool_end':
-      panel.responseEl.append(document.createTextNode('[工具结果] ' + (data.tool || '') + '\n' + (data.result || '') + '\n'));
-      break;
-    case 'complete':
-      if (data.success === false) {
-        panel.markError(data.error || 'LLM 调用失败');
-      } else {
-        panel.markComplete(data.usage);
-      }
-      break;
-  }
-  scrollToBottom();
-}
-
-/**
- * 构建 trace 折叠区 DOM（含 response/thinking 双 tab 切换）。
- *
- * @param agent 专家名
- * @return {{el, promptEl, responseEl, thinkingEl, showTab, markError, markComplete}}
- */
-function buildTracePanel(agent) {
-  const el = document.createElement('details');
-  el.className = 'trace-panel';
-  el.open = true; // 默认展开，让用户第一时间看到推理过程
-
-  const summary = document.createElement('summary');
-  summary.className = 'trace-summary';
-  summary.textContent = '🧠 LLM 推理过程（' + agent + '）';
-  el.appendChild(summary);
-
-  // tab 切换条
-  const tabs = document.createElement('div');
-  tabs.className = 'trace-tabs';
-  const responseBtn = document.createElement('button');
-  responseBtn.type = 'button';
-  responseBtn.className = 'trace-tab active';
-  responseBtn.textContent = 'Response';
-  const thinkingBtn = document.createElement('button');
-  thinkingBtn.type = 'button';
-  thinkingBtn.className = 'trace-tab';
-  thinkingBtn.textContent = 'Thinking';
-  tabs.appendChild(responseBtn);
-  tabs.appendChild(thinkingBtn);
-  el.appendChild(tabs);
-
-  // prompt 只读块
-  const promptLabel = document.createElement('div');
-  promptLabel.className = 'trace-section-label';
-  promptLabel.textContent = 'Prompt';
-  el.appendChild(promptLabel);
-  const promptEl = document.createElement('pre');
-  promptEl.className = 'trace-prompt';
-  el.appendChild(promptEl);
-
-  // response 区域（默认激活）
-  const responseLabel = document.createElement('div');
-  responseLabel.className = 'trace-section-label';
-  responseLabel.textContent = 'Response';
-  el.appendChild(responseLabel);
-  const responseEl = document.createElement('div');
-  responseEl.className = 'trace-response trace-stream';
-  el.appendChild(responseEl);
-
-  // thinking 区域（默认隐藏）
-  const thinkingLabel = document.createElement('div');
-  thinkingLabel.className = 'trace-section-label';
-  thinkingLabel.textContent = 'Thinking';
-  thinkingLabel.hidden = true;
-  el.appendChild(thinkingLabel);
-  const thinkingEl = document.createElement('div');
-  thinkingEl.className = 'trace-thinking trace-stream';
-  thinkingEl.hidden = true;
-  el.appendChild(thinkingEl);
-
-  // tab 切换逻辑
-  responseBtn.addEventListener('click', () => showTab('response'));
-  thinkingBtn.addEventListener('click', () => showTab('thinking'));
-
-  function showTab(which) {
-    const isResponse = which === 'response';
-    responseBtn.classList.toggle('active', isResponse);
-    thinkingBtn.classList.toggle('active', !isResponse);
-    responseEl.hidden = !isResponse;
-    thinkingEl.hidden = isResponse;
-    responseLabel.hidden = !isResponse;
-    thinkingLabel.hidden = isResponse;
-  }
-
-  function markError(msg) {
-    summary.textContent = '❌ LLM 推理失败（' + agent + '）';
-    const errEl = document.createElement('div');
-    errEl.className = 'trace-error';
-    errEl.textContent = msg;
-    el.appendChild(errEl);
-  }
-
-  function markComplete(usage) {
-    if (usage) {
-      const u = document.createElement('div');
-      u.className = 'trace-usage';
-      u.textContent = usage;
-      el.appendChild(u);
-    }
-  }
-
-  return { el, promptEl, responseEl, thinkingEl, showTab, markError, markComplete };
-}
-
-function appendAssistantText(state, delta) {  if (!delta) return;
-  if (!state.currentTextEl) {
-    state.currentTextEl = appendMsg('assistant', '');
-  }
-  state.currentTextEl.appendChild(document.createTextNode(delta));
-}
 
 function appendMsg(cls, text) {
   const div = document.createElement('div');

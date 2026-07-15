@@ -1,6 +1,7 @@
 package com.non.docx.demo;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.non.chain.agent.Agent;
@@ -21,19 +22,24 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
-class VllmSubAgentIntegrationTest {
+/**
+ * 单 Agent 真实模型集成测试（替代原 {@code VllmSubAgentIntegrationTest}）。
+ *
+ * <p>断言从"主 Agent 调 invoke_subagent 委派"改为"单 Agent 直接调写工具"——验证回归后模型能直接编排写工具 + {@code
+ * check_quality}，无需 SubAgent 委派层。
+ */
+class VllmSingleAgentIntegrationTest {
 
   private static final String VLLM_BASE_URL = "http://10.100.10.21:40002/v1";
   private static final String MODEL = "qwen3-14b";
 
   @Test
   @Timeout(90)
-  void delegatesCenteredTitleCreationToSubAgent(@TempDir Path temp) throws Exception {
+  void singleAgentEditsCenteredTitleDirectly(@TempDir Path temp) throws Exception {
     assertModelServerReachable();
     Path file = temp.resolve("current.docx");
     try (Document doc = Docx.create()) {
@@ -42,13 +48,10 @@ class VllmSubAgentIntegrationTest {
     }
     DocxToolkit toolkit = new DocxToolkit();
     String docId = data(toolkit.session.openDocx(file.toString()));
-    AtomicBoolean cancelled = new AtomicBoolean();
-    DocumentExecutionState state = new DocumentExecutionState();
-    DocumentSessionTools sessionTools =
-        new DocumentSessionTools(toolkit, () -> docId, () -> file, () -> state, cancelled);
-    ToolRegistry childTools =
+    DocumentTools documentTools = new DocumentTools(toolkit, () -> docId, () -> file);
+    ToolRegistry tools =
         new ToolRegistry()
-            .scan(sessionTools)
+            .scan(documentTools)
             .scan(toolkit.view)
             .scan(toolkit.body)
             .scan(toolkit.table)
@@ -56,42 +59,40 @@ class VllmSubAgentIntegrationTest {
             .scan(toolkit.trackedChangeQuery)
             .scan(toolkit.trackedChangeAuthoring)
             .scan(toolkit.qualityCheck);
-    ToolRegistry primaryTools = new ToolRegistry();
-    primaryTools
-        .registerSubAgent("invoke_subagent", "实施当前文档编辑任务")
-        .systemPrompt(
-            "你是文档实施者。先调用 current_document，再把任务写入该文档。"
-                + "需要居中标题时调用 insert_paragraph，使用 body_index=0、heading_level=H1、alignment=CENTER。"
-                + "最后调用 save_current_document。最终只输出 JSON。")
-        .toolRegistry(childTools)
-        .maxIterations(10)
-        .build();
     LLM llm =
         new VLLM(VLLM_BASE_URL, MODEL)
             .enableThinking(false)
             .temperature(0.0)
             .maxCompletionTokens(2048);
-    Agent primary =
-        Agent.builder(llm, primaryTools)
+    Agent agent =
+        Agent.builder(llm, tools)
             .executor(null)
-            .maxIterations(4)
-            .systemPrompt("你是主 Agent。明确编辑请求必须调用 invoke_subagent，不可直接编辑。")
+            .maxIterations(10)
+            .systemPrompt(
+                "你是文档 Agent。先调用 current_document 获取 doc_id，再把任务写入文档。"
+                    + "需要居中标题时调用 insert_paragraph，使用 body_index=0、heading_level=H1、alignment=CENTER。"
+                    + "完成后调用 check_quality。没有保存工具——保存由系统自动完成。")
             .build();
-    List<String> tools = new ArrayList<>();
+    List<String> calledTools = new ArrayList<>();
 
-    var result =
-        primary.run(
-            "在文档开头添加一个居中标题，内容为项目周汇报。",
-            event -> {
-              if (event instanceof AgentEvent.ToolStart) {
-                tools.add(((AgentEvent.ToolStart) event).toolName());
-              }
-            });
+    agent.run(
+        "在文档开头添加一个居中标题，内容为项目周汇报。",
+        event -> {
+          if (event instanceof AgentEvent.ToolStart) {
+            calledTools.add(((AgentEvent.ToolStart) event).toolName());
+          }
+        });
 
+    // 单 Agent 应直接调写工具，不再有 invoke_subagent 委派层
+    assertFalse(calledTools.contains("invoke_subagent"), "单 Agent 模式不应有 SubAgent 委派");
     assertTrue(
-        tools.contains("invoke_subagent"),
-        "模型未调用 invoke_subagent；请检查 VLLM 的 tool-call parser。最终回复: " + result.content());
-    assertTrue(state.saved, "SubAgent 未保存文档；最终回复: " + result.content());
+        calledTools.stream().anyMatch(t -> !AgentBridge.isReadonly(t)),
+        "应至少调用一个写工具；实际调用: " + calledTools);
+    assertTrue(calledTools.contains("insert_paragraph"), "应调用 insert_paragraph；实际: " + calledTools);
+
+    // 模拟 AgentBridge 的 Complete flush：保存落盘（真实 Agent 不带 flush，由本测试显式触发）
+    DocumentTools.SaveOutcome outcome = documentTools.saveCurrentDocument(false);
+    assertTrue(outcome.saved, "保存应成功: " + outcome.error);
     try (Document reopened = Docx.open(file)) {
       assertEquals("项目周汇报", reopened.paragraph(0).text());
       assertEquals(Alignment.CENTER, reopened.paragraph(0).alignment());

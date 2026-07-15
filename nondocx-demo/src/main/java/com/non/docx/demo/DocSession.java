@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>本类<b>不</b>持有 POI 活文档({@code Document})—— 那是 {@code DocxToolkit.sessions} map 的事,Agent 在对话里 自己
  * {@code open_docx}。这里只管「磁盘上现在摆着哪个文件、OO 该用哪个 key」。
  *
- * <p><b>刷新机制核心:换 key。</b> OnlyOffice 不能直接 reload 同一实例。每次文档改动(SubAgent 受限保存或用户上传),后端调 {@link
+ * <p><b>刷新机制核心:换 key。</b> OnlyOffice 不能直接 reload 同一实例。每次文档改动(Agent 编辑后的代码强制保存或用户上传),后端调 {@link
  * #bumpKey()} 让 key 变成「新版本 + 当前落盘内容指纹」,前端收到新 key 后 {@code destroyEditor()} + {@code new
  * DocsAPI.DocEditor(新key)},OO 因 key 变化而重新拉文件、重新转换。详见 design.md §3。
  *

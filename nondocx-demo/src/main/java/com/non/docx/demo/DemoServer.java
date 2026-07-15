@@ -161,7 +161,7 @@ public final class DemoServer {
         });
   }
 
-  /** 取消当前 SubAgent 实施与 trace 回放入口。 */
+  /** 取消当前编辑实施与 trace 回放入口。 */
   private static void registerExecutionRoutes(
       Javalin app, DocSession session, AgentBridge agentBridge) {
     app.post(

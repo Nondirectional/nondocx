@@ -20,15 +20,14 @@
         │
         ▼
 Javalin 后端 (nondocx-demo:8080)
-└── 主 Agent 通过 invoke_subagent 工具唤起无状态文档 SubAgent
-    └── SubAgent 复用 DocxToolkit 读取、编辑、质量检查并保存当前文档
-        │ save_current_document 落盘 → key++
-        ▼
+└── 单 Agent 复用 DocxToolkit 直接读取、编辑、质量检查当前文档
+    │ （Agent 没有保存工具——循环结束时由应用层强制 flush 落盘）→ key++
+    ▼
 OnlyOffice Document Server (Docker :9090)
 └── 按 document.key 缓存版本;key 变了就重新拉文件、转换、渲染
 ```
 
-**核心刷新机制**:OnlyOffice 不能直接 reload 同一实例。每次 SubAgent `save_current_document` 成功,后端让
+**核心刷新机制**:OnlyOffice 不能直接 reload 同一实例。每次 Agent 编辑后应用层强制保存成功,后端让
 `document.key` 自增,前端收到后 `destroyEditor()` + `new DocsAPI.DocEditor(新key)`,OnlyOffice
 因 key 变化而重新拉文件 —— 这就是「自动刷新」的全部秘密。
 
@@ -139,7 +138,7 @@ OnlyOffice 首启要在内存里生成全套字体/主题,峰值很高。若 Doc
 
 ### Agent 改完文档但 OnlyOffice 没刷新
 
-看浏览器控制台有没有 `[刷新] save 成功,新 key:` 日志。若没有,可能是 SubAgent 未保存成功——在对话里重新提出编辑请求。
+看浏览器控制台有没有 `[刷新] save 成功,新 key:` 日志。若没有,可能是编辑未保存成功（应用层 flush 未落盘）——在对话里重新提出编辑请求。
 
 ### 上传后 Agent 还在说旧文档的事
 
