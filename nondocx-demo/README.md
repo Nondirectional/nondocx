@@ -11,6 +11,40 @@
 - **实时刷新** —— Agent 保存的瞬间,左侧 OnlyOffice 销毁重建,显示最新内容
 - **上传自有文档** —— 点「上传文档」选你自己的 `.docx`,Agent 接着帮你编辑
 
+## Skills:LLM 自主点选的过程知识
+
+Agent 挂载 6 条顶层 **Skill**。Skill 是无参数 function,代表某一类编辑任务的「过程性知识」(触发
+场景、操作顺序、能力边界、停止条件)。LLM **自主判断**当前是否需要某条 Skill:需要就点选,不需要
+就不点——Demo 不强制、不引导,也没有常驻 Skill 选择面板。
+
+点选后,Skill 正文作为一条 **SYSTEM 消息**注入当前对话(`SkillInjectionMode.SYSTEM`),Agent
+据此继续调用普通 docx 工具。Skill 是纯知识,不改变普通工具的 dirty 检测、质量检查和保存语义。
+
+| Skill | 用途 |
+|---|---|
+| `inspect-document` | 文档内容、结构和目标定位的只读分析 |
+| `edit-body` | 正文段落、run、样式和超链接编辑 |
+| `edit-table` | 表格创建、单元格编辑、合并和相关布局处理 |
+| `tracked-changes` | 修订查询、接受/拒绝和修订创作 |
+| `audit-quality` | 质量检查、问题解释,以及用户明确要求时的修复与复检 |
+| `inspect-special-parts` | 页眉、页脚和目录的只读检查 |
+
+**如何在时间线看到 Skill 激活**:每次 Skill 被点选,对话时间线的 Trace 区会出现一条独立的
+`[Skill]` 记录,显示 Skill 名称、说明和注入字符数(不显示正文)。它不会被渲染成普通工具调用,也
+不会触发「进入实施」或标记文档已修改。刷新页面后仍可在 Trace 回放中看到。
+
+**只读边界**:`inspect-special-parts` 只能读取页眉/页脚/目录,Demo 暂不支持写入这些部分;对写入
+请求 Agent 会如实说明不支持,不伪造修改成功。`audit-quality` 仅在用户明确要求修复时才改动文档。
+
+**示例问题**(标注「可能激活」的 Skill——真实模型是否命中取决于其自主判断,Demo 不保证):
+
+- 「这文档讲了什么?有哪几部分?」—— 可能激活 `inspect-document`
+- 「在开头加一个居中标题『项目周汇报』」—— 可能激活 `edit-body`
+- 「插入一个 3 行 2 列的表格」—— 可能激活 `edit-table`
+- 「文档里有哪些修订?帮我接受全部」—— 可能激活 `tracked-changes`
+- 「检查一下文档有没有问题」—— 可能激活 `audit-quality`
+- 「页眉写了什么?有目录吗?」—— 可能激活 `inspect-special-parts`
+
 ## 架构(三服务分离)
 
 ```

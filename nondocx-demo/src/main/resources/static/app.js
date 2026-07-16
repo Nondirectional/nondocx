@@ -288,8 +288,23 @@ function renderTimelineTrace(card, agent, events, open) {
   const details = document.createElement('details'); details.className = 'timeline-trace'; details.open = open;
   const summary = document.createElement('summary'); summary.textContent = 'Trace · ' + agent; details.appendChild(summary);
   const pre = document.createElement('pre');
-  pre.textContent = events.map(e => e.event === 'prompt' ? '[Prompt]\n' + (e.prompt || '') : e.event === 'tool_start' ? '[工具] ' + e.tool + '\n' + (e.arguments || '') : e.event === 'tool_end' ? '[结果] ' + e.tool + '\n' + (e.result || '') : e.event === 'thinking_delta' ? e.delta || '' : e.event === 'content_delta' ? e.delta || '' : '[' + e.event + ']').join('');
+  pre.textContent = events.map(renderTraceLine).join('');
   details.appendChild(pre); card.appendChild(details);
+}
+
+/** 单条 trace 事件 → 时间线文本行。Skill 激活独立成行，不渲染为普通工具。 */
+function renderTraceLine(e) {
+  switch (e.event) {
+    case 'prompt': return '[Prompt]\n' + (e.prompt || '');
+    case 'tool_start': return '[工具] ' + e.tool + '\n' + (e.arguments || '');
+    case 'tool_end': return '[结果] ' + e.tool + '\n' + (e.result || '');
+    case 'skill_activated':
+      // Skill 激活：只显示名称/description/注入字符数，不显示正文（后端已不传正文）。
+      return '[Skill] ' + (e.skill || '') + '\n' + (e.description || '') + '\n注入 ' + (e.contentLength || 0) + ' 字符';
+    case 'thinking_delta': return e.delta || '';
+    case 'content_delta': return e.delta || '';
+    default: return '[' + e.event + ']';
+  }
 }
 
 // ============ DOM 辅助 ============

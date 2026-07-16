@@ -6,10 +6,12 @@ import com.non.chain.agent.AfterResult;
 import com.non.chain.agent.Agent;
 import com.non.chain.agent.AgentEvent;
 import com.non.chain.agent.BeforeResult;
+import com.non.chain.agent.SkillInjectionMode;
 import com.non.chain.agent.ToolCallContext;
 import com.non.chain.memory.MessageWindowChatMemory;
 import com.non.chain.provider.DashscopeLLM;
 import com.non.chain.provider.LLM;
+import com.non.chain.skill.SkillRegistry;
 import com.non.chain.tool.ToolRegistry;
 import com.non.docx.toolkit.DocxToolkit;
 import com.non.docx.toolkit.result.ToolResultParser;
@@ -61,6 +63,7 @@ final class AgentBridge {
   private final Path currentDocPath;
   private final Agent agent;
   private final MessageWindowChatMemory memory;
+  private final SkillRegistry skillRegistry;
   private final DocumentTools documentTools;
   private final AtomicBoolean cancelRequested = new AtomicBoolean();
   private final AtomicLong turnSeq = new AtomicLong();
@@ -88,6 +91,7 @@ final class AgentBridge {
       llm = null;
       agent = null;
       memory = null;
+      skillRegistry = null;
       documentTools = null;
       return;
     }
@@ -98,6 +102,7 @@ final class AgentBridge {
     memory =
         MessageWindowChatMemory.builder().conversationId("demo-document").maxMessages(24).build();
     documentTools = new DocumentTools(toolkit, () -> docId, () -> this.currentDocPath);
+    skillRegistry = DemoSkills.create();
 
     ToolRegistry tools =
         new ToolRegistry()
@@ -115,6 +120,8 @@ final class AgentBridge {
             .memory(memory)
             .maxIterations(24)
             .executor(null)
+            .skillRegistry(skillRegistry)
+            .skillInjectionMode(SkillInjectionMode.SYSTEM)
             .addBeforeToolCall(this::beforeToolCall)
             .addAfterToolCall(this::afterToolCall)
             .systemPrompt(
@@ -123,7 +130,10 @@ final class AgentBridge {
                     + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
                     + "完成修改后调用 check_quality 检查质量。若任一工具失败，停止并说明失败。"
                     + "不要调用或描述 Dispatcher、计划、专家分派、提交阶段或 SubAgent。"
-                    + "不要使用对话记忆或推断得来的旧 doc_id。")
+                    + "不要使用对话记忆或推断得来的旧 doc_id。"
+                    // Skill 是可选过程知识：不强制相关请求必须激活某条 Skill，模型可自主判断是否需要。
+                    + "部分 Skill（以 [Skill] 标注、无参数）是可选的过程性知识，仅在确实需要时调用，"
+                    + "同一 Skill 在一轮内最多调用一次，不重复点选。")
             .build();
   }
 
@@ -385,6 +395,10 @@ final class AgentBridge {
       trace.put("event", "tool_end");
       trace.put("tool", tool.toolName());
       trace.put("result", tool.result());
+    } else if (event instanceof AgentEvent.SkillActivated) {
+      // Skill 激活：独立 trace 帧，不发正文、不发 tool_start/tool_end，不改变 dirty。
+      AgentEvent.SkillActivated skill = (AgentEvent.SkillActivated) event;
+      trace.putAll(skillActivatedFields(skill.skillName(), skill.contentLength()));
     } else {
       return;
     }
@@ -419,5 +433,35 @@ final class AgentBridge {
     Throwable cur = e;
     while (cur.getCause() != null && cur.getCause() != cur) cur = cur.getCause();
     return cur.getMessage() == null ? cur.getClass().getSimpleName() : cur.getMessage();
+  }
+
+  /**
+   * 取 Skill 的 description 用于 SSE 帧。description 是固定元数据（见 {@link DemoSkills}）， 与 registry
+   * 是否构造无关，直接走静态查表，避免 disabled 模式下 NPE。
+   */
+  private static String skillDescription(String skillName) {
+    try {
+      return DemoSkills.description(skillName);
+    } catch (IllegalArgumentException unknown) {
+      // 未知 Skill（不应发生）：回退为名称，不中断 trace 流。
+      return skillName;
+    }
+  }
+
+  /**
+   * 组装 Skill 激活 trace 帧的 Skill 专属字段（不含 type/turnId/agent 公共头）。
+   *
+   * <p>刻意<b>不</b>包含 Skill 正文：正文是过程知识，重复广播会扩大日志并暴露内部指令（见 design.md §4.1）。仅暴露名称、description
+   * 和注入字符数，供前端展示与诊断。
+   *
+   * <p>package-private 便于 trace 映射测试直接断言字段完整性。
+   */
+  static Map<String, Object> skillActivatedFields(String skillName, int contentLength) {
+    Map<String, Object> fields = new LinkedHashMap<>();
+    fields.put("event", "skill_activated");
+    fields.put("skill", skillName);
+    fields.put("description", skillDescription(skillName));
+    fields.put("contentLength", contentLength);
+    return fields;
   }
 }

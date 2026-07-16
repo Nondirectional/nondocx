@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "backend 总览：Java/Maven 库结构、com.non.docx.core 包布局、全中文对外约定。Skill 资源命名/Demo 包路径需符合此结构。"}
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "核心不变量：单 Agent 持读写质检工具但不持保存；dirty 检测「未知工具视为写」；SSE edit_outcome/doc_changed 契约；AgentEvent.Complete 强制 flush。Skill 必须不破坏这些不变量——需验证 Skill 不走 tool interceptor、不触发 dirty、不改 save 语义。"}
+{"file": ".trellis/spec/backend/logging.md", "reason": "Demo 层用 SLF4J；POI 5.x log4j-api 桥接陷阱。AgentBridge 新增 SkillActivated 分支需遵循 demo 层日志规范。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Skill 事件跨多层：后端 AgentEvent.SkillActivated → trace SSE 帧 → TraceJournal JSONL → 前端 reducer/渲染。新增事件种类需对照此指南的数据格式变更检查清单，确保实时帧与回放一致。"}
