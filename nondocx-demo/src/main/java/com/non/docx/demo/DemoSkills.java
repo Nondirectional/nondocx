@@ -33,7 +33,7 @@ final class DemoSkills {
     SKILL_DESCRIPTIONS.put("edit-body", PREFIX + "正文段落、run、样式和超链接编辑。");
     SKILL_DESCRIPTIONS.put("edit-table", PREFIX + "表格创建、单元格编辑、合并和相关布局处理。");
     SKILL_DESCRIPTIONS.put("tracked-changes", PREFIX + "修订查询、接受/拒绝和修订创作。");
-    SKILL_DESCRIPTIONS.put("audit-quality", PREFIX + "质量检查、问题解释，以及用户明确要求时的修复与复检。");
+    SKILL_DESCRIPTIONS.put("audit-quality", PREFIX + "复审结论解释，以及用户明确要求时补做复审指出的缺失与复检。");
     SKILL_DESCRIPTIONS.put("inspect-special-parts", PREFIX + "页眉、页脚和目录的只读检查。");
   }
 

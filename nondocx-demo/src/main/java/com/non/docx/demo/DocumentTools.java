@@ -1,15 +1,12 @@
 package com.non.docx.demo;
 
 import com.non.chain.tool.ToolDef;
-import com.non.docx.core.api.Document;
 import com.non.docx.toolkit.DocxToolkit;
-import com.non.docx.toolkit.QualityCheckTools.CheckResult;
 import com.non.docx.toolkit.result.ToolResult;
 import com.non.docx.toolkit.result.ToolResultCode;
 import com.non.docx.toolkit.result.ToolResultParser;
 import com.non.docx.toolkit.result.ToolResultRenderer;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.function.Supplier;
 
 /**
@@ -59,39 +56,30 @@ final class DocumentTools {
   }
 
   /**
-   * 应用层强制保存：保存前运行全量质检，按 error/warning 门控落盘。
+   * 应用层强制保存：dirty 即落盘，无质检门控。
    *
-   * <p>由 {@link AgentBridge} 的 {@code Complete} flush 调用，<b>不是</b> LLM 工具。保留原 {@code
-   * DocumentSessionTools} 的门控语义（质检 error 拒绝保存、warning 允许保存），只去掉与 {@code
-   * DocumentExecutionState}/取消标志的耦合——状态改由 {@code AgentBridge} flush 层持有。
+   * <p>由 {@link AgentBridge} 的 {@code Complete} flush 调用，<b>不是</b> LLM 工具。
+   *
+   * <p><b>质检语义变更（2026-07-17）</b>：原实现保存前跑全量规则质检，按 error 拒绝落盘。现质检改为「只读复审
+   * SubAgent」复审意图达成度，且复审为<b>软警告</b>（不拦截保存）——故本方法不再做任何质检门控，dirty 即落盘。 复审结论由 {@link AgentBridge} 在
+   * flush 时另行收集，随 {@code edit_outcome} 回传，不在此产出。
    *
    * @param cancelled 本轮是否已取消（取消则拒绝保存）
-   * @return 保存结果（成功 / 失败原因），同时通过 {@link SaveOutcome} 回传质检报告与是否含 error
+   * @return 保存结果（成功 / 失败原因）；{@link SaveOutcome#qualityReport} 始终为空——复审结论由 AgentBridge 填充
    */
   SaveOutcome saveCurrentDocument(boolean cancelled) {
     if (cancelled) {
       return SaveOutcome.cancelled();
     }
     String currentDocId = docId.get();
-    Document document = toolkit.session.getDocument(currentDocId);
-    if (document == null) {
+    if (toolkit.session.getDocument(currentDocId) == null) {
       return SaveOutcome.failed("当前文档句柄不存在");
-    }
-    String qualityReport = toolkit.qualityCheck.checkQuality(currentDocId, null);
-    List<CheckResult> checks = toolkit.qualityCheck.runAllChecks(document);
-    boolean hasError =
-        checks.stream().anyMatch(check -> !check.passed() && "error".equals(check.severity()));
-    if (hasError) {
-      return new SaveOutcome(false, false, qualityReport, "质量检查发现错误，未保存当前文档");
     }
     String result = toolkit.session.saveDocx(currentDocId, outputPath.get().toString());
     ToolResultParser.Snapshot parsed = ToolResultParser.parse(result);
     boolean saved = parsed != null && parsed.success();
     return new SaveOutcome(
-        saved,
-        saved,
-        qualityReport,
-        saved ? "" : "保存失败：" + (parsed == null ? result : parsed.message()));
+        saved, saved, "", saved ? "" : "保存失败：" + (parsed == null ? result : parsed.message()));
   }
 
   /** 保存结果：携带成败、质检报告与原因，供 {@link AgentBridge} 组装 {@code edit_outcome} 帧。 */
