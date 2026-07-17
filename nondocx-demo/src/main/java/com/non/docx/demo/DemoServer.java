@@ -52,8 +52,8 @@ public final class DemoServer {
 
   public static void main(String[] args) throws Exception {
     // 0) DashScope API key(可选:缺失则 Agent 不可用,但预览仍正常)
-    //    String apiKey = System.getenv("DASHSCOPE_API_KEY");
-    String apiKey = "REDACTED_DASHSCOPE_API_KEY";
+    //    从环境变量 DASHSCOPE_API_KEY 读取,切勿硬编码到源码。
+    String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
     // 1) 落地样例文档到工作目录
     SampleDocSeeder seeder = new SampleDocSeeder(WORK_DIR);
