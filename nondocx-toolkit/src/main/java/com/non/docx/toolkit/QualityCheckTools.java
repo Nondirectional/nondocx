@@ -126,7 +126,7 @@ public final class QualityCheckTools extends ToolkitToolContext {
    *
    * @param docId 文档句柄
    * @param checks 检查项数组（空或 null 则跑全量）；未知项会在报告里标注为跳过
-   * @return 结构化报告字符串；docId 不存在则返回 {@code docNotFound} 错误串
+   * @return 含汇总计数和逐项 checks 明细的结构化报告字符串；docId 不存在则返回 {@code docNotFound} 错误串
    */
   @ToolDef(
       name = "check_quality",
@@ -617,12 +617,22 @@ public final class QualityCheckTools extends ToolkitToolContext {
         .append(" errors | ⚠️ ")
         .append(warnings)
         .append(" warnings");
-    Map<String, Integer> data = new LinkedHashMap<>();
+    Map<String, Object> data = new LinkedHashMap<>();
     data.put("passed", passed);
     data.put("errors", errors);
     data.put("warnings", warnings);
     data.put("total", results.size());
-    ToolResult<Map<String, Integer>> result = ToolResult.ok(data, sb.toString());
+    List<Map<String, Object>> checks = new ArrayList<>();
+    for (CheckResult r : results) {
+      Map<String, Object> check = new LinkedHashMap<>();
+      check.put("name", r.name());
+      check.put("passed", r.passed());
+      check.put("severity", r.severity());
+      check.put("message", r.message());
+      checks.add(check);
+    }
+    data.put("checks", checks);
+    ToolResult<Map<String, Object>> result = ToolResult.ok(data, sb.toString());
     return ToolResultRenderer.render(result);
   }
 

@@ -50,6 +50,8 @@ class QualityCheckToolsTest {
     String report = runAll(tk, docId);
 
     assertThat(report).contains("通过 10/10 | ❌ 0 errors | ⚠️ 0 warnings");
+    assertThat(report).contains("\"checks\"");
+    assertThat(report).contains("\"name\":\"blank-pages\"");
     // 各检查项行不应有 ❌/⚠️（全 ✅）—— 汇总行的 ❌/⚠️ 是计数标签，不算违规
     for (String line : report.split("\n")) {
       if (line.startsWith("  ✅") || line.startsWith("  ⚠️") || line.startsWith("  ❌")) {
@@ -273,6 +275,9 @@ class QualityCheckToolsTest {
     assertThat(report).contains("[blank-pages]");
     assertThat(report).contains("通过 0/1"); // 只 1 项检查，且该项报警未通过
     assertThat(report).doesNotContain("[cleanliness]");
+    assertThat(report).contains("\"checks\":[");
+    assertThat(report).contains("\"name\":\"blank-pages\"");
+    assertThat(report).doesNotContain("\"name\":\"cleanliness\"");
   }
 
   @Test
