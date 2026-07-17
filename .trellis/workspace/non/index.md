@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 35
-- **Last Active**: 2026-07-16
+- **Total Sessions**: 36
+- **Last Active**: 2026-07-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1493 | Active |
+| `journal-1.md` | ~1529 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-07-17 | 质检目标改为只读复审 SubAgent 复审意图达成度 | `efce1d8`, `a6e8419`, `c3c39d5`, `494487e` | `feat/demo-single-agent-revert` |
 | 35 | 2026-07-16 | Demo 引入 nonchain 0.11.0 Skills | `dfd63f7` | `feat/demo-single-agent-revert` |
 | 34 | 2026-07-15 | demo 单 Agent 回归：撤销 SubAgent 委派层 | `82b9c57` | `feat/demo-single-agent-revert` |
 | 33 | 2026-07-14 | SubAgent 兜底保存与真相更正 + SessionTools.reopen | `640c4fb`, `0e2bca7` | `main` |
