@@ -16,11 +16,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * 验证 {@link DocumentTools}：{@code current_document} 只读句柄 + {@code saveCurrentDocument} 应用层门控。
+ * 验证 {@link DocumentTools}：{@code current_document} 只读句柄 + {@code saveCurrentDocument} 应用层保存。
  *
- * <p>对应原 {@code DocumentSessionToolsTest} 的对等覆盖：质检通过落盘、质检 error 拒绝、取消拒绝。 区别：保存方法不再是 LLM 工具，是应用层方法（由
- * {@link AgentBridge} 的 {@code Complete} flush 调用），故直接断言 {@link DocumentTools.SaveOutcome} 而非
- * {@code DocumentExecutionState}。
+ * <p>2026-07-17 重构后，{@code saveCurrentDocument} <b>无质检门控</b>——dirty 即落盘（复审改为软警告，不拦截保存）。 覆盖：dirty
+ * 落盘、取消拒绝、save 不暴露为工具。
  */
 class DocumentToolsTest {
 
@@ -41,7 +40,7 @@ class DocumentToolsTest {
   }
 
   @Test
-  void saveCurrentDocumentPersistsAfterQualityCheck(@TempDir Path temp) throws Exception {
+  void saveCurrentDocumentPersistsDirtyNoGate(@TempDir Path temp) throws Exception {
     Path file = temp.resolve("current.docx");
     try (Document doc = Docx.create()) {
       doc.addParagraph("正文");
@@ -63,8 +62,10 @@ class DocumentToolsTest {
         "stop",
         null);
 
+    // dirty 即落盘，无质检门控；qualityReport 由 AgentBridge 复审结论填充，save 内部产空
     DocumentTools.SaveOutcome outcome = tools.saveCurrentDocument(false);
-    assertTrue(outcome.saved, "质检通过应落盘");
+    assertTrue(outcome.saved, "dirty 应直接落盘（无门控）");
+    assertEquals("", outcome.qualityReport, "save 内部不再产出质检报告");
     try (Document reopened = Docx.open(file)) {
       assertEquals("项目周汇报", reopened.paragraph(0).text());
     }

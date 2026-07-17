@@ -187,7 +187,7 @@ class SkillAgentLinkTest {
     // 通过观察：激活 Skill 后，AgentEvent 流里无因 Skill 而起的写工具语义即可。
     ScriptedLlm llm = new ScriptedLlm();
     llm.enqueue(new ChatResult(null, null, List.of(new ToolCall("c", "audit-quality", "{}"))));
-    llm.enqueue(new ChatResult("质检完成。", null, List.of()));
+    llm.enqueue(new ChatResult("复审完成。", null, List.of()));
 
     SkillRegistry skills = DemoSkills.create();
     DocxToolkit toolkit = new DocxToolkit();
@@ -202,7 +202,7 @@ class SkillAgentLinkTest {
             .build();
 
     List<AgentEvent> events = new ArrayList<>();
-    agent.run("检查文档质量", events::add);
+    agent.run("帮我确认下文档改好了没", events::add);
 
     // SkillActivated 应出现（audit-quality 被点选）。
     boolean activated = events.stream().anyMatch(e -> e instanceof AgentEvent.SkillActivated);

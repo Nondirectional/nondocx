@@ -30,7 +30,7 @@ import org.junit.jupiter.api.io.TempDir;
  * 单 Agent 真实模型集成测试（替代原 {@code VllmSubAgentIntegrationTest}）。
  *
  * <p>断言从"主 Agent 调 invoke_subagent 委派"改为"单 Agent 直接调写工具"——验证回归后模型能直接编排写工具 + {@code
- * check_quality}，无需 SubAgent 委派层。
+ * review_intent}（只读复审 SubAgent），无需会编辑/保存的 SubAgent 委派层。
  */
 class VllmSingleAgentIntegrationTest {
 
@@ -58,7 +58,18 @@ class VllmSingleAgentIntegrationTest {
             .scan(toolkit.headerFooterToc)
             .scan(toolkit.trackedChangeQuery)
             .scan(toolkit.trackedChangeAuthoring)
-            .scan(toolkit.qualityCheck);
+            .registerSubAgent("review_intent", "[复审] 对比用户本轮请求与文档现状，返回达成度结论。")
+            .systemPrompt(
+                "你是文档意图复审员。用 view_* 只读工具读取文档，判断用户请求的修改是否达成，"
+                    + "输出 <verdict>达成|部分达成|未达成</verdict> 与 <diff>差异</diff>。只读取不写入。")
+            .toolRegistry(new ToolRegistry().scan(toolkit.view))
+            .llm(
+                new VLLM(VLLM_BASE_URL, MODEL)
+                    .enableThinking(false)
+                    .temperature(0.0)
+                    .maxCompletionTokens(2048))
+            .maxIterations(6)
+            .build();
     LLM llm =
         new VLLM(VLLM_BASE_URL, MODEL)
             .enableThinking(false)
@@ -71,7 +82,7 @@ class VllmSingleAgentIntegrationTest {
             .systemPrompt(
                 "你是文档 Agent。先调用 current_document 获取 doc_id，再把任务写入文档。"
                     + "需要居中标题时调用 insert_paragraph，使用 body_index=0、heading_level=H1、alignment=CENTER。"
-                    + "完成后调用 check_quality。没有保存工具——保存由系统自动完成。")
+                    + "完成后调用 review_intent 复审。没有保存工具——保存由系统自动完成。")
             .build();
     List<String> calledTools = new ArrayList<>();
 

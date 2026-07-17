@@ -26,11 +26,11 @@ class OutcomeFrameTest {
 
   @Test
   void rolledBackStatusWhenSaveFailed() {
-    assertEquals(
-        "rolled_back", AgentBridge.deriveStatus(false, SaveOutcome.failed("质量检查发现错误，未保存")));
+    // 2026-07-17 重构：复审为软警告不拦截保存，故 rolled_back 仅由保存失败（IO 等）触发，不再由质检 error 触发。
+    assertEquals("rolled_back", AgentBridge.deriveStatus(false, SaveOutcome.failed("保存失败：磁盘错误")));
     assertEquals(
         "rolled_back",
-        AgentBridge.deriveStatus(false, SaveOutcome.of(false, false, "", "保存失败：磁盘错误")));
+        AgentBridge.deriveStatus(false, SaveOutcome.of(false, false, "", "保存失败：句柄不存在")));
   }
 
   /** 取消优先于其它——即使 outcome 恰好 saved，cancelled 仍应胜出（实际不会发生，但语义明确）。 */
