@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.non</groupId>
+        <groupId>io.github.nondirectional</groupId>
         <artifactId>nondocx-parent</artifactId>
         <version>0.0.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
@@ -19,7 +19,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.non</groupId>
+            <groupId>io.github.nondirectional</groupId>
             <artifactId>nondocx-core</artifactId>
             <version>${project.version}</version>
         </dependency>
@@ -27,7 +27,7 @@
              本模块的 Agent 示例用它的 DocxToolkit 门面组装工具集。
              chain（nonchain）经 toolkit 间接传递。 -->
         <dependency>
-            <groupId>com.non</groupId>
+            <groupId>io.github.nondirectional</groupId>
             <artifactId>nondocx-toolkit</artifactId>
             <version>${project.version}</version>
         </dependency>

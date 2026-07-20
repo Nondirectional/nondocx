@@ -97,7 +97,7 @@ doc.paragraph(0)
 「把这个 run 从样式 A 改成样式 B，并记录属性变更」是**两步式**：
 
 ```java
-import com.non.docx.core.api.style.RunStyle;
+import io.github.nondirectional.docx.core.api.style.RunStyle;
 
 Run r = doc.paragraph(0).run(0);
 RunStyle before = r.style();            // 第一步：捕获改前快照（六样式）
@@ -220,7 +220,7 @@ List<Run> moved = target.moveRunsFrom("审阅者甲", source, toMove);
 ## 6. 一个完整创作示例
 
 ```java
-import com.non.docx.core.api.style.RunStyle;
+import io.github.nondirectional.docx.core.api.style.RunStyle;
 
 try (Document doc = Docx.open(Path.of("draft.docx"))) {
     Paragraph p0 = doc.paragraph(0);
@@ -309,6 +309,6 @@ try (Document reopened = Docx.open(file)) {
 ### 下一步去哪
 
 - 接 LLM Agent 用工具调用做修订 → [07 · nondocx-toolkit](../07-toolkit.md)
-- 看可运行的全流程示例 → [`TrackedAuthoringAdvancedExample.java`](../../nondocx-examples/src/main/java/com/non/docx/examples/TrackedAuthoringAdvancedExample.java) / [`TrackedCellChangesExample.java`](../../nondocx-examples/src/main/java/com/non/docx/examples/TrackedCellChangesExample.java)
+- 看可运行的全流程示例 → [`TrackedAuthoringAdvancedExample.java`](../../nondocx-examples/src/main/java/io/github/nondirectional/docx/examples/TrackedAuthoringAdvancedExample.java) / [`TrackedCellChangesExample.java`](../../nondocx-examples/src/main/java/io/github/nondirectional/docx/examples/TrackedCellChangesExample.java)
 - 查具体方法签名 → [03 · API 速查](../03-api-reference.md#trackedchanges--trackedchange修订)
 - 遇到异常 → [08 · 异常与 raw 领地](../08-exceptions-and-raw.md)

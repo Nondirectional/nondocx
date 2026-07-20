@@ -116,10 +116,10 @@ TableBuilder.on(t)
 ## 4. 一个完整示例
 
 ```java
-import com.non.docx.core.api.Document;
-import com.non.docx.core.api.style.HeadingLevel;
-import com.non.docx.core.api.style.Alignment;
-import com.non.docx.core.builder.DocumentBuilder;
+import io.github.nondirectional.docx.core.api.Document;
+import io.github.nondirectional.docx.core.api.style.HeadingLevel;
+import io.github.nondirectional.docx.core.api.style.Alignment;
+import io.github.nondirectional.docx.core.builder.DocumentBuilder;
 import java.nio.file.Path;
 
 Document doc = DocumentBuilder.start()
@@ -193,4 +193,4 @@ try (Document reopened = Docx.open(file)) {
 
 - 想接 Agent 用「工具调用」的方式改文档 → [07 · nondocx-toolkit](./07-toolkit.md)
 - 想了解构建出来的文档怎么校验 → [04 · 往返保真与内容相等性](./04-round-trip-and-equality.md)
-- 想看可运行示例 → [`ComplexDocument.java`](../nondocx-examples/src/main/java/com/non/docx/examples/ComplexDocument.java)
+- 想看可运行示例 → [`ComplexDocument.java`](../nondocx-examples/src/main/java/io/github/nondirectional/docx/examples/ComplexDocument.java)

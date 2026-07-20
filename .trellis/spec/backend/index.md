@@ -22,7 +22,7 @@ quality.
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Maven modules + `com.non.docx.core` package layout | Done |
+| [Directory Structure](./directory-structure.md) | Maven modules + `io.github.nondirectional.docx.core` package layout | Done |
 | [POI Bridge](./poi-bridge.md) | How `api/` types wrap `XWPF*` (holding wrapper, `raw()`, exception wrapping) | Done |
 | [Error Handling](./error-handling.md) | All-unchecked `DocxException` hierarchy, POI wrapping rules | Done |
 | [Logging](./logging.md) | 库不日志走异常；demo 用 SLF4J；POI 5.x log4j-api 桥接陷阱 | Done |

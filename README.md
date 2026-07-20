@@ -41,8 +41,8 @@ nondocx 将 POI 冗长的 `XWPF*` API 封装为直观的领域模型
 ### 打开、修改并保存
 
 ```java
-import com.non.docx.core.Docx;
-import com.non.docx.core.api.Document;
+import io.github.nondirectional.docx.core.Docx;
+import io.github.nondirectional.docx.core.api.Document;
 import java.nio.file.Path;
 
 // 打开现有文档并实时编辑。
@@ -60,9 +60,9 @@ try (Document doc = Docx.open(Path.of("input.docx"))) {
 ### 从零构建
 
 ```java
-import com.non.docx.core.api.Document;
-import com.non.docx.core.api.style.HeadingLevel;
-import com.non.docx.core.builder.DocumentBuilder;
+import io.github.nondirectional.docx.core.api.Document;
+import io.github.nondirectional.docx.core.api.style.HeadingLevel;
+import io.github.nondirectional.docx.core.builder.DocumentBuilder;
 import java.nio.file.Path;
 
 // 声明式组装文档。配置器 lambda 接收活对象
@@ -84,8 +84,8 @@ doc.save(Path.of("report.docx"));
 ### 页眉页脚与兼容性默认值
 
 ```java
-import com.non.docx.core.Docx;
-import com.non.docx.core.api.Document;
+import io.github.nondirectional.docx.core.Docx;
+import io.github.nondirectional.docx.core.api.Document;
 import java.nio.file.Path;
 
 try (Document doc = Docx.create()) {
@@ -109,8 +109,8 @@ try (Document doc = Docx.create()) {
 对于深度封装范围之外的 docx 特性，使用 `raw()`：
 
 ```java
-import com.non.docx.core.Docx;
-import com.non.docx.core.api.Document;
+import io.github.nondirectional.docx.core.Docx;
+import io.github.nondirectional.docx.core.api.Document;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 
 try (Document doc = Docx.open(Path.of("in.docx"))) {
@@ -125,7 +125,7 @@ try (Document doc = Docx.open(Path.of("in.docx"))) {
 
 ```xml
 <dependency>
-    <groupId>com.non</groupId>
+    <groupId>io.github.nondirectional</groupId>
     <artifactId>nondocx-core</artifactId>
     <version>0.0.1-SNAPSHOT</version>
 </dependency>

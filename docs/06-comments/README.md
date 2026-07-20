@@ -41,10 +41,10 @@ nondocx 把这些脏活全部收进 `internal/poi/`（`CommentNodes` / `CommentE
 下面这个例子把四篇的核心能力串起来 —— 创作范围批注 → 回复形成线程 → 落盘 → 重开 → 读回验证。后续每篇会展开其中一段。
 
 ```java
-import com.non.docx.core.Docx;
-import com.non.docx.core.api.Document;
-import com.non.docx.core.api.comment.Comment;
-import com.non.docx.core.api.comment.Comments;
+import io.github.nondirectional.docx.core.Docx;
+import io.github.nondirectional.docx.core.api.Document;
+import io.github.nondirectional.docx.core.api.comment.Comment;
+import io.github.nondirectional.docx.core.api.comment.Comments;
 import java.nio.file.Path;
 
 Path file = Path.of("reviewed.docx");
@@ -96,7 +96,7 @@ try (Document doc = Docx.open(file)) {
 
 教程代码片段都取自 `nondocx-examples/`：
 
-- [`CommentsExample.java`](../../nondocx-examples/src/main/java/com/non/docx/examples/CommentsExample.java) —— 完整闭环：创作范围批注 → 回复 → save→reopen → 读回验证线程
+- [`CommentsExample.java`](../../nondocx-examples/src/main/java/io/github/nondirectional/docx/examples/CommentsExample.java) —— 完整闭环：创作范围批注 → 回复 → save→reopen → 读回验证线程
 
 ---
 

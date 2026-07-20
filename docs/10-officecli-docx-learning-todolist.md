@@ -199,7 +199,7 @@ ToolResult<T> {
 
 **实施清单**
 
-- [x] 设计 `CapabilityDescriptor`。 → `com.non.docx.toolkit.capability.model.{CapabilityManifest,ToolCapabilityDescriptor,ParamCapabilityDescriptor}`
+- [x] 设计 `CapabilityDescriptor`。 → `io.github.nondirectional.docx.toolkit.capability.model.{CapabilityManifest,ToolCapabilityDescriptor,ParamCapabilityDescriptor}`
 - [x] 定义 element、operation、property、enum、example 模型。 → `CapabilityOperation`/`CapabilityLevel`/`ParamType` 枚举 + `@ToolCapability`/`@ParamCapability`/`@NestedParamCapability` 注解
 - [x] 为 toolkit 增加 `describe_capabilities`。 → `CapabilityTools.describeCapabilities(element,operation,level)`
 - [x] 构建时生成 `capabilities.json`。 → `CapabilityManifestGenerator` + exec-maven-plugin(process-classes)
@@ -240,7 +240,7 @@ ToolResult<T> {
 
 **实施清单**
 
-- [x] 新增 `DocumentViewService`。 → `com.non.docx.toolkit.view.DocumentViewService`
+- [x] 新增 `DocumentViewService`。 → `io.github.nondirectional.docx.toolkit.view.DocumentViewService`
 - [x] 复用 `SnapshotBuilder`，避免第二套遍历。 → outline/text/stats 调 `build()` 一次投影
 - [x] 输出强类型 DTO，不直接输出 POI 类型。 → `view/dto/` 12 个不可变值对象，Jackson FIELD visibility 序列化
 - [x] 支持最大条数、文本截断和按需展开 run，控制 Agent 上下文。 → `ViewQuery`(maxItems=200/textTruncate=120/expandRuns=false)

@@ -101,7 +101,7 @@ export DASHSCOPE_API_KEY=sk-xxxxx
 ### 3. 启动后端
 
 ```bash
-mvn -q -pl nondocx-demo exec:java -Dexec.mainClass=com.non.docx.demo.DemoServer
+mvn -q -pl nondocx-demo exec:java -Dexec.mainClass=io.github.nondirectional.docx.demo.DemoServer
 ```
 
 启动成功会打印:
@@ -190,5 +190,5 @@ OnlyOffice 实例 + 重新拉文档。
 ## 相关
 
 - [nondocx-toolkit 文档](../docs/07-toolkit.md) —— 本 demo 用的 Agent 工具集
-- [InteractiveDocxAgentExample](../nondocx-examples/src/main/java/com/non/docx/examples/agent/InteractiveDocxAgentExample.java)
+- [InteractiveDocxAgentExample](../nondocx-examples/src/main/java/io/github/nondirectional/docx/examples/agent/InteractiveDocxAgentExample.java)
   —— 终端版 REPL,本 demo 是它的 Web 升级版

@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.non</groupId>
+        <groupId>io.github.nondirectional</groupId>
         <artifactId>nondocx-parent</artifactId>
         <version>0.0.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
@@ -25,7 +25,7 @@
         <!-- nondocx-toolkit：提供 DocxToolkit 门面（七组 @ToolDef 工具）。
              传递引入 nondocx-core + nonchain（Agent 框架）。 -->
         <dependency>
-            <groupId>com.non</groupId>
+            <groupId>io.github.nondirectional</groupId>
             <artifactId>nondocx-toolkit</artifactId>
             <version>${project.version}</version>
         </dependency>

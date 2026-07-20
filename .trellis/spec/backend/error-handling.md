@@ -20,7 +20,7 @@ This is the nondocx variant of "error handling"; it does NOT have a backend serv
 
 ```
 RuntimeException
-└── com.non.docx.core.api.exception.DocxException        ← root
+└── io.github.nondirectional.docx.core.api.exception.DocxException        ← root
     ├── DocxIOException          wraps IOException / POI OpenXML4J / POIXML exceptions
     │     └── getCause() preserves the original exception
     ├── DocxFormatException      docx corrupt / illegal format; carries file path
@@ -29,7 +29,7 @@ RuntimeException
     └── UnsupportedFeatureException  feature outside the wrap scope → tell user to use raw()
 ```
 
-Location: `com.non.docx.core.api.exception.*`. All public, all `extends RuntimeException`.
+Location: `io.github.nondirectional.docx.core.api.exception.*`. All public, all `extends RuntimeException`.
 
 ---
 

@@ -22,10 +22,10 @@ nondocx/
 ├── pom.xml                          # parent POM (packaging=pom): dependencyManagement + pluginManagement
 ├── nondocx-core/
 │   ├── pom.xml                      # inherits parent; declares poi/poi-ooxml + junit/assertj
-│   └── src/{main,test}/java/com/non/docx/core/
+│   └── src/{main,test}/java/io/github/nondirectional/docx/core/
 ├── nondocx-examples/
 │   ├── pom.xml                      # inherits parent; depends on nondocx-core
-│   └── src/main/java/com/non/docx/examples/
+│   └── src/main/java/io/github/nondirectional/docx/examples/
 │       ├── HelloWorld.java          # 最简创建→写入→保存
 │       ├── FormattingDemo.java       # 标题、对齐、粗体/斜体/字体/颜色
 │       ├── TableExample.java         # 表格创建与填充
@@ -42,10 +42,10 @@ nondocx/
 
 ---
 
-## Java Package Layout (base: `com.non.docx.core`)
+## Java Package Layout (base: `io.github.nondirectional.docx.core`)
 
 ```
-com.non.docx.core
+io.github.nondirectional.docx.core
 ├── Docx.java                    # static factory facade (open/create); stateless
 ├── api/                         # PUBLIC domain model (deep-wrap zone)
 │   ├── Document.java            (holds XWPFDocument)
@@ -67,12 +67,12 @@ com.non.docx.core
 
 | You are adding… | Put it in |
 |---|---|
-| A new public docx domain type (wraps an `XWPF*`) | `com.non.docx.core.api.<concept>/` |
-| A new immutable style value object (alignment, heading, etc.) | `com.non.docx.core.api.style/` |
-| A new public exception | `com.non.docx.core.api.exception/` |
-| A construction helper from scratch | `com.non.docx.core.builder/` |
-| POI enum mapping, XmlBeans wrangling, IO helpers | `com.non.docx.core.internal.*` (prefer sub-package by concern) |
-| A future module (template engine, converter) | new Maven module `nondocx-<name>` with base package `com.non.docx.<name>` |
+| A new public docx domain type (wraps an `XWPF*`) | `io.github.nondirectional.docx.core.api.<concept>/` |
+| A new immutable style value object (alignment, heading, etc.) | `io.github.nondirectional.docx.core.api.style/` |
+| A new public exception | `io.github.nondirectional.docx.core.api.exception/` |
+| A construction helper from scratch | `io.github.nondirectional.docx.core.builder/` |
+| POI enum mapping, XmlBeans wrangling, IO helpers | `io.github.nondirectional.docx.core.internal.*` (prefer sub-package by concern) |
+| A future module (template engine, converter) | new Maven module `nondocx-<name>` with base package `io.github.nondirectional.docx.<name>` |
 
 ---
 
@@ -108,8 +108,8 @@ com.non.docx.core
 > doc (`.trellis/tasks/06-16-nondocx-core-mvp/design.md`) §3 for the canonical layout while
 > the first classes land. Once classes exist, replace this section with real file links:
 >
-> - `nondocx-core/src/main/java/com/non/docx/core/api/text/Paragraph.java` — domain type holding `XWPFParagraph`
-> - `nondocx-core/src/main/java/com/non/docx/core/internal/poi/Mappers.java` — enum mapping (internal)
+> - `nondocx-core/src/main/java/io/github/nondirectional/docx/core/api/text/Paragraph.java` — domain type holding `XWPFParagraph`
+> - `nondocx-core/src/main/java/io/github/nondirectional/docx/core/internal/poi/Mappers.java` — enum mapping (internal)
 
 ---
 

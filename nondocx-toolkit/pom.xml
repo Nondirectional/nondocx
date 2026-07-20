@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.non</groupId>
+        <groupId>io.github.nondirectional</groupId>
         <artifactId>nondocx-parent</artifactId>
         <version>0.0.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
@@ -23,14 +23,15 @@
     <dependencies>
         <!-- nondocx-core —— 工具的活对象模型来源（段落/run/表格/修订/页眉页脚链式 API） -->
         <dependency>
-            <groupId>com.non</groupId>
+            <groupId>io.github.nondirectional</groupId>
             <artifactId>nondocx-core</artifactId>
             <version>${project.version}</version>
         </dependency>
         <!-- nonchain Agent 框架 —— 提供 @ToolDef/@ToolParam 注解与 ToolRegistry，
-             工具方法靠它们被反射注册给 Agent。 -->
+             工具方法靠它们被反射注册给 Agent。上游 0.11.0 起 groupId 迁至
+             io.github.nondirectional，artifactId 与 Java 包名（com.non.chain.*）未变。 -->
         <dependency>
-            <groupId>com.non</groupId>
+            <groupId>io.github.nondirectional</groupId>
             <artifactId>chain</artifactId>
         </dependency>
 
@@ -64,7 +65,7 @@
                             <goal>java</goal>
                         </goals>
                         <configuration>
-                            <mainClass>com.non.docx.toolkit.capability.CapabilityManifestGenerator</mainClass>
+                            <mainClass>io.github.nondirectional.docx.toolkit.capability.CapabilityManifestGenerator</mainClass>
                             <arguments>
                                 <argument>${project.build.outputDirectory}</argument>
                             </arguments>

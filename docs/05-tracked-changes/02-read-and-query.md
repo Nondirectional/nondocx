@@ -137,7 +137,7 @@ CELL     ← CELL_INS, CELL_DEL, CELL_MERGE
 第 1 个表格、第 2 行、第 3 个 cell 内的删除：body[0] > table[0] > row[1] > cell[2]
 ```
 
-读取示例（取自 [`TrackedChangesExample`](../../nondocx-examples/src/main/java/com/non/docx/examples/TrackedChangesExample.java#L143)）：
+读取示例（取自 [`TrackedChangesExample`](../../nondocx-examples/src/main/java/io/github/nondirectional/docx/examples/TrackedChangesExample.java#L143)）：
 
 ```java
 private static String pathString(TrackedChangeLocation location) {
@@ -182,7 +182,7 @@ if (d instanceof TextChangeDetails td) {
 
 ## 6. 一个完整的只读示例
 
-简化自 [`TrackedChangesExample.java`](../../nondocx-examples/src/main/java/com/non/docx/examples/TrackedChangesExample.java)（移除造样例部分）：
+简化自 [`TrackedChangesExample.java`](../../nondocx-examples/src/main/java/io/github/nondirectional/docx/examples/TrackedChangesExample.java)（移除造样例部分）：
 
 ```java
 try (Document doc = Docx.open(Path.of("reviewed.docx"))) {

@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.non</groupId>
+    <groupId>io.github.nondirectional</groupId>
     <artifactId>nondocx-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
@@ -127,9 +127,10 @@
             </dependency>
 
             <!-- nonchain Agent 框架：nondocx-toolkit 用它（@ToolDef/@ToolParam 注解 + ToolRegistry），
-                 examples 依赖 toolkit 间接拿到。 -->
+                 examples 依赖 toolkit 间接拿到。上游 0.11.0 起 groupId 迁至 io.github.nondirectional，
+                 artifactId 与 Java 包名（com.non.chain.*）未变。 -->
             <dependency>
-                <groupId>com.non</groupId>
+                <groupId>io.github.nondirectional</groupId>
                 <artifactId>chain</artifactId>
                 <version>${chain.version}</version>
             </dependency>

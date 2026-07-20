@@ -108,7 +108,7 @@ POI ──→ log4j-api ──→ log4j-to-slf4j ──→ slf4j-api ──→ s
 Javalin / Jetty 的 INFO（路由注册、请求行）是噪音。在 `simplelogger.properties` 里压低：
 
 ```properties
-org.slf4j.simpleLogger.log.com.non.docx.demo=debug
+org.slf4j.simpleLogger.log.io.github.nondirectional.docx.demo=debug
 org.slf4j.simpleLogger.log.io.javalin=warn
 org.slf4j.simpleLogger.log.org.eclipse.jetty=warn
 ```
