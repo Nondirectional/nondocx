@@ -1,0 +1,55 @@
+version: 2
+
+updates:
+  # Maven 生产依赖（POI / xmlbeans / commons-io / commons-compress / log4j-api / chain / javalin）
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Apache POI 全家桶一起升（强相关，5.x 内兼容）
+      apache-poi:
+        patterns:
+          - "org.apache.poi:poi"
+          - "org.apache.poi:poi-ooxml"
+      # 其他生产依赖各自单独 PR（版本节奏不同，合并不安全）
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+
+  # Maven 测试依赖（test scope）
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-type: development
+    groups:
+      # junit + assertj 一起升（测试栈联动）
+      test-stack:
+        patterns:
+          - "org.junit.jupiter:*"
+          - "org.assertj:*"
+    commit-message:
+      prefix: "deps(test)"
+    labels:
+      - dependencies
+      - test
+
+  # GitHub Actions 版本（checkout / setup-java / codeql-action 自身）
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(ci)"
+    labels:
+      - dependencies
+      - ci

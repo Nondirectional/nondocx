@@ -1,0 +1,45 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '30 1 * * 1' # 每周一 09:30 北京时间（01:30 UTC）
+
+permissions:
+  contents: read
+  security-events: write # 写 alerts 必需
+  actions: read # CodeQL v3 需要读 actions 元数据
+
+jobs:
+  analyze:
+    name: Analyze (Java)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          # queries: security-extended  # 可选：更严格规则集，默认 security+quality 已够
+
+      - name: Build (multi-module reactor)
+        run: mvn -B --no-transfer-progress install -DskipTests
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"
