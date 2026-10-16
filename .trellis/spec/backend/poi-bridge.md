@@ -358,7 +358,58 @@ Word 修订(tracked changes)在 OOXML 里**没有单一根元素**,而是散落�
 
 **与 Rule 1 的关系(无偏离)**: 创作操作的是 POI 的 `XWPFParagraph`/`XWPFRun` 委托,标准写穿透;不引入新模型。写出的修订经 `collect` 自然读回,`addInsertion`/`addDeletion` 写出的 `w:id` 会进入稳定 id 的混合串。
 
-**范围(文本类创作)**: 本子任务覆盖 `ins`/`del` 的显式创作(insertion/deletion/replacement)。**不**含:`move`/属性类/`cellIns`/`cellDel` 的创作、开关写入、"自动追踪所有既有写操作"。move 的 accept/reject(配对联动)与属性类(rPrChange)的读写已由 `advanced-types` 子任务补齐(见 N15);其余高级类型的创作仍走 `raw()`。回归:`TrackedAuthoringTest` 10 用例(读回 / 元数据 / 正交 / 普通 API 无污染 / 与 accept 集成 / 边界);全量 tests green、spotless clean。
+
+#### 场景：跨 run tracked 删除
+
+##### 1. Scope / Trigger
+
+当 Agent 需要删除段落可见文本、但目标跨越多个普通 run 或只覆盖边界 run 的一部分时，必须保留原始样式、OOXML 阅读顺序和既有修订 accept/reject 语义；第一版仅覆盖正文普通 run。
+
+##### 2. Signatures
+
+- Core：`Paragraph.deleteTrackedRange(String author, int start, int end)`；范围是段落可见文本的 UTF-16 半开区间 `[start, end)`。
+- Toolkit：`delete_run_tracked` 每条 `edit` 二选一使用 `paragraph_index + run_index`（旧整 run 模式），或 `paragraph_index + target_text + occurrence?`（精确文本模式）。
+
+##### 3. Contracts
+
+- `target_text` 大小写敏感；唯一命中可省略 `occurrence`，多次命中必须传从 0 开始的 occurrence。
+- Core 把命中拆为 prefix / deletion / suffix；目标用 `<w:delText>`，首尾空白保留 `xml:space="preserve"`。
+- Core 在写入前校验全部受影响 CTR；新 `<w:del>`、prefix 和 suffix 以原目标的下一兄弟为锚点重排，不能假设 `addNewR` / `addNewDel` 保持 CTP 混合子元素顺序。
+- Toolkit 先以原始段落快照解析同批 edit，拒绝重叠范围，非重叠范围从右到左执行。普通非空旧 run 可复用 range 路径；空 run 或含 tab/break 的旧 run 必须保留整 run 迁移，不能构造零长度 range。
+
+##### 4. Validation & Error Matrix
+
+| 条件 | 结果 |
+|---|---|
+| 空白 target、未命中、occurrence 越界 | toolkit 返回该 edit 可读错误，不修改该目标 |
+| 重复 target 未传 occurrence、范围重叠 | 拒绝冲突 edit，不创建重复 deletion |
+| 代理对中间偏移 | core 抛中文 `IllegalArgumentException` |
+| hyperlink、image、field、非纯文本 run 被文本模式跨越 | core 抛 `UnsupportedFeatureException`，不静默重建或丢失内容 |
+| 旧 run_index 指向空 run 或含 tab/break 的 run | 保持整 run tracked deletion 兼容语义 |
+
+##### 5. Good / Base / Bad Cases
+
+- Good：三个普通 run 构成 `"甲目标" + "中间" + "目标乙"`，删除 `[1, 7)` 后按 `r, del, del, del, r` 保留顺序。
+- Base：旧 `{paragraph_index, run_index}` 调用继续删除完整 run，调用方仍用既有 `save_docx` 与 accept/reject 流程。
+- Bad：把 `<w:del>` 追加到段落末尾，或跨越超链接时按纯文本重建整个段落；两者都会破坏可见顺序或内联结构。
+
+##### 6. Tests Required
+
+- 覆盖跨三个 run、首尾部分、整段、空白、代理对、样式和 `xml:space`。
+- 保存并重新打开后，断言 `<w:del>`/`<w:delText>` 顺序与 tracked changes 数量；accept 后目标消失，reject 后原文恢复。
+- Toolkit 覆盖旧 run、空 run、tab run、target_text、occurrence、重叠、混合 selector、错误和能力元数据。
+
+##### 7. Wrong vs Correct
+
+```java
+// 错：append 到段末，目标文本的阅读位置丢失。
+paragraph.addNewDel();
+
+// 对：用原 run 的下一兄弟作为锚点，将 prefix / del / suffix 放回原位置。
+TrackedChangeNodes.addDeletionSlice(ctp, targetRun, start, end, author, date, revisionId);
+```
+
+**范围(文本类创作)**: 本子任务覆盖 {@code ins}/{@code del} 的显式创作(insertion/deletion/replacement)以及普通正文 run 的跨 run 范围删除。**不**含:{@code move}/属性类/{@code cellIns}/{@code cellDel} 的创作、开关写入、"自动追踪所有既有写操作"。move 的 accept/reject(配对联动)与属性类(rPrChange)的读写已由 {@code advanced-types} 子任务补齐(见 N15);其余高级类型的创作仍走 {@code raw()}。回归:{@code TrackedAuthoringTest} 覆盖整 run、范围删除、往返及 accept/reject；全量 tests green、spotless clean。
 
 ---
 

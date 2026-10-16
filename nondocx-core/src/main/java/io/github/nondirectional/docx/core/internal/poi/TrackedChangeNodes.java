@@ -252,10 +252,15 @@ public final class TrackedChangeNodes {
   private static void restoreDelTextToT(CTRunTrackChange wrapper) {
     for (CTR r : wrapper.getRList()) {
       for (int i = r.sizeOfDelTextArray() - 1; i >= 0; i--) {
-        String s = r.getDelTextArray(i).getStringValue();
+        CTText source = r.getDelTextArray(i);
+        String s = source.getStringValue();
+        org.apache.xmlbeans.impl.xb.xmlschema.SpaceAttribute.Space.Enum space = source.getSpace();
         r.removeDelText(i);
         CTText t = r.addNewT();
         t.setStringValue(s == null ? "" : s);
+        if (space != null) {
+          t.setSpace(space);
+        }
       }
     }
   }
@@ -353,6 +358,203 @@ public final class TrackedChangeNodes {
       runCur.dispose();
     }
     return del;
+  }
+
+  /**
+   * 在一个普通纯文本 run 的指定局部范围上创建 tracked deletion，并保持该 run 在段落中的位置。
+   *
+   * <p>该方法是 {@link io.github.nondirectional.docx.core.api.text.Paragraph#deleteTrackedRange} 的 XML
+   * 下沉实现。目标 run 会被拆为前缀、删除片段和后缀；所有新片段复制原 run 的完整 {@code rPr}。
+   *
+   * <p>内部 API——仅供 core 活对象调用。调用前必须已完成段落范围映射与 author/range 校验。
+   */
+  public static CTRunTrackChange addDeletionSlice(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP paragraph,
+      CTR targetRun,
+      int start,
+      int end,
+      String author,
+      java.util.Calendar date,
+      java.math.BigInteger revisionId) {
+    java.util.Objects.requireNonNull(paragraph, "paragraph");
+    java.util.Objects.requireNonNull(targetRun, "targetRun");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(date, "date");
+    java.util.Objects.requireNonNull(revisionId, "revisionId");
+    requirePlainTextRun(targetRun);
+
+    String original = runText(targetRun);
+    if (start < 0 || end <= start || end > original.length()) {
+      throw new IllegalArgumentException(
+          "run 局部 tracked deletion 范围无效:[" + start + "," + end + "),文本长度=" + original.length());
+    }
+    String prefix = original.substring(0, start);
+    String selected = original.substring(start, end);
+    String suffix = original.substring(end);
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP ctp = paragraph;
+
+    // 必须在追加 prefix/suffix/del 之前捕获原目标的下一个兄弟，否则新建节点会被误当作 next。
+    XmlCursor nextAnchor = targetRun.newCursor();
+    boolean hasNext;
+    try {
+      hasNext = nextAnchor.toNextSibling();
+    } catch (RuntimeException e) {
+      nextAnchor.dispose();
+      throw e;
+    }
+
+    // 先把拆分片段追加到段落，使它们拥有可被 XmlCursor 移动的实际 XML 节点。
+    CTR prefixRun = prefix.isEmpty() ? null : appendRunCopy(ctp, targetRun, prefix);
+    CTR suffixRun = suffix.isEmpty() ? null : appendRunCopy(ctp, targetRun, suffix);
+    CTRunTrackChange del = ctp.addNewDel();
+    del.setId(revisionId);
+    del.setAuthor(author);
+    del.setDate(date);
+
+    // 先把原目标转换为 deletion 文本并迁入 wrapper。迁入后原 CTR 句柄会失效，之后只操作
+    // 仍然连接的 prefix/suffix/del 节点；这是 XmlBeans moveXml 的既有行为。
+    clearTextNodes(targetRun);
+    CTText deletedText = targetRun.addNewDelText();
+    setTextValue(deletedText, selected);
+    XmlCursor delEnd = del.newCursor();
+    XmlCursor targetCursor = targetRun.newCursor();
+    try {
+      delEnd.toEndToken();
+      targetCursor.moveXml(delEnd);
+    } finally {
+      delEnd.dispose();
+      targetCursor.dispose();
+    }
+
+    try {
+      if (hasNext) {
+        if (prefixRun != null) {
+          XmlCursor prefixCursor = prefixRun.newCursor();
+          try {
+            prefixCursor.moveXml(nextAnchor);
+          } finally {
+            prefixCursor.dispose();
+          }
+        }
+        XmlCursor delCursor = del.newCursor();
+        try {
+          delCursor.moveXml(nextAnchor);
+        } finally {
+          delCursor.dispose();
+        }
+        if (suffixRun != null) {
+          XmlCursor suffixCursor = suffixRun.newCursor();
+          try {
+            suffixCursor.moveXml(nextAnchor);
+          } finally {
+            suffixCursor.dispose();
+          }
+        }
+      } else if (suffixRun != null) {
+        // 没有后续兄弟时以 suffix 为稳定锚点，显式按 prefix、del、suffix 重排，
+        // 不依赖 XmlBeans 的 addNewR/addNewDel 数组插入位置。
+        XmlCursor suffixAnchor = suffixRun.newCursor();
+        try {
+          if (prefixRun != null) {
+            XmlCursor prefixCursor = prefixRun.newCursor();
+            try {
+              prefixCursor.moveXml(suffixAnchor);
+            } finally {
+              prefixCursor.dispose();
+            }
+          }
+          XmlCursor delCursor = del.newCursor();
+          try {
+            delCursor.moveXml(suffixAnchor);
+          } finally {
+            delCursor.dispose();
+          }
+        } finally {
+          suffixAnchor.dispose();
+        }
+      } else if (prefixRun != null) {
+        // 没有 suffix 时以 del 为稳定锚点，确保 prefix 在 deletion 前。
+        XmlCursor prefixCursor = prefixRun.newCursor();
+        XmlCursor delAnchor = del.newCursor();
+        try {
+          prefixCursor.moveXml(delAnchor);
+        } finally {
+          prefixCursor.dispose();
+          delAnchor.dispose();
+        }
+      }
+    } finally {
+      nextAnchor.dispose();
+    }
+    return del;
+  }
+
+  /** 在任何写入前校验目标 CTR 只含 rPr/t，避免范围删除进行到一半才发现不可切片节点。 */
+  public static void validateDeletionSlice(CTR targetRun) {
+    java.util.Objects.requireNonNull(targetRun, "targetRun");
+    requirePlainTextRun(targetRun);
+  }
+
+  /** 复制原 run 的属性并在段落末尾创建一条纯文本 run。 */
+  private static CTR appendRunCopy(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP paragraph,
+      CTR source,
+      String text) {
+    CTR copy = paragraph.addNewR();
+    copy.set(source.copy());
+    clearTextNodes(copy);
+    setTextValue(copy.addNewT(), text);
+    return copy;
+  }
+
+  /** 删除一个 CTR 内的普通文本子节点；调用方已确保不存在其它需要保留的内容。 */
+  private static void clearTextNodes(CTR run) {
+    for (int i = run.sizeOfTArray() - 1; i >= 0; i--) {
+      run.removeT(i);
+    }
+    for (int i = run.sizeOfDelTextArray() - 1; i >= 0; i--) {
+      run.removeDelText(i);
+    }
+  }
+
+  /** 设置文本并为首尾空白保留 xml:space。 */
+  private static void setTextValue(CTText text, String value) {
+    text.setStringValue(value);
+    if (!value.isEmpty()
+        && (Character.isWhitespace(value.charAt(0))
+            || Character.isWhitespace(value.charAt(value.length() - 1)))) {
+      text.setSpace(org.apache.xmlbeans.impl.xb.xmlschema.SpaceAttribute.Space.PRESERVE);
+    }
+  }
+
+  /** 返回普通 t 子节点拼接后的文本。 */
+  private static String runText(CTR run) {
+    StringBuilder text = new StringBuilder();
+    for (int i = 0; i < run.sizeOfTArray(); i++) {
+      String value = run.getTArray(i).getStringValue();
+      if (value != null) {
+        text.append(value);
+      }
+    }
+    return text.toString();
+  }
+
+  /** 拒绝含有图片、域、制表符、换行或其它非普通文本子节点的 run。 */
+  private static void requirePlainTextRun(CTR run) {
+    XmlCursor cursor = run.newCursor();
+    try {
+      if (cursor.toFirstChild()) {
+        do {
+          String local = cursor.getName() == null ? "" : cursor.getName().getLocalPart();
+          if (!"rPr".equals(local) && !"t".equals(local)) {
+            throw new io.github.nondirectional.docx.core.api.exception.UnsupportedFeatureException(
+                "tracked deletion 暂不支持含有非普通文本子节点的 run:<w:" + local + ">");
+          }
+        } while (cursor.toNextSibling());
+      }
+    } finally {
+      cursor.dispose();
+    }
   }
 
   /**

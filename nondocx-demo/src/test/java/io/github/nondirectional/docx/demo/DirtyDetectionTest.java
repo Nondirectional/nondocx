@@ -43,6 +43,7 @@ class DirtyDetectionTest {
     assertFalse(AgentBridge.isReadonly("update_paragraph_alignment"));
     assertFalse(AgentBridge.isReadonly("insert_tracked_run"));
     assertFalse(AgentBridge.isReadonly("apply_tracked_changes"));
+    assertFalse(AgentBridge.isReadonly("delete_run_tracked"));
   }
 
   /** 安全默认：未知工具视为写（漏标 dirty 会丢编辑；多标只是浪费一次 flush）。 */

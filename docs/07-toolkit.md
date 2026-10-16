@@ -143,11 +143,14 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 | 工具 | 作用 | 批量 |
 |---|---|---|
 | `insert_tracked_run` | tracked 插入 | ✅ `edits`（共享 author） |
-| `delete_run_tracked` | tracked 删除 | ✅ `edits` |
+| `delete_run_tracked` | tracked 删除（支持整 run 或跨 run 精确文本） | ✅ `edits` |
 | `replace_run_tracked` | tracked 替换 | ✅ `edits` |
 | `mark_style_change_tracked` | rPrChange 创作（bold/italic/color） | 单条 |
 | `mark_tracked_cells` | 按 `change_type=INSERTED/DELETED` 标记 cell 存亡 | ✅ `cells` |
 | `move_run_tracked` | 移动 run | 单条 |
+
+
+`delete_run_tracked` 的每条 `edit` 二选一：旧模式传 `paragraph_index + run_index` 删除整个普通 run；新模式传 `paragraph_index + target_text` 删除段落中的精确可见文本，目标可以跨多个普通 run 或只占 run 的一部分。`target_text` 大小写敏感；未传 `occurrence` 时必须唯一命中，重复文本要传从 0 开始的 `occurrence`。第一版只覆盖正文普通 run，改完仍需调用方按现有流程 `save_docx` 落盘。
 
 ### QualityCheckTools（文档质量自检）
 
@@ -245,8 +248,24 @@ replace_run_text({
 })
 ```
 
+
+跨 run 精确删除示例：
+
+```json
+ delete_run_tracked({
+  "doc_id": "d1",
+  "author": "甲",
+  "edits": [{
+    "paragraph_index": 0,
+    "target_text": "言简意赅地说明通过本文件要达到的期望目标。"
+  }]
+})
+```
+
+重复文本时显式指定 `"occurrence": 1`；未指定且命中多次会返回歧义错误，不会修改文档。
+
 - **部分失败不中断**：批量操作中某条失败不影响其它条，返回每条的成功/失败明细
-- **同段删/换多个 run 不索引漂移**：`delete_run_tracked`/`replace_run_tracked` 自动按从后往前顺序处理、自动去重
+- **同段删/换多个 run 不索引漂移**：旧 `delete_run_tracked` run 模式自动去重；跨 run 文本模式按段落精确文本定位，重复目标必须显式指定 occurrence
 - **减少 LLM 往返**：要同时改/读多处时优先用批量
 
 > 这套批量能力是 toolkit 相对于直接用 core 活对象 API 的主要价值之一 —— LLM 一轮思考能处理多个目标，不必为每个 run 单独发起一次工具调用。

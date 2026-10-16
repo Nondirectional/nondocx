@@ -15,7 +15,9 @@ import io.github.nondirectional.docx.toolkit.ref.ReferenceContext;
 import io.github.nondirectional.docx.toolkit.result.ToolResult;
 import io.github.nondirectional.docx.toolkit.result.ToolResultCode;
 import io.github.nondirectional.docx.toolkit.result.ToolResultRenderer;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <ul>
  *   <li><b>OOXML</b>：创作修订就是往 {@code word/document.xml} 写入修订标记元素—— 插入 {@code <w:ins>}、删除 {@code
- *       <w:del>}（内含 {@code <w:delData>}）、移动 {@code <w:moveFrom>}/{@code <w:moveTo>}、 属性变更 {@code
+ *       <w:del>}（内含 {@code <w:delText>}）、移动 {@code <w:moveFrom>}/{@code <w:moveTo>}、 属性变更 {@code
  *       rPrChange}（嵌 {@code <w:rPr>}）、单元格结构 {@code cellIns}/{@code cellDel}（嵌 {@code <w:tcPr>}）。
  *   <li><b>POI</b>：无创作修订的高层 API。两个坑（见 poi-bridge.md N14）： {@code getRuns()} 不暴露 ins/del 包装内的
  *       run；迁既有 run 入 {@code <w:del>} 要 {@code XmlCursor} 搬运。
@@ -213,26 +215,27 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
   }
 
   /**
-   * 批量把若干已有 run 标记为被删除(tracked del,文字转为 {@code <w:delData>}、划删除线标记)。
+   * 批量把若干已有 run 标记为被删除(tracked del,文字转为 {@code <w:delText>}、划删除线标记)。
    *
    * <p><b>批量语义（v2）。</b> {@code author} 共享;{@code edits} 是对象数组,每个对象含 {@code paragraph_index}(int)、
    * {@code run_index}(int)。数组长度 1 即单条删除。
    *
    * <p>核心语义:这不是立即删除——文字仍在文档里,只是被标为「待删除的修订」。accept 后才真正消失,reject 则恢复。
    *
-   * <p><b>为什么是「快照 + 去重」而非「逆序」。</b> 探针验证:{@code addDeletion} 后 POI 仍把 {@code <w:del>} 里的 run 计入
-   * {@code runs()},故<b>索引不漂移</b>(run0 永远是 run0);但被删 run 的 wrapper 会失效, 重复删同一 wrapper 会抛 {@code
-   * XmlValueDisconnectedException}。因此正确做法是:先一次性按原始索引快照所有目标 wrapper, 再用 identity 去重后逐个删除——既规避
-   * wrapper 失效,又让同段多个删除互不干扰。
+   * <p><b>定位模式。</b> 每条 edit 可传旧的 {@code paragraph_index + run_index} 删除整个普通 run，或传 {@code
+   * paragraph_index + target_text} 按段落精确可见文本删除；后者可以跨多个 run，也可以只删除一个 run 的部分文本。 {@code target_text}
+   * 匹配大小写敏感；未传 {@code occurrence} 时必须唯一命中，重复命中必须显式传从 0 开始的 {@code occurrence}。
+   *
+   * <p>旧 run 模式继续按坐标去重并规避已迁移 wrapper；所有修订都不是立即删除，accept 后才真正消失，reject 则恢复。
    *
    * <p><b>失败语义:collect-errors。</b> 越界/缺字段/重复的条目记错误或提示不中断;末尾汇总成功/失败条数。
    */
   @ToolDef(
       name = "delete_run_tracked",
       description =
-          "批量把正文若干 run 标记为被删除(tracked del:文字转 <w:delData>、划删除线)。"
+          "批量创建正文 tracked deletion。每条 edit 可按 paragraph_index+run_index 删除整个普通 run，或按 paragraph_index+target_text 精确删除文本；target_text 可跨多个 run。"
               + "author 是共享修订作者(必填)。edits 是对象数组,每个对象含 "
-              + "paragraph_index(int,段落索引 0 起)、run_index(int,run 索引 0 起)。"
+              + "旧模式字段为 paragraph_index(int,段落索引 0 起)+run_index(int,普通 run 索引 0 起)；新模式字段为 paragraph_index+target_text(string)+可选 occurrence(int,从 0 起)。"
               + "单个对象用长度 1 的数组。不是立即删除,accept 后才真正消失。"
               + "部分失败不中断,返回每条成功/失败明细。"
               + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停);"
@@ -247,10 +250,15 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       @ToolParam(
               name = "edits",
               description =
-                  "对象数组,每个对象含 paragraph_index(int)、run_index(int),"
+                  "对象数组,每个对象可含 paragraph_index+run_index，或 paragraph_index+target_text+occurrence,"
                       + "如 [{\"paragraph_index\":0,\"run_index\":0}]")
           @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
           @NestedParamCapability(path = "edits.run_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.target_text", type = ParamType.STRING)
+          @NestedParamCapability(
+              path = "edits.occurrence",
+              type = ParamType.INTEGER,
+              defaultValue = "唯一命中时可省略")
           List<Map<String, Object>> edits,
       @ToolParam(
               name = "on_error",
@@ -278,103 +286,88 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
       return renderInvalidArgument("edits 为空");
     }
     var paragraphs = doc.paragraphs();
+    Map<Integer, DeletePlan> plans = planDeleteEdits(list, paragraphs);
     boolean stopOnError = "stop".equalsIgnoreCase(onError);
+    int firstPreflightError = stopOnError ? firstDeletePreflightError(list, plans) : -1;
+
+    // 所有合法 edit 都基于原始快照解析；按原始范围从右到左写入，避免边界拆分改变后续 run 坐标。
+    List<DeletePlan> executable = new ArrayList<>();
+    for (DeletePlan plan : plans.values()) {
+      if (plan.error == null && (firstPreflightError < 0 || plan.index < firstPreflightError)) {
+        executable.add(plan);
+      }
+    }
+    executable.sort(
+        (left, right) -> {
+          int paragraphOrder = Integer.compare(right.paragraphIndex, left.paragraphIndex);
+          return paragraphOrder != 0 ? paragraphOrder : Integer.compare(right.start, left.start);
+        });
+    for (DeletePlan plan : executable) {
+      Paragraph paragraph = paragraphs.get(plan.paragraphIndex);
+      try {
+        if (plan.legacyWholeRun) {
+          // 旧 selector 的非纯文本 run 保留原有整 run 迁移语义，不能收窄为纯文本范围删除。
+          paragraph.addDeletion(author, paragraph.run(plan.runIndex));
+        } else {
+          paragraph.deleteTrackedRange(author, plan.start, plan.end);
+        }
+        plan.applied = true;
+      } catch (RuntimeException e) {
+        plan.error = rootMessage(e);
+        if (stopOnError) {
+          break;
+        }
+      }
+    }
+
     StringBuilder sb = new StringBuilder();
     int ok = 0;
     int fail = 0;
     int skipped = 0;
-    // 按坐标去重:同一 (paragraphIndex, runIndex) 只删一次。
-    // 注意 runs().get(i) 每次返回新的 Run 包装对象,不能用 identity 比较;改用坐标字符串。
-    // 重复 addDeletion 同一 run 会抛 XmlValueDisconnectedException(见探针验证),故必须去重。
-    Set<String> seen = new HashSet<>();
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
       }
       String tag = "[" + i + "] ";
       Object item = list.get(i);
+      DeletePlan plan = plans.get(i);
       if (!(item instanceof Map)) {
         sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
         fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
-        continue;
-      }
-      @SuppressWarnings("unchecked")
-      Map<String, Object> m = (Map<String, Object>) item;
-      int paragraphIndex;
-      int runIndex;
-      try {
-        paragraphIndex = getInt(m, "paragraph_index");
-        runIndex = getInt(m, "run_index");
-      } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
+      } else if (plan == null) {
+        sb.append(tag).append("错误:删除定位计划缺失");
         fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
-        continue;
-      }
-      if (outOfBounds(paragraphIndex, paragraphs.size())) {
-        sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
+      } else if (firstPreflightError >= 0 && i > firstPreflightError) {
+        sb.append(tag).append("跳过:前一条 edit 失败且 on_error=stop");
+        skipped++;
+      } else if (plan.error != null) {
+        sb.append(tag).append("错误:").append(plan.error);
         fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
-        continue;
-      }
-      var runs = paragraphs.get(paragraphIndex).runs();
-      if (outOfBounds(runIndex, runs.size())) {
-        sb.append(tag).append(indexError("run 索引", runIndex, runs.size()));
+      } else if (!plan.applied) {
+        sb.append(tag).append("错误:删除未应用");
         fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
-        continue;
-      }
-      String coord = paragraphIndex + ":" + runIndex;
-      if (!seen.add(coord)) {
-        // 同一坐标已在本批删除过——再删会抛 XmlValueDisconnectedException,跳过并提示。
-        sb.append(tag)
-            .append("跳过:段落 ")
-            .append(paragraphIndex)
-            .append(" run ")
-            .append(runIndex)
-            .append(" 在本批已处理");
-        fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
-        continue;
-      }
-      Run target = runs.get(runIndex);
-      try {
-        // 先快照文本:addDeletion 会把 run 迁入 <w:del>、其 <w:t> 转为 <w:delData>,
-        // 迁移后原 Run wrapper 已不可靠(读 text() 会 NPE),故必须先取。
-        String text = target.text();
-        paragraphs.get(paragraphIndex).addDeletion(author, target);
+      } else if (plan.oldRunMode) {
         sb.append(tag)
             .append("段落 ")
-            .append(paragraphIndex)
+            .append(plan.paragraphIndex)
             .append(" run ")
-            .append(runIndex)
+            .append(plan.runIndex)
             .append(" tracked del(文本=\"")
-            .append(text)
+            .append(plan.targetText)
             .append("\") ✓");
         ok++;
-      } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(rootMessage(e));
-        fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
+      } else {
+        sb.append(tag)
+            .append("段落 ")
+            .append(plan.paragraphIndex)
+            .append(" target_text tracked del(文本=\"")
+            .append(plan.targetText)
+            .append("\",范围=[")
+            .append(plan.start)
+            .append(",")
+            .append(plan.end)
+            .append("]) ✓");
+        ok++;
       }
     }
     return renderBatchSummary(sb, ok, fail, skipped);
@@ -783,6 +776,223 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
                 skipped > 0 ? skipped : null)
             : ToolResult.ok(ok, sb.toString(), matchedCount, ok, Collections.emptyList());
     return ToolResultRenderer.render(result);
+  }
+
+  /** 在任何写入前按每个段落的原始快照解析两种 selector，并拒绝跨 selector 的重叠范围。 */
+  private static Map<Integer, DeletePlan> planDeleteEdits(
+      List<Object> edits, List<Paragraph> paragraphs) {
+    Map<Integer, DeletePlan> plans = new HashMap<>();
+    Map<Integer, ParagraphDeleteSnapshot> snapshots = new HashMap<>();
+    Map<Integer, List<DeletePlan>> byParagraph = new HashMap<>();
+    for (int i = 0; i < edits.size(); i++) {
+      Object item = edits.get(i);
+      if (!(item instanceof Map)) {
+        continue;
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> edit = (Map<String, Object>) item;
+      DeletePlan plan = new DeletePlan(i);
+      plans.put(i, plan);
+      try {
+        boolean hasRunIndex = edit.containsKey("run_index");
+        boolean hasTargetText = edit.containsKey("target_text");
+        if (hasRunIndex == hasTargetText) {
+          throw new IllegalArgumentException("每条 edit 必须且只能使用 run_index 或 target_text 一种定位方式");
+        }
+        if (hasRunIndex && edit.containsKey("occurrence")) {
+          throw new IllegalArgumentException("occurrence 只能与 target_text 定位方式一起使用");
+        }
+        plan.paragraphIndex = getInt(edit, "paragraph_index");
+        if (outOfBounds(plan.paragraphIndex, paragraphs.size())) {
+          throw new IllegalArgumentException(
+              indexError("段落索引", plan.paragraphIndex, paragraphs.size()));
+        }
+        ParagraphDeleteSnapshot snapshot =
+            snapshots.computeIfAbsent(
+                plan.paragraphIndex,
+                ignored -> ParagraphDeleteSnapshot.capture(paragraphs.get(plan.paragraphIndex)));
+        if (hasRunIndex) {
+          plan.oldRunMode = true;
+          plan.runIndex = getInt(edit, "run_index");
+          if (outOfBounds(plan.runIndex, snapshot.runTexts.size())) {
+            throw new IllegalArgumentException(
+                indexError("run 索引", plan.runIndex, snapshot.runTexts.size()));
+          }
+          plan.start = snapshot.runStarts.get(plan.runIndex);
+          plan.end = plan.start + snapshot.runTexts.get(plan.runIndex).length();
+          plan.targetText = snapshot.runTexts.get(plan.runIndex);
+          // 普通非空 run 仍可走统一 range 路径，才能和同段 target_text edit 按原始范围
+          // 安全排序。空 run 无法构造合法非空 range；含 tab/break 的 run 也不能安全切片，
+          // 这两类必须保留旧的整 run 迁移路径。
+          plan.legacyWholeRun =
+              plan.targetText.isEmpty()
+                  || containsNonTextRunContent(
+                      paragraphs.get(plan.paragraphIndex).run(plan.runIndex));
+        } else {
+          plan.targetText = getStr(edit, "target_text");
+          Integer occurrence = null;
+          if (edit.containsKey("occurrence")) {
+            occurrence = getInt(edit, "occurrence");
+            if (occurrence < 0) {
+              throw new IllegalArgumentException("occurrence 不能为负数");
+            }
+          }
+          int[] range = exactTextRange(snapshot.paragraphText, plan.targetText, occurrence);
+          plan.start = range[0];
+          plan.end = range[1];
+        }
+        byParagraph.computeIfAbsent(plan.paragraphIndex, ignored -> new ArrayList<>()).add(plan);
+      } catch (RuntimeException e) {
+        plan.error = rootMessage(e);
+      }
+    }
+
+    for (List<DeletePlan> sameParagraph : byParagraph.values()) {
+      for (int i = 0; i < sameParagraph.size(); i++) {
+        for (int j = i + 1; j < sameParagraph.size(); j++) {
+          DeletePlan left = sameParagraph.get(i);
+          DeletePlan right = sameParagraph.get(j);
+          boolean sameEmptyRange =
+              left.start == left.end && left.start == right.start && right.start == right.end;
+          boolean overlaps = left.start < right.end && right.start < left.end;
+          if (sameEmptyRange || overlaps) {
+            if (left.oldRunMode
+                && right.oldRunMode
+                && left.runIndex == right.runIndex
+                && left.start == right.start
+                && left.end == right.end) {
+              // 旧 run_index 批量契约：重复坐标首条成功，后条跳过。
+              if (right.error == null) {
+                right.error = "跳过:重复 run_index edit，已由前一条 edit 处理";
+              }
+            } else {
+              String message = "范围与同段另一条 edit 重叠，拒绝本条修改";
+              left.error = message;
+              right.error = message;
+            }
+          }
+        }
+      }
+    }
+    return plans;
+  }
+
+  /** 返回 stop 模式下首个预解析失败的 edit 索引。 */
+  private static int firstDeletePreflightError(List<Object> edits, Map<Integer, DeletePlan> plans) {
+    for (int i = 0; i < edits.size(); i++) {
+      if (!(edits.get(i) instanceof Map)) {
+        return i;
+      }
+      DeletePlan plan = plans.get(i);
+      if (plan == null || plan.error != null) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /** 删除批次开始时的正文与普通 run 区间快照。 */
+  private static final class ParagraphDeleteSnapshot {
+    private final String paragraphText;
+    private final List<String> runTexts;
+    private final List<Integer> runStarts;
+
+    private ParagraphDeleteSnapshot(
+        String paragraphText, List<String> runTexts, List<Integer> runStarts) {
+      this.paragraphText = paragraphText;
+      this.runTexts = runTexts;
+      this.runStarts = runStarts;
+    }
+
+    private static ParagraphDeleteSnapshot capture(Paragraph paragraph) {
+      String paragraphText = paragraph.text();
+      List<String> runTexts = new ArrayList<>();
+      List<Integer> runStarts = new ArrayList<>();
+      int offset = 0;
+      for (Run run : paragraph.runs()) {
+        String runText = run.text();
+        if (runText == null) {
+          runText = "";
+        }
+        runStarts.add(offset);
+        runTexts.add(runText);
+        offset += runText.length();
+      }
+      return new ParagraphDeleteSnapshot(paragraphText, runTexts, runStarts);
+    }
+  }
+
+  /** 一条 edit 在原始段落快照中的统一范围计划。 */
+  private static final class DeletePlan {
+    private final int index;
+    private int paragraphIndex;
+    private int runIndex;
+    private int start;
+    private int end;
+    private boolean oldRunMode;
+    private boolean legacyWholeRun;
+    private String targetText;
+    private String error;
+    private boolean applied;
+
+    private DeletePlan(int index) {
+      this.index = index;
+    }
+  }
+
+  /** 在段落纯文本中定位精确目标；重复命中必须显式传 occurrence。 */
+  private static int[] exactTextRange(String paragraphText, String targetText, Integer occurrence) {
+    if (paragraphText == null) {
+      throw new IllegalArgumentException("段落文本不能为空");
+    }
+    if (targetText == null || targetText.isEmpty()) {
+      throw new IllegalArgumentException("target_text 不能为空");
+    }
+    int count = 0;
+    int selected = -1;
+    int from = 0;
+    while (from <= paragraphText.length()) {
+      int found = paragraphText.indexOf(targetText, from);
+      if (found < 0) {
+        break;
+      }
+      if (occurrence == null) {
+        if (selected >= 0) {
+          throw new IllegalArgumentException("target_text 在该段落中命中多次，请传 occurrence 指定第几处");
+        }
+        selected = found;
+      } else if (count == occurrence) {
+        selected = found;
+      }
+      count++;
+      from = found + 1;
+    }
+    if (count == 0) {
+      throw new IllegalArgumentException("未找到 target_text:「" + targetText + "」");
+    }
+    if (occurrence != null && occurrence >= count) {
+      throw new IllegalArgumentException("occurrence " + occurrence + " 越界（共 " + count + " 处命中）");
+    }
+    return new int[] {selected, selected + targetText.length()};
+  }
+
+  /** 旧整 run 删除可保留 tab/break 等既有子节点；文本范围模式则必须拒绝它们。 */
+  private static boolean containsNonTextRunContent(Run run) {
+    org.apache.xmlbeans.XmlCursor cursor = run.raw().getCTR().newCursor();
+    try {
+      if (!cursor.toFirstChild()) {
+        return false;
+      }
+      do {
+        String local = cursor.getName() == null ? "" : cursor.getName().getLocalPart();
+        if (!"rPr".equals(local) && !"t".equals(local)) {
+          return true;
+        }
+      } while (cursor.toNextSibling());
+      return false;
+    } finally {
+      cursor.dispose();
+    }
   }
 
   /**

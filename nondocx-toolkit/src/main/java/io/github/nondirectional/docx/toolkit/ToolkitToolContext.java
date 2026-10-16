@@ -315,10 +315,14 @@ public abstract class ToolkitToolContext {
   /** 取异常根因消息，避免把 POI/XmlBeans 长栈抛回 LLM。 */
   static String rootMessage(Throwable e) {
     Throwable cur = e;
+    String message = cur.getMessage();
     while (cur.getCause() != null && cur.getCause() != cur) {
       cur = cur.getCause();
+      if (cur.getMessage() != null && !cur.getMessage().isBlank()) {
+        message = cur.getMessage();
+      }
     }
-    return cur.getMessage();
+    return message == null || message.isBlank() ? "操作失败" : message;
   }
 
   /** 段落内超链接计数（从 inlineElements 过滤 Hyperlink，而非 runs()）。 */

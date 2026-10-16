@@ -28,6 +28,18 @@ public class DocxOperationException extends DocxException {
   }
 
   /**
+   * 使用指定的详细信息、根本原因和操作上下文构造一个新异常。
+   *
+   * @param message 描述失败操作的详细信息
+   * @param context 简短的上下文描述符，例如段落索引或正文位置
+   * @param cause 导致操作失败的底层异常
+   */
+  public DocxOperationException(String message, String context, Throwable cause) {
+    super(appendContext(message, context), cause);
+    this.context = context;
+  }
+
+  /**
    * 使用指定的详细信息和操作上下文构造一个新异常。
    *
    * @param message 描述失败操作的详细信息
@@ -51,6 +63,6 @@ public class DocxOperationException extends DocxException {
     if (context == null) {
       return message;
     }
-    return message + " (context: " + context + ")";
+    return message + "（上下文：" + context + "）";
   }
 }

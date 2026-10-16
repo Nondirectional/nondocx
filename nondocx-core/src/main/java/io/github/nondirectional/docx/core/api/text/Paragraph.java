@@ -5,6 +5,7 @@ import io.github.nondirectional.docx.core.api.InlineElement;
 import io.github.nondirectional.docx.core.api.comment.Comment;
 import io.github.nondirectional.docx.core.api.exception.DocxIOException;
 import io.github.nondirectional.docx.core.api.exception.DocxOperationException;
+import io.github.nondirectional.docx.core.api.exception.UnsupportedFeatureException;
 import io.github.nondirectional.docx.core.api.image.Image;
 import io.github.nondirectional.docx.core.api.image.ImageType;
 import io.github.nondirectional.docx.core.api.style.Alignment;
@@ -316,6 +317,144 @@ public final class Paragraph implements BodyElement {
     io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.addDeletion(
         delegate, target.raw().getCTR(), author, now, revisionId);
     return this;
+  }
+
+  /**
+   * 将本段落可见文本的一个范围显式标记为 tracked deletion，并返回 {@code this}。
+   *
+   * <p>范围使用半开区间 {@code [start, end)}，偏移单位与 Java {@link String} 相同。该方法只支持由普通纯文本 run
+   * 构成的目标；超链接、图片、域或其他非文本内联内容不作为可切片目标。
+   *
+   * <p>目标范围会按 run 边界拆分，前缀和后缀保留原有字符属性，目标片段迁入 {@code <w:del>} 并使用 {@code <w:delText>}。修订不是立即删除，后续仍由
+   * {@code TrackedChanges} 的 accept/reject 处理。
+   *
+   * @param author 修订作者（不能为 {@code null} 或空白）
+   * @param start 目标范围起点（包含，不能为负数）
+   * @param end 目标范围终点（不包含，必须大于 {@code start}）
+   * @return 本段落（便于链式调用）
+   * @throws IllegalArgumentException 如果作者、范围无效，或范围落在 Unicode 代理对中间
+   * @throws UnsupportedFeatureException 如果段落或目标 run 含有不支持的非普通内联内容
+   */
+  public Paragraph deleteTrackedRange(String author, int start, int end) {
+    requireAuthor(author);
+    String paragraphText = text();
+    if (start < 0 || end <= start || end > paragraphText.length()) {
+      throw new IllegalArgumentException(
+          "tracked deletion 范围无效:[" + start + "," + end + "),文本长度=" + paragraphText.length());
+    }
+    rejectSurrogateBoundary(paragraphText, start, "start");
+    rejectSurrogateBoundary(paragraphText, end, "end");
+    try {
+      requirePlainTextInlineElements();
+
+      List<XWPFRun> runs = delegate.getRuns();
+      List<String> runTexts = new ArrayList<>(runs.size());
+      List<Integer> runStarts = new ArrayList<>(runs.size());
+      StringBuilder joined = new StringBuilder();
+      for (XWPFRun run : runs) {
+        String runText = run.text();
+        if (runText == null) {
+          runText = "";
+        }
+        runStarts.add(joined.length());
+        runTexts.add(runText);
+        joined.append(runText);
+      }
+      if (!paragraphText.equals(joined.toString())) {
+        throw new UnsupportedFeatureException("段落文本无法安全映射到普通 run，暂不支持跨越超链接、图片、域或其他未建模内联内容");
+      }
+
+      // 先完整校验所有将被切片的 run，保证任一目标不支持时本次 edit 不会留下半成品。
+      for (int i = 0; i < runs.size(); i++) {
+        int runStart = runStarts.get(i);
+        int runEnd = runStart + runTexts.get(i).length();
+        if (Math.max(start, runStart) < Math.min(end, runEnd)) {
+          io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.validateDeletionSlice(
+              runs.get(i).getCTR());
+        }
+      }
+
+      // 在 detached CTP 副本上完成 XmlCursor 手术，再一次性 set 回原 CTP，避免 moveXml 让 live Paragraph wrapper 失效。
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP working =
+          (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP) delegate.getCTP().copy();
+      if (working.sizeOfRArray() != runs.size()) {
+        throw new UnsupportedFeatureException("段落 run 结构在范围删除前后无法稳定映射");
+      }
+      java.math.BigInteger revisionId =
+          io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.nextRevisionId(
+              delegate.getDocument());
+      java.util.Calendar now = java.util.Calendar.getInstance();
+      // 从右到左处理，避免前面范围的 XML 锚点受到后续拆分影响。
+      for (int i = runs.size() - 1; i >= 0; i--) {
+        int runStart = runStarts.get(i);
+        int runEnd = runStart + runTexts.get(i).length();
+        int sliceStart = Math.max(start, runStart);
+        int sliceEnd = Math.min(end, runEnd);
+        if (sliceStart >= sliceEnd) {
+          continue;
+        }
+        io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.addDeletionSlice(
+            working,
+            working.getRArray(i),
+            sliceStart - runStart,
+            sliceEnd - runStart,
+            author,
+            now,
+            revisionId);
+        revisionId = revisionId.add(java.math.BigInteger.ONE);
+      }
+      replacePlainTextRunViews(working);
+      return this;
+    } catch (io.github.nondirectional.docx.core.api.exception.DocxException e) {
+      throw e;
+    } catch (RuntimeException e) {
+      throw new DocxOperationException(
+          "创建 tracked deletion 失败", "paragraph text range [" + start + "," + end + ")", e);
+    }
+  }
+
+  /** 校验段落只含可安全参与普通文本范围映射的 inline 元素。 */
+  private void requirePlainTextInlineElements() {
+    for (IRunElement element : delegate.getIRuns()) {
+      if (!(element instanceof XWPFRun) || element instanceof XWPFHyperlinkRun) {
+        throw new UnsupportedFeatureException("tracked deletion 暂只支持正文普通 run，不支持超链接、图片、域或其他内联元素");
+      }
+      XWPFRun run = (XWPFRun) element;
+      if (run.getCTR().sizeOfInstrTextArray() > 0 || run.getCTR().sizeOfFldCharArray() > 0) {
+        throw new UnsupportedFeatureException("tracked deletion 暂不支持域或其他字段 run");
+      }
+      if (!run.getEmbeddedPictures().isEmpty()) {
+        throw new UnsupportedFeatureException("tracked deletion 暂不支持包含图片的 run");
+      }
+    }
+  }
+
+  /**
+   * 先通过 POI 的 removeRun 清理旧缓存，再将 detached CTP 写回并注册新的普通 run wrapper。
+   *
+   * <p>POI 的 {@code XWPFParagraph} 会缓存 {@code XWPFRun} 与 {@code IRunElement}；只改 CTP XML 而不重建 这两个
+   * live view，会让后续 {@link #text()} 读取旧的 orphan wrapper。
+   */
+  private void replacePlainTextRunViews(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP replacement) {
+    for (int i = delegate.getRuns().size() - 1; i >= 0; i--) {
+      delegate.removeRun(i);
+    }
+    delegate.getCTP().set(replacement);
+    for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR run :
+        delegate.getCTP().getRList()) {
+      delegate.addRun(new XWPFRun(run, delegate));
+    }
+  }
+
+  /** 防止范围把一个 Unicode 代理对拆成两个无效字符。 */
+  private static void rejectSurrogateBoundary(String value, int offset, String name) {
+    if (offset > 0
+        && offset < value.length()
+        && Character.isHighSurrogate(value.charAt(offset - 1))
+        && Character.isLowSurrogate(value.charAt(offset))) {
+      throw new IllegalArgumentException("tracked deletion 的 " + name + " 不能落在 Unicode 代理对中间");
+    }
   }
 
   /**

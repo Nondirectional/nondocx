@@ -149,6 +149,178 @@ class DocxToolkitTrackedChangesTest {
     assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("DEL");
   }
 
+  /** 旧 run_index selector 保留整 run 语义，不因 run 内含制表符而退化为纯文本范围错误。 */
+  @Test
+  void shouldKeepLegacyWholeRunDeletionForRunWithTab(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("del-run-with-tab.docx");
+    try (Document doc = Docx.create()) {
+      var run = doc.addParagraph().addRun("左");
+      run.raw().addTab();
+      run.raw().setText("右");
+      doc.save(file);
+    }
+
+    DocxToolkit tk = new DocxToolkit();
+    String docId =
+        io.github.nondirectional.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
+
+    String result = tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(runEdit(0, 0)));
+
+    assertThat(result).contains("成功 1 条,失败 0 条");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("DEL");
+  }
+
+  /** 旧 run_index selector 仍可删除空普通 run，不能退化为不允许的零长度文本范围。 */
+  @Test
+  void shouldKeepLegacyWholeRunDeletionForEmptyRun(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("del-empty-run.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph().addRun("");
+      doc.save(file);
+    }
+
+    DocxToolkit tk = new DocxToolkit();
+    String docId =
+        io.github.nondirectional.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
+
+    String result = tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(runEdit(0, 0)));
+
+    assertThat(result).contains("成功 1 条,失败 0 条");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("DEL");
+  }
+
+  /** delete_run_tracked 的 target_text 模式可以一次删除跨多个普通 run 的精确文本。 */
+  @Test
+  void shouldDeleteTargetTextAcrossRuns(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("del-target-text.docx");
+    try (Document doc = Docx.create()) {
+      var paragraph = doc.addParagraph();
+      paragraph.addRun("前缀");
+      paragraph.addRun("言简意赅");
+      paragraph.addRun("地说明通过本文件");
+      paragraph.addRun("要达到的期望目标。");
+      paragraph.addRun("后缀");
+      doc.save(file);
+    }
+
+    DocxToolkit tk = new DocxToolkit();
+    String docId =
+        io.github.nondirectional.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
+    Map<String, Object> edit = new LinkedHashMap<>();
+    edit.put("paragraph_index", 0);
+    edit.put("target_text", "言简意赅地说明通过本文件要达到的期望目标。");
+    String result = tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(edit));
+    assertThat(result).contains("target_text tracked del").contains("成功 1 条,失败 0 条");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("DEL");
+  }
+
+  /** 混用 target_text 与旧 run_index 时，统一使用原始快照，输入顺序不造成 run 坐标漂移。 */
+  @Test
+  void shouldApplyMixedSelectorsFromOriginalSnapshot(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("del-mixed-selectors.docx");
+    try (Document doc = Docx.create()) {
+      var paragraph = doc.addParagraph();
+      paragraph.addRun("前缀目标");
+      paragraph.addRun("整段旧 run");
+      paragraph.addRun("后缀");
+      doc.save(file);
+    }
+
+    DocxToolkit tk = new DocxToolkit();
+    String docId =
+        io.github.nondirectional.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
+    Map<String, Object> textEdit = new LinkedHashMap<>();
+    textEdit.put("paragraph_index", 0);
+    textEdit.put("target_text", "目标");
+    Map<String, Object> runEdit = runEdit(0, 1);
+
+    String result =
+        tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(textEdit, runEdit));
+    assertThat(result).contains("成功 2 条,失败 0 条");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId))
+        .contains("目标")
+        .contains("整段旧 run")
+        .contains("共 2 条修订");
+  }
+
+  /** target_text 重复且没有 occurrence 时拒绝修改，避免误删。 */
+  @Test
+  void shouldRejectAmbiguousTargetText(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("del-target-ambiguous.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("重复文本，重复文本");
+      doc.save(file);
+    }
+
+    DocxToolkit tk = new DocxToolkit();
+    String docId =
+        io.github.nondirectional.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
+    Map<String, Object> edit = new LinkedHashMap<>();
+    edit.put("paragraph_index", 0);
+    edit.put("target_text", "重复文本");
+    String result = tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(edit));
+    assertThat(result).contains("命中多次").contains("成功 0 条,失败 1 条");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("无修订");
+
+    edit.put("occurrence", 1);
+    result = tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(edit));
+    assertThat(result).contains("target_text tracked del").contains("成功 1 条,失败 0 条");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("DEL");
+  }
+
+  /** 重叠的 target_text edit 不会重复破坏同一段文本。 */
+  @Test
+  void shouldNotDoubleApplyOverlappingTargetText(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("del-target-overlap.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("ABCDE");
+      doc.save(file);
+    }
+
+    DocxToolkit tk = new DocxToolkit();
+    String docId =
+        io.github.nondirectional.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
+    Map<String, Object> first = new LinkedHashMap<>();
+    first.put("paragraph_index", 0);
+    first.put("target_text", "BCD");
+    Map<String, Object> second = new LinkedHashMap<>();
+    second.put("paragraph_index", 0);
+    second.put("target_text", "CDE");
+    String result = tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(first, second));
+    assertThat(result).contains("成功 0 条,失败 2 条").contains("范围与同段另一条 edit 重叠");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("无修订");
+  }
+
+  /** 同一段落的多个非重叠 target_text edit 可以连续成功。 */
+  @Test
+  void shouldApplyNonOverlappingTargetTextEditsSameParagraph(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("del-target-non-overlap.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("ABCDE");
+      doc.save(file);
+    }
+
+    DocxToolkit tk = new DocxToolkit();
+    String docId =
+        io.github.nondirectional.docx.toolkit.ToolTestSupport.extractDocId(
+            tk.session.openDocx(file.toAbsolutePath().toString()));
+    Map<String, Object> first = new LinkedHashMap<>();
+    first.put("paragraph_index", 0);
+    first.put("target_text", "AB");
+    Map<String, Object> second = new LinkedHashMap<>();
+    second.put("paragraph_index", 0);
+    second.put("target_text", "DE");
+    String result = tk.trackedChangeAuthoring.deleteRunTracked(docId, "甲", List.of(first, second));
+    assertThat(result).contains("成功 2 条,失败 0 条");
+    assertThat(tk.trackedChangeQuery.listTrackedChanges(docId)).contains("共 2 条修订");
+  }
+
   @Test
   void shouldReplaceRunTracked(@TempDir Path tmp) throws Exception {
     Path file = tmp.resolve("replace.docx");

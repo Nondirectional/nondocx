@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nondirectional.docx.toolkit.DocxToolkit;
 import io.github.nondirectional.docx.toolkit.capability.model.CapabilityManifest;
+import io.github.nondirectional.docx.toolkit.capability.model.ParamCapabilityDescriptor;
+import io.github.nondirectional.docx.toolkit.capability.model.ToolCapabilityDescriptor;
 import io.github.nondirectional.docx.toolkit.result.ToolResultCode;
 import io.github.nondirectional.docx.toolkit.result.ToolResultParser;
 import org.junit.jupiter.api.Test;
@@ -108,5 +110,40 @@ class CapabilityToolsTest {
     tk.capability.collectManifest();
     tk.capability.collectManifest();
     tk.capability.describeCapabilities(null, null, null);
+  }
+
+  /** delete_run_tracked 的 selector 能力必须精确暴露旧 run_index 与新文本字段。 */
+  @Test
+  void deleteRunTrackedCapabilityHasExactSelectors() {
+    CapabilityManifest manifest = tk.capability.collectManifest();
+    ToolCapabilityDescriptor descriptor =
+        manifest.tools().stream()
+            .filter(tool -> tool.name().equals("delete_run_tracked"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("缺少 delete_run_tracked 能力"));
+
+    assertThat(descriptor.operation()).isEqualTo(CapabilityOperation.REMOVE);
+    assertThat(descriptor.element()).isEqualTo("tracked_change");
+    assertThat(descriptor.nestedParams())
+        .extracting(ParamCapabilityDescriptor::name)
+        .containsExactly(
+            "edits.paragraph_index", "edits.run_index", "edits.target_text", "edits.occurrence");
+
+    ParamCapabilityDescriptor targetText =
+        descriptor.nestedParams().stream()
+            .filter(param -> param.name().equals("edits.target_text"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(targetText.type()).isEqualTo(ParamType.STRING);
+    assertThat(targetText.required()).isFalse();
+
+    ParamCapabilityDescriptor occurrence =
+        descriptor.nestedParams().stream()
+            .filter(param -> param.name().equals("edits.occurrence"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(occurrence.type()).isEqualTo(ParamType.INTEGER);
+    assertThat(occurrence.required()).isFalse();
+    assertThat(occurrence.defaultValue()).isEqualTo("唯一命中时可省略");
   }
 }
