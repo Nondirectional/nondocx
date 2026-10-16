@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/poi-bridge.md","reason":"实现 tracked deletion 的 XmlCursor、CTR 迁移、delText/t 转换、顺序保持和 wrapper 失效约束。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"定义 core 非法范围、越界、不支持内联内容及 POI 异常的中文异常契约。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"约束中文公共 API、POI 类型隔离、round-trip/POI 交叉验证和 Maven 质量门。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"跟踪 toolkit payload、core range API、OOXML 持久化和 Agent 元数据之间的跨层契约。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"优先复用现有 deleteRunTracked、addDeletion 和 tracked accept/reject 路径，避免复制批量错误处理。"}

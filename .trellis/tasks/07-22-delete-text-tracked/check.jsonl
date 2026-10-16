@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/poi-bridge.md","reason":"复核 XML 顺序、run 拆分、delText/t 转换、save→reopen 及 accept/reject 后 wrapper 失效风险。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"复核非法 selector、重复命中、越界、不支持内容和 POI 异常是否遵守中文错误契约。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"复核公共 API POI 隔离、round-trip + POI 交叉测试、Spotless 和 verify 质量门。"}
+{"file":".trellis/spec/backend/agent-single.md","reason":"复核工具仍属于单 Agent 写工具、dirty 识别和保存职责不被改变。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复核 toolkit 参数、能力元数据、Agent prompt、core API 和 DOCX 输出之间没有遗漏边界。"}
