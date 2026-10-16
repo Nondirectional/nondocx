@@ -286,7 +286,8 @@
                         </executions>
                     </plugin>
 
-                    <!-- 4. Central Portal 发布插件（autoPublish=false：上传后停在 Portal 待人工 review） -->
+                    <!-- 4. Central Portal 发布插件（autoPublish=true：校验通过后自动发布，
+                         无需再到 Portal 人工点 Publish） -->
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
@@ -295,7 +296,7 @@
                         <configuration>
                             <publishingServerId>central</publishingServerId>
                             <tokenAuth>true</tokenAuth>
-                            <autoPublish>false</autoPublish>
+                            <autoPublish>true</autoPublish>
                         </configuration>
                     </plugin>
                 </plugins>
