@@ -63,3 +63,4 @@ gradle-app.setting
 # Other local AI coding tools' working dirs
 .zcode/
 .agents/
+.codex/
