@@ -127,7 +127,7 @@ try (Document doc = Docx.open(Path.of("in.docx"))) {
 <dependency>
     <groupId>io.github.nondirectional</groupId>
     <artifactId>nondocx-core</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.0.2</version>
 </dependency>
 ```
 
