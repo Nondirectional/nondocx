@@ -31,6 +31,7 @@ import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFPicture;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFldChar;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STFldCharType;
 
 /**
@@ -413,6 +414,176 @@ public final class Paragraph implements BodyElement {
     }
   }
 
+  /**
+   * 将本段落可见文本的一个范围以修订方式替换为新文本，并返回新插入 run 的活跃包装。
+   *
+   * <p>语义上是 {@link #deleteTrackedRange(String, int, int)} 与 {@link #addInsertion(String, String)}
+   * 的「范围替换」组合：目标范围按 run 边界拆分迁入 {@code <w:del>}（旧文本转 {@code <w:delText>}），随后<b>紧随最后一个 {@code
+   * <w:del>} 之后</b>写入一条 {@code <w:ins>}（新文本）——插入位置即被替换范围原位， 不是段落末尾（这正是它不能由现有两 API 直接组合的原因：{@code
+   * addInsertion} 只能段末追加， 会把新文本放到句号之后，视觉顺序错误）。
+   *
+   * <p>新插入 run 复制<b>范围内首个 run</b> 替换前的完整 {@code rPr}（对齐 {@link Run#replaceTracked(String)}
+   * 的「替换保留格式」语义）。 与 {@code <w:trackChanges/>} 开关正交；修订随后可被 {@code doc.trackedChanges().list()} 读回为
+   * INS + DEL， 被 accept/reject 处理。
+   *
+   * <p>校验规则与 {@link #deleteTrackedRange(String, int, int)} 完全一致：只支持普通纯文本 run（超链接、图片、域等不支持）， 范围不得拆开
+   * Unicode 代理对。方法在内部 detached 副本上完成全部 XML 手术后一次性写回，任一 run 不可切片时<b>整段零改动</b>。
+   *
+   * <p><b>已知 POI 读侧盲区。</b> 替换后 {@link #text()} 只反映「删除已发生」（delText 不计入），但<b>不含</b> ins 内新文本（POI
+   * {@code XWPFParagraph.getRuns()} 不暴露 ins 内 run，见 poi-bridge.md N14）；读修订请用 {@code
+   * trackedChanges()}。
+   *
+   * @param author 修订作者（不能为 {@code null} 或空白）
+   * @param start 目标范围起点（包含，不能为负数）
+   * @param end 目标范围终点（不包含，必须大于 {@code start}）
+   * @param newText 替换后的新文本（不能为 {@code null} 或空串——纯删除用 {@link #deleteTrackedRange(String, int,
+   *     int)}）
+   * @return 新插入 run（在 {@code <w:ins>} 内）的活跃包装，可继续链式设样式
+   * @throws IllegalArgumentException 如果作者、范围无效或 newText 为 {@code null} 或空串，或范围落在 Unicode 代理对中间
+   * @throws UnsupportedFeatureException 如果段落或目标 run 含不支持的非普通内联内容
+   * @see #deleteTrackedRange(String, int, int)
+   * @see Run#replaceTracked(String)
+   */
+  public Run replaceTrackedRange(String author, int start, int end, String newText) {
+    requireAuthor(author);
+    java.util.Objects.requireNonNull(newText, "newText");
+    if (newText.isEmpty()) {
+      throw new IllegalArgumentException("newText 不能为空串；纯删除请用 deleteTrackedRange");
+    }
+    String paragraphText = text();
+    if (start < 0 || end <= start || end > paragraphText.length()) {
+      throw new IllegalArgumentException(
+          "tracked replacement 范围无效:[" + start + "," + end + "),文本长度=" + paragraphText.length());
+    }
+    rejectSurrogateBoundary(paragraphText, start, "start");
+    rejectSurrogateBoundary(paragraphText, end, "end");
+    try {
+      requirePlainTextInlineElements();
+
+      List<XWPFRun> runs = delegate.getRuns();
+      List<String> runTexts = new ArrayList<>(runs.size());
+      List<Integer> runStarts = new ArrayList<>(runs.size());
+      StringBuilder joined = new StringBuilder();
+      for (XWPFRun run : runs) {
+        String runText = run.text();
+        if (runText == null) {
+          runText = "";
+        }
+        runStarts.add(joined.length());
+        runTexts.add(runText);
+        joined.append(runText);
+      }
+      if (!paragraphText.equals(joined.toString())) {
+        throw new UnsupportedFeatureException("段落文本无法安全映射到普通 run，暂不支持跨越超链接、图片、域或其他未建模内联内容");
+      }
+
+      // 先完整校验所有将被切片的 run，并定位「范围内首个 run」作为新文本的样式来源。
+      int styleSourceIndex = -1;
+      for (int i = 0; i < runs.size(); i++) {
+        int runStart = runStarts.get(i);
+        int runEnd = runStart + runTexts.get(i).length();
+        if (Math.max(start, runStart) < Math.min(end, runEnd)) {
+          io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.validateDeletionSlice(
+              runs.get(i).getCTR());
+          if (styleSourceIndex < 0) {
+            styleSourceIndex = i;
+          }
+        }
+      }
+      final CTRPr styleSource =
+          styleSourceIndex < 0 || runs.get(styleSourceIndex).getCTR().getRPr() == null
+              ? null
+              : (CTRPr) runs.get(styleSourceIndex).getCTR().getRPr().copy();
+
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP working =
+          (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP) delegate.getCTP().copy();
+      if (working.sizeOfRArray() != runs.size()) {
+        throw new UnsupportedFeatureException("段落 run 结构在范围替换前后无法稳定映射");
+      }
+      java.math.BigInteger revisionId =
+          io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.nextRevisionId(
+              delegate.getDocument());
+      java.util.Calendar now = java.util.Calendar.getInstance();
+      // 与范围删除同序：从右到左切片，避免前面范围的 XML 锚点受后续拆分影响。
+      // 右到左的首个切片就是范围内最右侧 run 的 del——ins 紧随它之后。
+      // 注意：切片内部会用 moveXml 重排节点，方法返回的 del 句柄会断连（XmlBeans 既有行为），
+      // 这里只记它的 w:id，之后从 working 重新取活句柄。
+      java.math.BigInteger rightmostDelId = null;
+      for (int i = runs.size() - 1; i >= 0; i--) {
+        int runStart = runStarts.get(i);
+        int runEnd = runStart + runTexts.get(i).length();
+        int sliceStart = Math.max(start, runStart);
+        int sliceEnd = Math.min(end, runEnd);
+        if (sliceStart >= sliceEnd) {
+          continue;
+        }
+        io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.addDeletionSlice(
+            working,
+            working.getRArray(i),
+            sliceStart - runStart,
+            sliceEnd - runStart,
+            author,
+            now,
+            revisionId);
+        if (rightmostDelId == null) {
+          rightmostDelId = revisionId;
+        }
+        revisionId = revisionId.add(java.math.BigInteger.ONE);
+      }
+      java.math.BigInteger insertionId = revisionId;
+      if (rightmostDelId != null) {
+        io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.addInsertionAfter(
+            working,
+            delById(working, rightmostDelId),
+            styleSource,
+            newText,
+            author,
+            now,
+            insertionId);
+        insertionId = insertionId.add(java.math.BigInteger.ONE);
+      }
+      replacePlainTextRunViews(working);
+      return new Run(insertedRunByRevisionId(insertionId.subtract(java.math.BigInteger.ONE)));
+    } catch (io.github.nondirectional.docx.core.api.exception.DocxException e) {
+      throw e;
+    } catch (RuntimeException e) {
+      throw new DocxOperationException(
+          "创建 tracked replacement 失败", "paragraph text range [" + start + "," + end + ")", e);
+    }
+  }
+
+  /**
+   * 在段落直接子级的 {@code <w:ins>} 列表里按修订 id 找回刚创建的插入修订，取其内部 run。
+   *
+   * <p>{@code replaceTrackedRange} 的 XML 手术在 detached 副本上完成后经 {@code set} 写回—— detached 句柄不再连到 live
+   * 文档，必须按 {@code w:id} 在 live CTP 里重新定位。
+   */
+  private XWPFRun insertedRunByRevisionId(java.math.BigInteger revisionId) {
+    for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange ins :
+        delegate.getCTP().getInsList()) {
+      if (revisionId.equals(ins.getId())) {
+        return new XWPFRun(ins.getRList().get(0), delegate);
+      }
+    }
+    throw new IllegalStateException("tracked replacement 的插入修订在写回后找不到（不应发生）");
+  }
+
+  /**
+   * 在 CTP 的 {@code <w:del>} 列表里按修订 id 取活句柄。
+   *
+   * <p>切片返回的 del 句柄经 moveXml 重排后已断连（XmlBeans 既有行为），重新查询拿到的句柄才是活的。
+   */
+  private static org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange delById(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP ctp, java.math.BigInteger id) {
+    for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange del :
+        ctp.getDelList()) {
+      if (id.equals(del.getId())) {
+        return del;
+      }
+    }
+    throw new IllegalStateException("tracked replacement 的删除修订在切片后找不到（不应发生）");
+  }
+
   /** 校验段落只含可安全参与普通文本范围映射的 inline 元素。 */
   private void requirePlainTextInlineElements() {
     for (IRunElement element : delegate.getIRuns()) {
@@ -613,7 +784,8 @@ public final class Paragraph implements BodyElement {
    * {@code Run} 上，要么违反 {@code Run} mutator 返回 {@code this} 的链式惯例， 要么越权创建兄弟 run。
    *
    * <p><b>域的实际可见值</b>（如 {@code PAGE} 域显示的页码数字）由 Word/WPS 打开时的渲染引擎计算，POI 与 nondocx 都不计算 ——
-   * 本方法只写指令结构。简单域不带 {@code separate} 缓存段，打开时由渲染引擎即时填充。
+   * 本方法只写指令结构。简单域不带 {@code separate} 缓存段，打开时由渲染引擎即时填充； 需要 POI/文本抽取器也能读到域值时用 {@link
+   * #addSimpleField(String, String)}（带缓存结果的五 run 形态）。
    *
    * <p><b>返回的 run</b> 承载 {@code <w:instrText>}，可对其链式设样式（域可见结果的样式由此 run 决定）。 注意该 run 的 {@link
    * Run#text()} 返回空串 —— 指令不是 {@code <w:t>}。
@@ -642,6 +814,61 @@ public final class Paragraph implements BodyElement {
     CTFldChar end = endRun.getCTR().addNewFldChar();
     end.setFldCharType(STFldCharType.END);
     return new Run(instrRun);
+  }
+
+  /**
+   * 在此段落末尾追加一个<b>带缓存结果</b>的简单域，并返回承载可见结果文本的 run。
+   *
+   * <p>与 {@link #addSimpleField(String)} 的区别只在结果段：无缓存版是三 run（begin / instrText / end），POI 与 nondocx
+   * 的纯文本读侧读到的域值是<b>空</b>——渲染引擎（Word/WPS）打开时才即时计算；本重载写五 run 结构：
+   *
+   * <pre>{@code
+   * <w:r><w:fldChar w:fldCharType="begin"/></w:r>     ← 域开始
+   * <w:r><w:instrText> PAGE </w:instrText></w:r>       ← 域指令
+   * <w:r><w:fldChar w:fldCharType="separate"/></w:r>   ← 指令/结果分隔
+   * <w:r><w:t>2</w:t></w:r>                            ← 缓存结果（普通文本 run，返回它）
+   * <w:r><w:fldChar w:fldCharType="end"/></w:r>        ← 域结束
+   * }</pre>
+   *
+   * <p><b>为什么需要缓存结果。</b> 这是 Word 自己保存域的标准形态（separate 段是「上次渲染值」）： 非渲染读者（POI {@code
+   * getText()}、nondocx {@link #text()}、各种文本抽取器）能读到值，Word/WPS 打开时按当前文档重算覆盖。 纯指令域在「页脚页码」这类场景下会让所有 POI
+   * 系读者读出「第 页」（无数字）。缓存的准确性由调用方负责（nondocx 不计算域值——如 PAGE 域在多页文档里只有渲染引擎知道每页的值）。
+   *
+   * <p>返回<b>结果 run</b>（可链式设样式，域可见结果的格式由此 run 决定）；这与单参版返回指令 run 不同。
+   *
+   * @param instruction 域指令（如 {@code "PAGE"}；原样写入，不做语法校验；不能为 {@code null} 或空白）
+   * @param cachedResult 缓存结果文本（如 {@code "1"}；不能为 {@code null} 或空白——写不进可见值的域没有意义，直接用单参版）
+   * @return 承载缓存结果的 run（可继续链式设样式）
+   * @throws IllegalArgumentException 如果任一参数为 {@code null} 或空白
+   */
+  public Run addSimpleField(String instruction, String cachedResult) {
+    Objects.requireNonNull(instruction, "instruction");
+    if (instruction.isBlank()) {
+      throw new IllegalArgumentException("instruction 不能为空白");
+    }
+    Objects.requireNonNull(cachedResult, "cachedResult");
+    if (cachedResult.isBlank()) {
+      throw new IllegalArgumentException("cachedResult 不能为空白；无需缓存结果请用单参 addSimpleField");
+    }
+    // run 1：begin
+    XWPFRun beginRun = delegate.createRun();
+    CTFldChar begin = beginRun.getCTR().addNewFldChar();
+    begin.setFldCharType(STFldCharType.BEGIN);
+    // run 2：instrText
+    XWPFRun instrRun = delegate.createRun();
+    instrRun.getCTR().addNewInstrText().setStringValue(instruction);
+    // run 3：separate（指令与缓存结果的边界）
+    XWPFRun separateRun = delegate.createRun();
+    CTFldChar separate = separateRun.getCTR().addNewFldChar();
+    separate.setFldCharType(STFldCharType.SEPARATE);
+    // run 4：缓存结果（普通 w:t，POI/文本抽取器可见）
+    XWPFRun resultRun = delegate.createRun();
+    resultRun.setText(cachedResult);
+    // run 5：end
+    XWPFRun endRun = delegate.createRun();
+    CTFldChar end = endRun.getCTR().addNewFldChar();
+    end.setFldCharType(STFldCharType.END);
+    return new Run(resultRun);
   }
 
   /**

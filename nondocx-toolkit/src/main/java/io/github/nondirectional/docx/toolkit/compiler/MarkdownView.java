@@ -17,7 +17,8 @@ import io.github.nondirectional.docx.core.api.text.Run;
  * <p>与 {@code DocumentViewService} 的分工：视图服务输出结构化 DTO（stats/outline/…）， 本类输出<b>可 round-trip 的
  * Markdown</b>——模型读到什么，就能照着写什么给 {@code create_document}。两者共享「只读、不改文档」的边界。
  *
- * <p>已知取舍（v1）：超链接/图片折叠为其文本；表格单元格输出纯文本；正文之外的容器 （页眉/页脚/表格内段落）不在本视图内。
+ * <p>已知取舍（v1）：超链接/图片折叠为其文本；表格单元格输出纯文本；正文之外的容器只有页脚以元数据注释行进视图 （{@code <!-- 页脚: …
+ * -->}，v2——页码写入后供模型核对），页眉/表格内段落不在本视图内。
  */
 public final class MarkdownView {
 
@@ -77,6 +78,15 @@ public final class MarkdownView {
       }
       if (sb.length() > limit) {
         return truncate(sb, limit, paragraphSeq, tableSeq);
+      }
+    }
+    // 页脚元数据（v2）：正文外容器里只有页脚进视图——页码写入后模型能读到「第 1 页」核对；
+    // 注释形态，round-trip 时被解析器当元数据剥掉，不产生脏块。
+    io.github.nondirectional.docx.core.api.header.Footer footer = doc.footer();
+    if (footer != null) {
+      String footerText = footer.text();
+      if (footerText != null && !footerText.isBlank()) {
+        sb.append("<!-- 页脚: ").append(footerText.trim().replace("\n", " / ")).append(" -->\n");
       }
     }
     return new Rendered(sb.toString(), false, paragraphSeq, tableSeq);

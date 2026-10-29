@@ -76,6 +76,9 @@ public final class EvalRunner {
           + "结构/属性标记，不是正文文本，不要试图删除或替换它们。"
           + "编辑既有文档时，把一批修改整理成 ops 一次调用 edit_document（锚点用短 ID，"
           + "插入内容用 Markdown 块），不要逐段零散修改。"
+          + "用户要求「修订模式/以修订」修改时用 tracked.replace / tracked.insert / tracked.delete op"
+          + "（必传 author=修订作者，如用户给了作者名就用它）；"
+          + "用户要求在页脚插页码时用 footer.set_page_number op（format 如「第 {page} 页」）。"
           + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
           + "完成后调用 review_intent 复审用户期望的修改是否已经达成。若任一工具失败，停止并说明失败。";
 

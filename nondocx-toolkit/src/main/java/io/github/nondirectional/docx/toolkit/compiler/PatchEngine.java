@@ -26,18 +26,27 @@ import java.util.Set;
  * <p><b>原子性。</b> 先 preflight 全部 op：锚点存在、参数合法、{@code find} 在段落文本中、 行列在界内、表格块只允许插到文档末尾、被本 patch 前序 op
  * 删除的锚点不得再引用。任一 失败抛 {@link PatchException}，<b>零写入</b>。执行期不存在可预期失败分支；POI 意外异常 直接上抛（由工具层报告「可能部分应用」）。
  *
- * <p><b>op 集（v1，6 种）：</b>
+ * <p><b>op 集（v2，10 种）：</b>
  *
  * <ul>
  *   <li>{@code insert}——Markdown 块插入 {@code before}/{@code after} 锚点或文档 {@code start}/{code
  *       end}；含表格块时仅允许 {@code end}（core 无定位插表 API）；
  *   <li>{@code replace_text}——段落内精确子串替换；跨 run 时整段重建为单 run（丢段内直接 格式，记 warning）；
- *   <li>{@code delete}——删除段落（删表不在 v1：core 无 API）；
+ *   <li>{@code delete}——删除段落（删表不在 v2：core 无 API）；
  *   <li>{@code set_style}——套 profile 的 {@code body}/{@code heading} 样式，或显式 {@code align}/{@code
  *       line_spacing}；
  *   <li>{@code table.set_cell}——改单元格文本；
- *   <li>{@code table.add_row}——末尾加一行（可带初始文本）。
+ *   <li>{@code table.add_row}——末尾加一行（可带初始文本）；
+ *   <li>{@code tracked.insert} / {@code tracked.delete} / {@code tracked.replace}——修订模式 （tracked
+ *       changes）写作：ins / del / del+ins 配对，{@code author} 必传。替换是最小 diff——只 del「find」范围、ins 紧随其后（core
+ *       {@code replaceTrackedRange}）；
+ *   <li>{@code footer.set_page_number}——页脚追加页码段落，{@code format} 支持 {@code {page}}/{@code {pages}}
+ *       占位符（PAGE/NUMPAGES 域，带缓存结果 "1"，非渲染读者也能读到数字）。
  * </ul>
+ *
+ * <p><b>同锚点独占（v2）。</b> tracked.* 与 {@code replace_text} 都改段落文本，而修订的偏移量按 <b>执行时活文本</b> 计算（tracked
+ * del 后 text() 会移除被删文本）——同批多个改文本 op 共享锚点会互相污染。 规则：每个段落锚点在一批 ops 里<b>至多一个改文本 op</b>（tracked.* 或
+ * replace_text），违反则整体拒绝并提示拆批。
  *
  * <p>op 数组来自 nonchain 还原的 {@code List<LinkedHashMap>}；本类只读 Map，不依赖 JSON 库。
  */
@@ -119,6 +128,7 @@ public final class PatchEngine {
     StyleProfile p = profile == null ? StyleProfile.builtin("plain") : profile;
     Snapshot snapshot = new Snapshot(doc);
     Set<String> deleted = new HashSet<>();
+    Map<String, Integer> textClaims = new HashMap<>();
     List<PlannedOp> plannedOps = new ArrayList<>();
     List<String> plannedText = new ArrayList<>();
     for (int i = 0; i < ops.size(); i++) {
@@ -128,7 +138,7 @@ public final class PatchEngine {
       }
       @SuppressWarnings("unchecked")
       Map<String, Object> op = (Map<String, Object>) raw;
-      PlannedOp planned = planOp(i, op, snapshot, deleted, p);
+      PlannedOp planned = planOp(i, op, snapshot, deleted, textClaims, p);
       plannedOps.add(planned);
       plannedText.add("op[" + i + "] " + planned.describe());
     }
@@ -146,7 +156,12 @@ public final class PatchEngine {
   // ==================== preflight：解析 + 校验 ====================
 
   private static PlannedOp planOp(
-      int index, Map<String, Object> op, Snapshot snapshot, Set<String> deleted, StyleProfile p) {
+      int index,
+      Map<String, Object> op,
+      Snapshot snapshot,
+      Set<String> deleted,
+      Map<String, Integer> textClaims,
+      StyleProfile p) {
     String kind = str(op, "op", index);
     String anchor = op.get("anchor") == null ? null : String.valueOf(op.get("anchor")).trim();
     if (anchor != null && !anchor.isEmpty() && deleted.contains(anchor)) {
@@ -156,6 +171,7 @@ public final class PatchEngine {
       case "insert":
         return planInsert(index, op, anchor, snapshot, p);
       case "replace_text":
+        claimAnchor(index, anchor, "replace_text", textClaims);
         return planReplaceText(index, op, anchor, snapshot);
       case "delete":
         return planDelete(index, op, anchor, snapshot, deleted);
@@ -165,13 +181,45 @@ public final class PatchEngine {
         return planTableSetCell(index, op, anchor, snapshot);
       case "table.add_row":
         return planTableAddRow(index, op, anchor, snapshot);
+      case "tracked.insert":
+        claimAnchor(index, anchor, "tracked.insert", textClaims);
+        return planTrackedInsert(index, op, anchor, snapshot);
+      case "tracked.delete":
+        claimAnchor(index, anchor, "tracked.delete", textClaims);
+        return planTrackedFindOp(index, op, anchor, snapshot, true);
+      case "tracked.replace":
+        claimAnchor(index, anchor, "tracked.replace", textClaims);
+        return planTrackedFindOp(index, op, anchor, snapshot, false);
+      case "footer.set_page_number":
+        return planFooterPageNumber(index, op);
       default:
         throw new PatchException(
             "op["
                 + index
                 + "] 未知操作类型: "
                 + kind
-                + "（可用: insert/replace_text/delete/set_style/table.set_cell/table.add_row）");
+                + "（可用: insert/replace_text/delete/set_style/table.set_cell/table.add_row/"
+                + "tracked.insert/tracked.delete/tracked.replace/footer.set_page_number）");
+    }
+  }
+
+  /** 同锚点改文本独占：tracked.* 与 replace_text 共用。第二个认领者整体拒绝（零写入），提示拆成两次 edit_document。 */
+  private static void claimAnchor(
+      int index, String anchor, String kind, Map<String, Integer> claims) {
+    if (anchor == null || anchor.isEmpty()) {
+      throw new PatchException("op[" + index + "] " + kind + " 需要 anchor（段落短 ID）");
+    }
+    Integer previous = claims.putIfAbsent(anchor, index);
+    if (previous != null) {
+      throw new PatchException(
+          "op["
+              + index
+              + "] 锚点 "
+              + anchor
+              + " 已被 op["
+              + previous
+              + "] 认领——同一批 ops 里每个段落至多一个改文本 op（tracked.*/replace_text），"
+              + "请拆成两次 edit_document 依次调用");
     }
   }
 
@@ -468,6 +516,181 @@ public final class PatchEngine {
   }
 
   // ==================== 执行期辅助 ====================
+
+  /** tracked.insert：段末追加一条 ins 修订（位置语义正确——addInsertion 就是段末追加）。 */
+  private static PlannedOp planTrackedInsert(
+      int index, Map<String, Object> op, String anchor, Snapshot snapshot) {
+    Paragraph paragraph = snapshot.requireParagraph(anchor, index);
+    String text = str(op, "text", index);
+    String author = author(op, index);
+    return new PlannedOp("tracked.insert " + anchor + " +" + text.length() + " 字") {
+      @Override
+      void execute(
+          Document doc,
+          Snapshot snap,
+          List<String> changed,
+          List<String> warningsOut,
+          StyleProfile profile) {
+        paragraph.addInsertion(author, text);
+        changed.add(anchor);
+      }
+    };
+  }
+
+  /**
+   * tracked.delete / tracked.replace：按 find 定位（多处命中全部处理，与 replace_text 一致）。
+   *
+   * <p>preflight 只做存在性校验；<b>偏移量在执行时按活文本计算</b>（tracked del 会把被删文本从 text() 里移走，preflight
+   * 快照不能复用），从右到左应用避免偏移漂移。同锚点独占规则（{@link #claimAnchor}）保证执行时 文本就是 preflight 时看到的文本。
+   */
+  private static PlannedOp planTrackedFindOp(
+      int index, Map<String, Object> op, String anchor, Snapshot snapshot, boolean deleteOnly) {
+    Paragraph paragraph = snapshot.requireParagraph(anchor, index);
+    String find = str(op, "find", index);
+    String author = author(op, index);
+    String text = deleteOnly ? null : str(op, "text", index);
+    if (!paragraph.text().contains(find)) {
+      throw new PatchException(
+          "op[" + index + "] 段落 " + anchor + " 文本中找不到「" + find + "」（实际: " + paragraph.text() + "）");
+    }
+    String described = deleteOnly ? "tracked.delete" : "tracked.replace";
+    return new PlannedOp(
+        described + " " + anchor + " 「" + find + "」" + (deleteOnly ? "" : "→「" + text + "」")) {
+      @Override
+      void execute(
+          Document doc,
+          Snapshot snap,
+          List<String> changed,
+          List<String> warningsOut,
+          StyleProfile profile) {
+        int[] applied = {0};
+        forEachOccurrenceRightToLeft(
+            paragraph,
+            find,
+            (start, end) -> {
+              if (deleteOnly) {
+                paragraph.deleteTrackedRange(author, start, end);
+              } else {
+                paragraph.replaceTrackedRange(author, start, end, text);
+              }
+              applied[0]++;
+            });
+        if (applied[0] == 0) {
+          // 独占规则下不应发生；真发生说明契约被打破，按执行期意外上抛
+          throw new IllegalStateException(
+              "tracked op 执行期未命中「" + find + "」（不应发生，文本在 preflight 后被改动）");
+        }
+        changed.add(anchor);
+      }
+    };
+  }
+
+  /** footer.set_page_number：页脚追加页码段落（不触碰正文段落）。 */
+  private static PlannedOp planFooterPageNumber(int index, Map<String, Object> op) {
+    String format =
+        op.get("format") == null || String.valueOf(op.get("format")).trim().isEmpty()
+            ? "第 {page} 页"
+            : String.valueOf(op.get("format")).trim();
+    // 先扫占位符合法性（未知 token 优先报具体名字），再校验至少含一个占位符
+    int brace = format.indexOf('{', 0);
+    while (brace >= 0) {
+      int close = format.indexOf('}', brace + 1);
+      String token = close > brace ? format.substring(brace, close + 1) : "";
+      if (!"{page}".equals(token) && !"{pages}".equals(token)) {
+        throw new PatchException(
+            "op["
+                + index
+                + "] format 含未知占位符 "
+                + (token.isEmpty() ? "'{'（未闭合）" : token)
+                + "（可用: {page}/{pages}）");
+      }
+      brace = format.indexOf('{', brace + 1);
+    }
+    if (!format.contains("{page}") && !format.contains("{pages}")) {
+      throw new PatchException(
+          "op[" + index + "] format 需要含 {page}（当前页码）或 {pages}（总页数）占位符，如「第 {page} 页 / 共 {pages} 页」");
+    }
+    return new PlannedOp("footer.set_page_number \"" + format + "\"") {
+      @Override
+      void execute(
+          Document doc,
+          Snapshot snap,
+          List<String> changed,
+          List<String> warningsOut,
+          StyleProfile profile) {
+        Paragraph paragraph = doc.ensureFooter().addParagraph();
+        int cursor = 0;
+        while (cursor < format.length()) {
+          int page = format.indexOf("{page}", cursor);
+          int pages = format.indexOf("{pages}", cursor);
+          // {pages} 优先于 {page}（前者是后者的前缀扩展）
+          int hit;
+          boolean isPages;
+          if (pages >= 0 && (page < 0 || pages <= page)) {
+            hit = pages;
+            isPages = true;
+          } else if (page >= 0) {
+            hit = page;
+            isPages = false;
+          } else {
+            hit = -1;
+            isPages = false;
+          }
+          if (hit < 0) {
+            appendLiteral(paragraph, format.substring(cursor));
+            break;
+          }
+          if (hit > cursor) {
+            appendLiteral(paragraph, format.substring(cursor, hit));
+          }
+          // 带缓存结果的域：Word/WPS 打开时重算，POI/文本抽取器读到缓存值 "1"
+          paragraph.addSimpleField(isPages ? "NUMPAGES" : "PAGE", "1");
+          cursor = hit + (isPages ? 7 : 6);
+        }
+        changed.add("footer");
+      }
+    };
+  }
+
+  /** 追加字面文本段（空段跳过）。 */
+  private static void appendLiteral(Paragraph paragraph, String literal) {
+    if (!literal.isEmpty()) {
+      paragraph.addRun(literal);
+    }
+  }
+
+  /** 在段落活文本里从右到左枚举 find 的全部命中（半开区间），供 tracked op 依次应用。 */
+  private interface OccurrenceVisitor {
+
+    void accept(int start, int end);
+  }
+
+  private static void forEachOccurrenceRightToLeft(
+      Paragraph paragraph, String find, OccurrenceVisitor visitor) {
+    String text = paragraph.text();
+    List<int[]> ranges = new ArrayList<>();
+    int from = 0;
+    while (from <= text.length()) {
+      int found = text.indexOf(find, from);
+      if (found < 0) {
+        break;
+      }
+      ranges.add(new int[] {found, found + find.length()});
+      from = found + 1;
+    }
+    for (int i = ranges.size() - 1; i >= 0; i--) {
+      visitor.accept(ranges.get(i)[0], ranges.get(i)[1]);
+    }
+  }
+
+  /** 修订作者必填（空白拒绝）。 */
+  private static String author(Map<String, Object> op, int index) {
+    String author = op.get("author") == null ? "" : String.valueOf(op.get("author")).trim();
+    if (author.isEmpty()) {
+      throw new PatchException("op[" + index + "] 缺少必填字段 author（修订作者，Word 修订窗格显示它）");
+    }
+    return author;
+  }
 
   /** 定位插入的 body 序号：start=0；end=末尾；before/after=锚点当前 body 位置（±1）。 */
   private static int resolveBodyIndex(

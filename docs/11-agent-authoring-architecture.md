@@ -279,7 +279,8 @@ CJK 的 `eastAsia`/`latin` 字体槽、首行缩进、行距这些 Word 坑，�
 ### P2：编辑与模板
 
 - `edit_document` patch 引擎，接 tracked changes / comments。
-  （patch 引擎已落地并 A/B（§6.4）：6 op、原子、dry-run；修订/批注 op 是下一批。）
+  （已落地并 A/B（§6.4/§6.5）：10 op（含 tracked.*/页脚页码）、原子、dry-run，baseline 10/10；
+  批注 op 仍待做。）
 - `fill_template`：占位符、重复表格行、条件段。
 - `render_preview`：LibreOffice headless → PDF/PNG。
 - 把 `QualityCheckTools` 升级成编译器的 post-condition，而不是事后可选检查。
@@ -514,6 +515,56 @@ mvn -q -pl nondocx-core,nondocx-toolkit install -DskipTests
 mvn -q -pl nondocx-examples -Dexec.mainClass=...eval.EvalMain exec:java \
   -Dexec.args="--surface compiler --group baseline"
 ```
+
+### 6.5 修订与页脚 op：补齐最后两个缺口（P2 续，2026-10-30）
+
+§6.4 的 2 条失败是预告的 op 集缺口，本批补齐：`edit_document` op 集 6→10——
+`tracked.insert` / `tracked.delete` / `tracked.replace`（修订创作，author 必传）+
+`footer.set_page_number`（页脚页码，`{page}`/`{pages}` 占位符）。工具数不变（6 入口），
+能力清单仍 66。
+
+**core 侧两个新 API**（POI 没有的高层语义）：
+
+- `Paragraph.replaceTrackedRange(author, start, end, newText)`——**范围级最小 diff 修订替换**：
+  逐 run 切片 del「find」范围 + ins 紧随其后（复用 `addDeletionSlice`，新下沉
+  `addInsertionAfter` 定位 ins——`addInsertion` 只能段末追加，直接组合会把新文本放到句号后）。
+  ins run 复制范围内首个 run 的 rPr（替换保留格式）。
+- `Paragraph.addSimpleField(instruction, cachedResult)`——**带缓存结果的简单域**（五 run：
+  begin/instr/separate/result/end）。实证：纯指令域的 `footer.text()` 读出「第  页」无数字
+  （POI 不计算域值）；缓存结果让所有 POI 系读者读到「1」，Word/WPS 打开时重算。这是
+  footer-page-number 双面失败（full 面 20 次调用）的根因之一——写侧此前没有能用的域 API。
+
+**同锚点独占规则**：`tracked.*` 与 `replace_text` 每批对同一段落锚点至多一条（修订偏移按
+执行时活文本从右到左计算——tracked del 会把被删文本从 `text()` 移走、ins 对 POI 读侧不可见，
+同锚点多条互相污染），第二个认领者整体拒绝并提示拆批。页脚 op 不占段落锚点，可与正文 op 同批。
+
+baseline 组复跑（同口径 `qwen3.8-27b`，温度 0，runId `20261030-010150-507`）：
+
+| 指标 | full 面（58 工具） | compiler 面（6 工具） |
+|---|---|---|
+| 通过率 | 9/10 | **10/10** |
+| 平均调用 | 6.2 | 8.0 |
+| `tracked-replace` | ✅（修订面工具） | ✅ **6 次**（1 次 edit_document 直达） |
+| `footer-page-number` | ❌（20 次，capabilityGap） | ✅ **4 次**（1 次 edit_document 直达） |
+
+**读法（诚实口径）**：
+
+- 两个新任务都是**一次 edit_document 命中**：`tracked.replace` 带 author=审查员单发；
+  `footer.set_page_number` format=「第 {page} 页」单发。产物语义抽查：del 只包住
+  「一百万元」、ins 紧随其后；页脚域含 separate + 缓存 "1"，正文零改动。
+- compiler 面**首次反超 full 面**（10/10 vs 9/10）：多出的正是 full 面至今过不了的
+  footer-page-number——不是模型问题，是 full 面没有可用的写侧域 API。
+- 平均 8.0 仍高于 full 的 6.2：大头还是 `insert-centered-title` 的记号混淆波动
+  （本次 26 次，历史 11~23），其余 9 任务平均 6.0。该波动是提示词层问题
+  （把 `{align=center}` 误当正文），与 op 架构无关，留给 prompt 迭代。
+- 已知语义边界（实证后写进 spec）：tracked 修订后 `read_document` 正文视图不含 ins 内容、
+  被删文本已移除（POI `getRuns()` 不暴露 `w:ins`/`w:del` 内 run）——核对修订用
+  review_intent（其 view 面含 view_tracked_changes），页脚靠 `<!-- 页脚: … -->` 元数据行
+  （MarkdownView v2 新增，round-trip 安全）。
+
+**结论**：op 集补齐后 compiler 面 baseline 10/10，「文档 IR + patch」路线在编辑侧也站住了。
+下一步的高价值项：demo 切 compiler 面（数据已齐：新建 5/5、编辑 10/10）、
+`insert-centered-title` 的记号混淆 prompt 治理。
 
 ---
 

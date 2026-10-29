@@ -227,3 +227,23 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   `PatchException` 且**零写入**；执行期不应有可预期失败。锚点编号与 `read_document`
   同源（`pN`/`tN`），插入块复用 Markdown 解析器。执行期意外异常按「可能部分应用」上报，
   不得伪装成功——`PatchEngineTest#atomicPreflightFailureLeavesDocumentUntouched` 锁死零写入。
+- **同锚点改文本独占**（P2 续）：`tracked.*` 与 `replace_text` 每批 ops 里对同一段落锚点
+  至多一条（第二个认领者整体拒绝，提示拆两次 `edit_document`）。原因：tracked del 会把
+  被删文本从 `text()` 移走、ins 文本对 POI 读侧不可见（`w:ins` 内 run 不被
+  `XWPFParagraph.getRuns()` 暴露），修订偏移必须按**执行时活文本**从右到左计算——
+  同锚点多条会互相污染。
+- **tracked.replace 是最小 diff**（P2 续）：core `Paragraph.replaceTrackedRange` 逐 run 切片
+  del「find」范围 + ins 紧随其后（core 唯一的「定位 ins」下沉点在
+  `TrackedChangeNodes.addInsertionAfter`——`addInsertion` 只能段末追加，直接组合会把 ins
+  放到句号后）。XmlBeans 陷阱：`moveXml` 移动过的节点句柄会断连，靠 id 重查活句柄
+  （`delById`/`insertedRunByRevisionId`）；accept/reject 在 POI 缓存之下改动，测试断言
+  文本必须 save+reopen 再读（同批 tracked op 断言修订本身不受影响）。
+- **页脚页码域必须带缓存结果**（P2 续）：纯指令域（begin/instr/end 三 run）的
+  `footer.text()` 读出「第  页」无数字——所有 POI 系读者都看不到域值。core
+  `Paragraph.addSimpleField(instruction, cachedResult)` 写五 run 形态
+  （begin/instr/**separate/result**/end），result 是普通 `w:t` run（返回它，可链式设样式），
+  Word/WPS 打开时重算。`footer.set_page_number` op 的 format 支持 `{page}`/`{pages}` 占位符，
+  缓存值固定 "1"（多页文档里每页真值只有渲染引擎知道）。
+- **read_document 的页脚元数据行**（P2 续）：`MarkdownView` 在正文后输出
+  `<!-- 页脚: … -->`（存在且非空才输出）——页码写入后模型能读到核对；注释形态保
+  round-trip（`CompilerPipelineTest#markdownViewShowsFooterAsMetadataAndKeepsRoundTrip`）。

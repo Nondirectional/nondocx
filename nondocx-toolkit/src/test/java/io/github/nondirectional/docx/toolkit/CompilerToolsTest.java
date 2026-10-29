@@ -172,6 +172,39 @@ class CompilerToolsTest {
     tk.session.closeDocx(docId);
   }
 
+  @Test
+  void editDocumentSupportsTrackedAndFooterOps(@TempDir Path temp) throws Exception {
+    DocxToolkit tk = new DocxToolkit();
+    String docId = ToolTestSupport.extractDocId(tk.session.openDocx(seed(temp)));
+
+    // 修订替换 + 页脚页码一次表达；read_document 能读回页脚核对
+    java.util.Map<String, Object> tracked =
+        new java.util.LinkedHashMap<>(
+            java.util.Map.of(
+                "op", "tracked.replace",
+                "anchor", "p0",
+                "find", "旧内容",
+                "text", "新内容",
+                "author", "审查员"));
+    java.util.Map<String, Object> footer =
+        new java.util.LinkedHashMap<>(java.util.Map.of("op", "footer.set_page_number"));
+    String raw = tk.compiler.editDocument(docId, List.of(tracked, footer), null, null, null);
+    ToolResultParser.Snapshot parsed = ToolTestSupport.parse(raw);
+    assertThat(parsed).isNotNull();
+    assertThat(parsed.success()).isTrue();
+
+    Document after = tk.session.getDocument(docId);
+    assertThat(after.trackedChanges().list()).hasSize(2);
+    assertThat(after.trackedChanges().list().get(0).author()).isEqualTo("审查员");
+    assertThat(after.footer().text()).contains("第").contains("1");
+    assertThat(after.paragraph(0).text()).isEmpty(); // POI 盲区：del 已从 text() 移除、ins 不可见
+
+    // read_document 的 Markdown 视图带页脚元数据行
+    String readBack = tk.compiler.readDocument(docId, null);
+    assertThat(ToolTestSupport.parse(readBack).dataText()).contains("<!-- 页脚: 第 1 页 -->");
+    tk.session.closeDocx(docId);
+  }
+
   private static String seed(Path temp) throws Exception {
     java.nio.file.Path file = temp.resolve("seed.docx");
     try (Document doc = Docx.create()) {

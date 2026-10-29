@@ -59,7 +59,7 @@ agent.run("把 /tmp/a.docx 第一段第一个 run 的文本改成 'Hello'");
 | `trackedChangeAuthoring` | `TrackedChangeAuthoringTools` | 修订创作：insert/delete/replace/move/mark |
 | `qualityCheck` | `QualityCheckTools` | 版式/兼容性自检（10 项检查，报告不修复） |
 | `view` | `ViewTools` | 语义视图（outline/text/annotated/stats/issues/element） |
-| `compiler` | `CompilerTools` | 文档编译器（实验性）：Markdown → docx，create/read/validate_document |
+| `compiler` | `CompilerTools` | 文档编译器（实验性）：Markdown → docx + patch 编辑，create/read/validate/edit_document |
 
 ### 为什么需要门面（会话状态共享）
 
@@ -216,9 +216,9 @@ check_quality({
 | 工具 | 作用 |
 |---|---|
 | `create_document` | Markdown 子集 + 样式 profile 一次性编译整份 docx，**替换** doc_id 会话文档（句柄不变、generation+1） |
-| `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，与写侧同构（round-trip） |
+| `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页脚以 `<!-- 页脚: … -->` 元数据行呈现，与写侧同构（round-trip） |
 | `validate_document` | 复用 10 项质量检查，输出带 `v1/v2` 编号的问题清单 |
-| `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row），短 ID 锚点，支持 dry_run |
+| `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number），短 ID 锚点，支持 dry_run |
 
 **Markdown 子集**：`#`~`######` 标题（可带 `{align=center|left|right|both}` 行尾属性）、段落、
 `**粗体**`/`*斜体*`/`` `代码` ``、`- `/`1. ` 列表（缩进 2 空格一级）、`|…|` 表格
@@ -246,7 +246,7 @@ create_document({
 })
 ```
 
-**edit_document 的 op 集**（锚点 = `read_document` 的短 ID）：
+**edit_document 的 op 集**（v2，锚点 = `read_document` 的短 ID）：
 
 ```json
 {"op":"insert","anchor":"p3","position":"after","block":"# 小节 {align=center}\n\n正文。"}
@@ -255,11 +255,26 @@ create_document({
 {"op":"set_style","anchor":"p8","style":"body"}          // 或 heading；也可只用 align/line_spacing
 {"op":"table.set_cell","anchor":"t0","row":1,"col":2,"text":"完成"}
 {"op":"table.add_row","anchor":"t0","cells":["a","b"]}
+{"op":"tracked.replace","anchor":"p1","find":"一百万元","text":"两百万元","author":"审查员"}
+{"op":"tracked.insert","anchor":"p1","text":"补充说明。","author":"审查员"}
+{"op":"tracked.delete","anchor":"p1","find":"过期内容","author":"审查员"}
+{"op":"footer.set_page_number"}                          // format 默认「第 {page} 页」
 ```
 
 先 preflight 全部 op 再统一写入：锚点不存在、`find` 不在文中、行列越界、表格块非 end
-插入、引用本 patch 前序删除的锚点——任一失败**整体拒绝、零改动**。`replace_text` 跨 run
-时整段重建为单 run（丢段内直接格式，记 warning）。
+插入、引用本 patch 前序删除的锚点、同一锚点多个改文本 op——任一失败**整体拒绝、零改动**。
+`replace_text` 跨 run 时整段重建为单 run（丢段内直接格式，记 warning）。
+
+**tracked.\*（修订模式）**：产出 Word 可审阅的 ins/del 修订（`author` 必传）。`tracked.replace`
+是**最小 diff**——只 del「find」范围、ins 紧随其后（core `Paragraph.replaceTrackedRange`），
+不是整段重建。`find` 多处命中全部替换。已知语义边界：tracked del 后被删文本从 `text()`
+消失、ins 文本对 POI 读侧不可见（`w:ins` 内 run 不被 `XWPFParagraph.getRuns()` 暴露）——读
+修订用 `trackedChanges()`，`read_document` 的正文视图同样不含 ins 内容。
+
+**footer.set_page_number**：页脚**追加**页码段落（不触碰正文），`format` 支持 `{page}`/`{pages}`
+占位符（PAGE/NUMPAGES 域）。域带**缓存结果** "1"（五 run 形态：begin/instr/separate/result/end）
+——POI/文本抽取器能读到「第 1 页」，Word/WPS 打开时按当前文档重算。同锚点独占规则不适用于
+页脚 op（它不占段落锚点）。
 
 **位置约定**：本组在 `DocxToolkit.scanAll` 里（能力清单第 9 组，EXPERIMENTAL 级），但
 **默认不进 demo/eval 的 full 工具面**——是否成为默认面由评测数据决定（见 doc 11 §P1/P2）。

@@ -252,8 +252,12 @@ public final class CompilerTools extends ToolkitToolContext {
               + "op 类型：insert（position=before/after/start/end + block=Markdown 块，含表格时仅 end）、"
               + "replace_text（anchor+find+text，段落内精确子串）、delete（anchor 段落）、"
               + "set_style（anchor + style=body/heading 或 align/line_spacing）、"
-              + "table.set_cell（anchor+row+col+text）、table.add_row（anchor+cells）。"
+              + "table.set_cell（anchor+row+col+text）、table.add_row（anchor+cells）、"
+              + "tracked.insert/tracked.delete/tracked.replace（修订模式，anchor+find/text+author 必传，"
+              + "修订可被 Word 审阅 accept/reject）、"
+              + "footer.set_page_number（页脚页码，format 含 {page}/{pages} 占位符，默认「第 {page} 页」，不占 anchor）。"
               + "先校验全部 op 再写入：任一 op 非法则整体拒绝、零改动。"
+              + "每个段落锚点一批里至多一个改文本 op（tracked.*/replace_text），要改多处请拆两次调用。"
               + "多步编辑优先用它一次表达，不要逐段调用。dry_run=true 只返回计划。")
   @ToolCapability(
       operation = CapabilityOperation.UPDATE,
@@ -266,9 +270,10 @@ public final class CompilerTools extends ToolkitToolContext {
               name = "ops",
               description =
                   "op 对象数组，如 [{\"op\":\"insert\",\"anchor\":\"p3\",\"position\":\"after\","
-                      + "\"block\":\"# 小节 {align=center}\"}, {\"op\":\"set_style\",\"anchor\":\"p1\","
-                      + "\"style\":\"body\"}, {\"op\":\"table.set_cell\",\"anchor\":\"t0\","
-                      + "\"row\":1,\"col\":2,\"text\":\"完成\"}]")
+                      + "\"block\":\"# 小节 {align=center}\"}, {\"op\":\"table.set_cell\",\"anchor\":\"t0\","
+                      + "\"row\":1,\"col\":2,\"text\":\"完成\"}, {\"op\":\"tracked.replace\","
+                      + "\"anchor\":\"p1\",\"find\":\"一百万元\",\"text\":\"两百万元\",\"author\":\"审查员\"}, "
+                      + "{\"op\":\"footer.set_page_number\"}]")
           @NestedParamCapability(path = "ops.op", type = ParamType.STRING)
           @NestedParamCapability(path = "ops.anchor", type = ParamType.STRING)
           @NestedParamCapability(path = "ops.position", type = ParamType.STRING)
@@ -281,6 +286,8 @@ public final class CompilerTools extends ToolkitToolContext {
           @NestedParamCapability(path = "ops.row", type = ParamType.INTEGER)
           @NestedParamCapability(path = "ops.col", type = ParamType.INTEGER)
           @NestedParamCapability(path = "ops.cells", type = ParamType.STRING_ARRAY)
+          @NestedParamCapability(path = "ops.author", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.format", type = ParamType.STRING)
           List<Map<String, Object>> ops,
       @ToolParam(name = "dry_run", description = "只返回计划不写入（默认 false）", required = false)
           @ParamCapability(type = ParamType.BOOLEAN)

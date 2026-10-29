@@ -340,6 +340,272 @@ class PatchEngineTest {
     }
   }
 
+  // ==================== tracked.* op（v2） ====================
+
+  @Test
+  void trackedReplaceCreatesMinimalDiffRevisions() throws Exception {
+    java.nio.file.Path file = java.nio.file.Files.createTempFile("tracked-replace", ".docx");
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("正文");
+      doc.addParagraph("合同金额为一百万元。");
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op", "tracked.replace",
+                      "anchor", "p1",
+                      "find", "一百万元",
+                      "text", "两百万元",
+                      "author", "审查员")),
+              REPORT_CN,
+              false);
+      assertThat(result.applied()).isEqualTo(1);
+      assertThat(result.changed()).containsExactly("p1");
+      // 最小 diff：只 del「一百万元」+ ins 紧随其后，两句修订
+      assertThat(doc.trackedChanges().list()).hasSize(2);
+      assertThat(doc.trackedChanges().list()).allMatch(c -> "审查员".equals(c.author()));
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document opened = Docx.open(file)) {
+      // accept 后正文完成替换（accept/reject 改动 POI 缓存之下，按惯例 save+reopen 再读）
+      assertThat(opened.trackedChanges().acceptAll()).isEqualTo(2);
+      java.nio.file.Path accepted = java.nio.file.Path.of(file + ".accepted.docx");
+      opened.save(accepted);
+      try (Document result = Docx.open(accepted)) {
+        assertThat(result.paragraph(1).text()).isEqualTo("合同金额为两百万元。");
+      }
+    }
+  }
+
+  @Test
+  void trackedReplaceAllOccurrencesAndTrackedInsertDelete() throws Exception {
+    java.nio.file.Path file = java.nio.file.Files.createTempFile("tracked-multi", ".docx");
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("TODO 甲，TODO 乙。");
+      PatchEngine.apply(
+          doc,
+          ops(
+              op(
+                  "op",
+                  "tracked.replace",
+                  "anchor",
+                  "p0",
+                  "find",
+                  "TODO",
+                  "text",
+                  "完成",
+                  "author",
+                  "a")),
+          REPORT_CN,
+          false);
+      // 两处命中 → 2 del + 2 ins
+      assertThat(doc.trackedChanges().list()).hasSize(4);
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document opened = Docx.open(file)) {
+      assertThat(opened.trackedChanges().acceptAll()).isEqualTo(4);
+      java.nio.file.Path accepted = java.nio.file.Path.of(file + ".accepted.docx");
+      opened.save(accepted);
+      try (Document result = Docx.open(accepted)) {
+        assertThat(result.paragraph(0).text()).isEqualTo("完成 甲，完成 乙。");
+      }
+    }
+
+    // tracked.insert：段末追加 ins 修订；tracked.delete：find 定位删除
+    Document second = Docx.create();
+    try {
+      second.addParagraph("段落。");
+      second.addParagraph("删除我：目标文本。");
+      PatchEngine.apply(
+          second,
+          ops(
+              op("op", "tracked.insert", "anchor", "p0", "text", "（补）", "author", "a"),
+              op("op", "tracked.delete", "anchor", "p1", "find", "目标文本", "author", "a")),
+          REPORT_CN,
+          false);
+      assertThat(second.trackedChanges().list()).hasSize(2);
+      assertThat(second.trackedChanges().list().get(0).author()).isEqualTo("a");
+      // del 已从 text() 移除（POI 盲区：ins 不可见、del 移除）
+      assertThat(second.paragraph(1).text()).isEqualTo("删除我：。");
+    } finally {
+      second.close();
+    }
+  }
+
+  @Test
+  void sameAnchorTextOpsAreExclusivelyClaimed() {
+    Document doc = sample();
+    try {
+      // replace_text 与 tracked.replace 同锚点 → 整体拒绝、零写入
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op("op", "replace_text", "anchor", "p0", "find", "第一", "text", "x"),
+                          op(
+                              "op", "tracked.replace",
+                              "anchor", "p0",
+                              "find", "第一",
+                              "text", "y",
+                              "author", "a")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("至多一个改文本 op");
+      assertThat(doc.paragraph(0).text()).isEqualTo("第一段");
+      assertThat(doc.trackedChanges().list()).isEmpty();
+      // 不同锚点的 tracked ops 可同批
+      PatchEngine.apply(
+          doc,
+          ops(
+              op(
+                  "op",
+                  "tracked.replace",
+                  "anchor",
+                  "p0",
+                  "find",
+                  "第一",
+                  "text",
+                  "首要",
+                  "author",
+                  "a"),
+              op("op", "tracked.insert", "anchor", "p1", "text", "尾", "author", "a")),
+          REPORT_CN,
+          false);
+      assertThat(doc.trackedChanges().list()).hasSize(3);
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void trackedPreflightValidatesFindAndAuthorAtomically() {
+    Document doc = sample();
+    try {
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op(
+                              "op",
+                              "tracked.replace",
+                              "anchor",
+                              "p0",
+                              "find",
+                              "没有的",
+                              "text",
+                              "x",
+                              "author",
+                              "a")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("找不到");
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(op("op", "tracked.delete", "anchor", "p0", "find", "第一")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("author");
+      assertThat(doc.trackedChanges().list()).isEmpty();
+      assertThat(doc.paragraph(0).text()).isEqualTo("第一段");
+    } finally {
+      doc.close();
+    }
+  }
+
+  // ==================== footer.set_page_number op（v2） ====================
+
+  @Test
+  void footerPageNumberAppendsCachedFieldReadableByPoi() {
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("正文");
+      doc.ensureFooter().addParagraph().addRun("页脚");
+      int paragraphsBefore = doc.paragraphs().size();
+      PatchResult result =
+          PatchEngine.apply(doc, ops(op("op", "footer.set_page_number")), REPORT_CN, false);
+      assertThat(result.changed()).containsExactly("footer");
+      // 正文不动
+      assertThat(doc.paragraphs()).hasSize(paragraphsBefore);
+      assertThat(doc.paragraph(0).text()).isEqualTo("正文");
+      // POI 文本读侧能读到「第 1 页」（带缓存结果的域）
+      String footerText = doc.footer().text();
+      assertThat(footerText).contains("第").contains("1");
+      assertThat(footerText).doesNotContain("{page}");
+      // 域指令确实写入（PAGE）
+      boolean hasPageInstr = false;
+      for (var run : doc.footer().paragraph(1).raw().getRuns()) {
+        if (run.getCTR().sizeOfInstrTextArray() > 0
+            && run.getCTR().getInstrTextArray(0).getStringValue().contains("PAGE")) {
+          hasPageInstr = true;
+        }
+      }
+      assertThat(hasPageInstr).isTrue();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void footerPageNumberCustomFormatAndValidation() {
+    Document doc = Docx.create();
+    try {
+      // 自定义 format：PAGE + NUMPAGES 双域
+      PatchEngine.apply(
+          doc,
+          ops(op("op", "footer.set_page_number", "format", "第 {page} 页 / 共 {pages} 页")),
+          REPORT_CN,
+          false);
+      assertThat(doc.footer().text()).contains("第 1 页 / 共 1 页");
+      // 无占位符 / 未知占位符 → 拒绝且不创建页脚段落
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(op("op", "footer.set_page_number", "format", "第几页")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("{page}");
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(op("op", "footer.set_page_number", "format", "第 {count} 页")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("{count}");
+      assertThat(doc.footer().paragraphs()).hasSize(1);
+      // 页脚 op 可与正文 op 同批（不占锚点）
+      doc.addParagraph("正文段");
+      PatchEngine.apply(
+          doc,
+          ops(
+              op("op", "footer.set_page_number"),
+              op("op", "replace_text", "anchor", "p0", "find", "正文", "text", "改写")),
+          REPORT_CN,
+          false);
+      assertThat(doc.paragraph(0).text()).isEqualTo("改写段");
+      assertThat(doc.footer().paragraphs()).hasSize(2);
+    } finally {
+      doc.close();
+    }
+  }
+
   // ==================== fixture ====================
 
   private static Document sample() {

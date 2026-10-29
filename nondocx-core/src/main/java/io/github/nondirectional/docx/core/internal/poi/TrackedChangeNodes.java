@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.xmlbeans.XmlCursor;
+import org.apache.xmlbeans.XmlObject;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBody;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange;
@@ -493,6 +494,67 @@ public final class TrackedChangeNodes {
   public static void validateDeletionSlice(CTR targetRun) {
     java.util.Objects.requireNonNull(targetRun, "targetRun");
     requirePlainTextRun(targetRun);
+  }
+
+  /**
+   * 在段落内<b>指定锚点节点之后</b>（而不是段落末尾）创建一条 tracked insertion，内含一个承载 {@code text} 的 run。
+   *
+   * <p>它是「范围替换」({@code Paragraph.replaceTrackedRange})的定位插入下沉：{@link #addInsertion} 只能把 {@code
+   * <w:ins>} 追加到段落末尾，而替换需要 ins 紧跟在被替换范围的 {@code <w:del>} 之后。实现上先在段末建 ins，再用 {@link XmlCursor}
+   * 把它移到锚点的结束 token 之后（moveXml 把节点放到 cursor 位置之前，故先 {@code toEndToken()} 再 {@code toNextToken()}
+   * 即「锚点之后、锚点下一兄弟之前」）。
+   *
+   * <p>{@code styleSource} 非空时，新 run 复制它的完整 {@code rPr}（「替换保留格式」语义）；传 {@code null} 则新 run
+   * 无样式起步。调用方需自行推进 {@code nextRevisionId}。
+   *
+   * <p>内部 API——仅供 core 活对象调用；调用方保证锚点属于该段落且已完成 author/text 校验。
+   *
+   * <p><b>返回值陷阱。</b> ins 建立后会被 {@code moveXml} 移动定位，返回的句柄可能已断连（XmlBeans 既有行为）—— 只能立即读元数据；
+   * 需要稳定句柄的调用方应记下 {@code revisionId}，事后按 id 重新查询。
+   *
+   * @param paragraph 目标段落的底层 CTP（不能为 {@code null}）
+   * @param anchor 定位锚点（通常是范围替换里最右侧的 {@code <w:del>}；不能为 {@code null}）
+   * @param styleSource 新 run 的样式来源（可 {@code null}）
+   * @param text 插入的文本（不能为 {@code null}）
+   * @param author 修订作者（不能为 {@code null}）
+   * @param date 修订时间（不能为 {@code null}）
+   * @param revisionId 底层 OOXML {@code w:id}（不能为 {@code null}）
+   * @return 新建的 {@code <w:ins>} 节点
+   */
+  public static CTRunTrackChange addInsertionAfter(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP paragraph,
+      XmlObject anchor,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr styleSource,
+      String text,
+      String author,
+      java.util.Calendar date,
+      java.math.BigInteger revisionId) {
+    java.util.Objects.requireNonNull(paragraph, "paragraph");
+    java.util.Objects.requireNonNull(anchor, "anchor");
+    java.util.Objects.requireNonNull(text, "text");
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(date, "date");
+    java.util.Objects.requireNonNull(revisionId, "revisionId");
+    CTRunTrackChange ins = paragraph.addNewIns();
+    ins.setId(revisionId);
+    ins.setAuthor(author);
+    ins.setDate(date);
+    CTR r = ins.addNewR();
+    if (styleSource != null) {
+      r.setRPr((org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr) styleSource.copy());
+    }
+    setTextValue(r.addNewT(), text);
+    XmlCursor anchorCur = anchor.newCursor();
+    XmlCursor insCur = ins.newCursor();
+    try {
+      anchorCur.toEndToken();
+      anchorCur.toNextToken();
+      insCur.moveXml(anchorCur);
+    } finally {
+      anchorCur.dispose();
+      insCur.dispose();
+    }
+    return ins;
   }
 
   /** 复制原 run 的属性并在段落末尾创建一条纯文本 run。 */

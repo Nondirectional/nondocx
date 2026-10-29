@@ -218,6 +218,29 @@ class CompilerPipelineTest {
   }
 
   @Test
+  void markdownViewShowsFooterAsMetadataAndKeepsRoundTrip() {
+    MarkdownDoc parsed = MarkdownParser.parse("正文一段。");
+    Document doc = DocumentCompiler.compile(parsed, StyleProfile.builtin("plain")).document();
+    try {
+      // 页脚不存在/为空：视图不出现页脚行
+      assertThat(MarkdownView.render(doc, 0).markdown()).doesNotContain("页脚");
+      // 页脚有内容：以元数据注释行呈现，round-trip 时被解析器剥掉
+      io.github.nondirectional.docx.core.api.text.Paragraph footerParagraph =
+          doc.ensureFooter().addParagraph();
+      footerParagraph.addRun("第 ");
+      footerParagraph.addSimpleField("PAGE", "1");
+      footerParagraph.addRun(" 页");
+      String markdown = MarkdownView.render(doc, 0).markdown();
+      assertThat(markdown).contains("<!-- 页脚: 第 1 页 -->");
+      MarkdownDoc reparsed = MarkdownParser.parse(markdown);
+      assertThat(reparsed.blocks()).hasSize(1);
+      assertThat(reparsed.warnings()).isEmpty();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
   void markdownViewTruncatesAtLineBoundary() {
     StringBuilder big = new StringBuilder();
     for (int i = 0; i < 200; i++) {

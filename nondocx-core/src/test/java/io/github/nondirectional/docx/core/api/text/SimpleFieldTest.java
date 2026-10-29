@@ -84,6 +84,55 @@ class SimpleFieldTest {
     assertThat(run.isBold()).isTrue();
   }
 
+  /** 带缓存结果的域是五 run 结构（begin/instr/separate/result/end），POI 文本读侧能看到缓存值。 */
+  @Test
+  void cachedResultFieldIsFiveRunsAndReadableAsText() {
+    Paragraph p = Docx.create().addParagraph();
+    p.addRun("第 ");
+    Run result = p.addSimpleField("PAGE", "1").bold();
+    p.addRun(" 页");
+
+    assertThat(result.text()).isEqualTo("1");
+    assertThat(result.isBold()).isTrue(); // 返回的是结果 run，可链式设样式
+    // POI 纯文本读侧能读到缓存值——纯指令域会读出「第  页」（无数字）
+    assertThat(p.text()).isEqualTo("第 1 页");
+    // 五 run 域结构（段落 run 序 1–5，前后是「第 」「 页」）：begin / instrText / separate / result / end
+    assertThat(p.raw().getRuns()).hasSize(7);
+    assertThat(readInstrText(p)).isEqualTo("PAGE");
+    assertThat(p.raw().getRuns().get(1).getCTR().getFldCharArray(0).getFldCharType().toString())
+        .isEqualTo("begin");
+    assertThat(p.raw().getRuns().get(3).getCTR().getFldCharArray(0).getFldCharType().toString())
+        .isEqualTo("separate");
+    assertThat(p.raw().getRuns().get(4).getCTR().getTArray(0).getStringValue()).isEqualTo("1");
+    assertThat(p.raw().getRuns().get(5).getCTR().getFldCharArray(0).getFldCharType().toString())
+        .isEqualTo("end");
+  }
+
+  /** 带缓存结果的域 round-trip 后指令与缓存值都存活（页脚页码场景）。 */
+  @Test
+  void cachedResultFieldRoundTrips(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("cached-field.docx");
+    Document original = Docx.create();
+    original.addParagraph("正文");
+    original.ensureFooter().addParagraph().addSimpleField("PAGE", "1");
+    original.save(file);
+
+    try (Document opened = Docx.open(file)) {
+      assertThat(readInstrText(opened.footer().paragraph(0))).isEqualTo("PAGE");
+      assertThat(opened.footer().text()).contains("1");
+    }
+  }
+
+  @Test
+  void cachedResultFieldRejectsBlank() {
+    Paragraph p = Docx.create().addParagraph();
+    assertThatThrownBy(() -> p.addSimpleField("PAGE", " "))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("单参");
+    assertThatThrownBy(() -> p.addSimpleField("PAGE", (String) null))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
   @Test
   void fieldRunsAppearInInlineElements() {
     Paragraph p = Docx.create().addParagraph();

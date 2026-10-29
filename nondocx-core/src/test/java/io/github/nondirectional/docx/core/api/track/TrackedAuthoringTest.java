@@ -208,6 +208,104 @@ class TrackedAuthoringTest {
     }
   }
 
+  /** 范围替换：ins 紧跟 del 之后（原位），accept 后得到替换文本，reject 后恢复原文。 */
+  @Test
+  void replaceTrackedRangePositionsInsertionAfterDeletion(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("author-range-replace.docx");
+    try (Document doc = Docx.open(newDoc())) {
+      Paragraph paragraph = doc.paragraph(0);
+      paragraph.addRun("合同金额为一百万元。").bold();
+      Run inserted = paragraph.replaceTrackedRange("审查员", 5, 9, "两百万元");
+      assertThat(inserted.text()).isEqualTo("两百万元");
+      assertThat(inserted.isBold()).isTrue(); // 复制范围内首个 run 的样式
+      // text() 的 POI 盲区：del 已发生（文本消失）、ins 不可见（POI 不暴露 ins 内 run）
+      assertThat(paragraph.text()).isEqualTo("合同金额为。");
+      // 结构：前缀 r → del(一百万元) → ins(两百万元) → 后缀 r，ins 在原位而非段末
+      assertThat(childLocalNames(paragraph.raw().getCTP())).containsExactly("r", "del", "ins", "r");
+      assertThat(paragraph.raw().getCTP().getDelList()).hasSize(1);
+      assertThat(
+              paragraph
+                  .raw()
+                  .getCTP()
+                  .getDelList()
+                  .get(0)
+                  .getRList()
+                  .get(0)
+                  .getDelTextArray(0)
+                  .getStringValue())
+          .isEqualTo("一百万元");
+      assertThat(
+              paragraph
+                  .raw()
+                  .getCTP()
+                  .getInsList()
+                  .get(0)
+                  .getRList()
+                  .get(0)
+                  .getTArray(0)
+                  .getStringValue())
+          .isEqualTo("两百万元");
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      List<TrackedChange> list = doc.trackedChanges().list();
+      assertThat(list).hasSize(2);
+      assertThat(list).extracting(TrackedChange::author).containsOnly("审查员");
+      assertThat(list)
+          .extracting(TrackedChange::type)
+          .containsExactlyInAnyOrder(TrackedChangeType.DEL, TrackedChangeType.INS);
+      assertThat(doc.trackedChanges().acceptAll()).isEqualTo(2);
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThat(doc.paragraph(0).text()).isEqualTo("合同金额为两百万元。");
+    }
+  }
+
+  /** 跨 run 范围替换：ins 落在<b>最右</b> del 之后（即被替换范围原位末尾），样式取首个被切 run。 */
+  @Test
+  void replaceTrackedRangeAcrossRunsInsertsAfterRightmostDel(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("author-range-replace-multi.docx");
+    try (Document doc = Docx.open(newDoc())) {
+      Paragraph paragraph = doc.paragraph(0);
+      paragraph.addRun("甲目标").bold();
+      paragraph.addRun("中间");
+      paragraph.addRun("目标乙").underline();
+      Run inserted = paragraph.replaceTrackedRange("non", 1, 7, "新");
+      assertThat(inserted.isBold()).isTrue(); // 样式来源 = 范围内首个 run（bold）
+      assertThat(childLocalNames(paragraph.raw().getCTP()))
+          .containsExactly("r", "del", "del", "del", "ins", "r");
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThat(doc.trackedChanges().acceptAll()).isEqualTo(4);
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThat(doc.paragraph(0).text()).isEqualTo("甲新乙");
+    }
+  }
+
+  /** 范围替换的入参校验：空串新文本、非法范围、空白作者都拒绝且零改动。 */
+  @Test
+  void replaceTrackedRangeValidatesArgumentsWithoutMutation() throws Exception {
+    try (Document doc = Docx.open(newDoc())) {
+      Paragraph paragraph = doc.paragraph(0);
+      paragraph.addRun("合同金额为一百万元。");
+      assertThatThrownBy(() -> paragraph.replaceTrackedRange("non", 5, 9, ""))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("deleteTrackedRange");
+      assertThatThrownBy(() -> paragraph.replaceTrackedRange("non", 9, 5, "新"))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> paragraph.replaceTrackedRange("  ", 5, 9, "新"))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> paragraph.replaceTrackedRange("non", 5, 100, "新"))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThat(doc.trackedChanges().list()).isEmpty();
+      assertThat(paragraph.text()).isEqualTo("合同金额为一百万元。");
+    }
+  }
+
   /** 范围不能落在 UTF-16 代理对中间，合法的完整代理对删除后可往返。 */
   @Test
   void rejectsSurrogatePairSplit(@TempDir Path tmp) throws Exception {
