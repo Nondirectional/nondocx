@@ -1550,3 +1550,37 @@ nondocx-examples 新增 10 条任务评测基线（v1: 8/10, 平均 6.8 次调�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 38: 任务 B：文档 IR 编译器 spike（P1）+ 评测 A/B
+<!-- trellis-session: v=2 fp=343556f6d06c65ec -->
+
+**Date**: 2026-10-29
+**Task**: 任务 B：文档 IR 编译器 spike（P1）+ 评测 A/B
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+A/B 实测（qwen3.8-27b，create 组 5 条）：compiler 面 5 工具 5/5 通过、平均 5.6 次调用、零无效；full 面 1/5、23.0 次。full 面失败为真实缺口（无列表创建、无正文缩进）+ 多步超载。实测修正：POI setFontFamily 四槽同写，编译器 raw() 的价值是 eastAsia 分离。坑：-pl 不带 -am 用旧本地 jar，改 toolkit 后须先 install
+
+### Main Changes
+
+- nondocx-toolkit 新增 compiler 包（MarkdownParser/MarkdownDoc/StyleProfile/DocumentCompiler/MarkdownView）与第 9 组工具 CompilerTools（create/read/validate_document，能力清单 62→65）；会话换血原语下沉 ToolkitToolContext.replaceSessionDocument；评测新增 create 任务组与 --surface/--group 开关
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2271ba0` | feat(toolkit): 文档 IR 编译器 spike——Markdown 子集 + 样式 profile 编译为 docx |
+
+### Testing
+
+- [OK] toolkit 210 全绿（新增 CompilerPipelineTest 8 + CompilerToolsTest 4）；examples 19 全绿（create 组防恒真 + compiler 面 5 入口锁死）；spotless 绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- P2：edit_document patch 引擎 / fill_template / render_preview；compiler 面接入 demo 待用户决定
