@@ -116,4 +116,34 @@ public final class EvalAssert {
       }
     }
   }
+
+  /**
+   * 断言段落所有非空 run 的 eastAsia 字体槽（中文字形槽）。
+   *
+   * <p>core 公开 API 的 {@code font()} 只读写 ascii 槽；中文文本在 Word/WPS 里按 eastAsia
+   * 槽渲染。编译器路径（create_document）必须把两个槽都写对——本断言经 {@code raw()} 读 eastAsia 槽，用于区分「只在 ascii 槽写了宋体」的假通过。
+   */
+  public static void assertEastAsiaFont(Paragraph paragraph, String expectedFont, String what) {
+    for (Run run : requireTextRuns(paragraph, what)) {
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr rpr =
+          run.raw().getCTR().getRPr();
+      String actual = null;
+      if (rpr != null && rpr.sizeOfRFontsArray() > 0) {
+        actual = rpr.getRFontsArray(0).getEastAsia();
+      }
+      if (!Objects.equals(expectedFont, actual)) {
+        throw new AssertionError(
+            what
+                + "：run「"
+                + run.text()
+                + "」eastAsia 字体期望「"
+                + expectedFont
+                + "」，实际「"
+                + actual
+                + "」（ascii 槽为「"
+                + run.font()
+                + "」）");
+      }
+    }
+  }
 }

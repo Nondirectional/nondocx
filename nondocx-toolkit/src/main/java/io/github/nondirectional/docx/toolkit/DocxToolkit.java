@@ -5,7 +5,7 @@ import io.github.nondirectional.docx.toolkit.capability.CapabilityTools;
 import io.github.nondirectional.docx.toolkit.view.ViewTools;
 
 /**
- * nondocx-toolkit 的聚合门面：一次构造出全部八组工具（七组文档工具 + 一组能力契约工具），并保证文档工具共享同一份会话状态。
+ * nondocx-toolkit 的聚合门面：一次构造出全部九组工具（八组文档工具 + 一组能力契约工具），并保证文档工具共享同一份会话状态。
  *
  * <p><b>为什么需要门面。</b> 文档工具按功能域拆成了七个类（{@link SessionTools} / {@link BodyTools} / {@link TableTools} /
  * {@link HeaderFooterTocTools} / {@link TrackedChangeQueryTools} / {@link
@@ -65,6 +65,12 @@ public final class DocxToolkit {
   /** 语义视图工具组：6 个 view_* 工具，为 Agent 提供低成本、可控上下文的文档语义视图。 */
   public final ViewTools view;
 
+  /**
+   * 编译器工具组（实验性）：create/read/validate_document 三工具，「文档 IR + 编译器」路线的 Agent 入口。默认不进 demo/eval 的 full
+   * 工具面；经 {@code scanAll} 进完整能力清单。
+   */
+  public final CompilerTools compiler;
+
   /** 构造全部七组工具，共享同一份文档会话状态。 */
   public DocxToolkit() {
     // 先建会话源头：SessionTools 自建 sessions/seq。
@@ -118,7 +124,15 @@ public final class DocxToolkit {
     session.bindViewService(
         new io.github.nondirectional.docx.toolkit.view.DocumentViewService(
             session.sharedReferences(), qualityCheck));
-    // 能力契约工具无会话状态，持有 8 个文档工具实例用于反射收集能力元数据。
+    // 编译器工具：注入共享会话状态 + qualityCheck 引用（validate_document 复用检查逻辑）。
+    this.compiler =
+        new CompilerTools(
+            session.sharedSessions(),
+            session.sharedSeq(),
+            session.sharedReferences(),
+            session.sharedGenerations(),
+            qualityCheck);
+    // 能力契约工具无会话状态，持有 9 个文档工具实例用于反射收集能力元数据。
     this.capability =
         new CapabilityTools(
             session,
@@ -128,7 +142,8 @@ public final class DocxToolkit {
             trackedChangeQuery,
             trackedChangeAuthoring,
             qualityCheck,
-            view);
+            view,
+            compiler);
   }
 
   /**
@@ -150,6 +165,7 @@ public final class DocxToolkit {
         .scan(trackedChangeAuthoring)
         .scan(qualityCheck)
         .scan(view)
+        .scan(compiler)
         .scan(capability);
   }
 }

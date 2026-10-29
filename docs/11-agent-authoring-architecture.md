@@ -1,9 +1,10 @@
 # 11 · Agent 写作架构建议：从「61 个工具」到「文档编译器」
 
-> 状态：建议稿（2026-10-29）
+> 状态：建议稿（2026-10-29）；P0 已落地（正文行距工具 + header/footer ref 读路径），
+> **P1 编译器 spike 已落地并通过 A/B 验证（§6.3）**，P2/P3 待启动。
 >
 > 本文记录一次针对 `nondocx-toolkit` 的架构复盘：为什么当前 Agent 写 docx 的效果不稳定，
-> 以及接下来建议走的方向。它不是已实现的设计，而是后续任务（评测基线、编译器 spike）的输入。
+> 以及接下来建议走的方向。评测基线（§6）与编译器 spike 的结果以实测数据回填在本文。
 
 ---
 
@@ -265,13 +266,14 @@ CJK 的 `eastAsia`/`latin` 字体槽、首行缩进、行距这些 Word 坑，�
 6. **修读结果重复**：`message` 给人看，`data` 给模型看；或读工具只返回一份紧凑文本。
 7. **建 10 条任务的评测基线**，先不要改架构，量出当前成功率、平均调用数、错误类型。
 
-### P1：做编译器 spike（1~2 周）
+### P1：做编译器 spike（1~2 周）——✅ 已完成，结果见 §6.3
 
 - `read_document`：基于现有 `DocumentViewService` 输出 Markdown + 短 ID。
 - `create_document`：Markdown 子集 + style profile → `nondocx-core`。
 - `validate_document`：复用 `QualityCheckTools`，输出带 ID 的问题。
 - 只做 3 个工具，先在「新建文档」场景对比 10 条任务。
 - 如果调用数能从 10+ 降到 2~3，再继续投入。
+  （实测：5 条 create 任务，总调用 23.0 → 5.6、创作调用 1~2 次、通过率 20% → 100%——继续投入。）
 
 ### P2：编辑与模板
 
@@ -397,6 +399,67 @@ paragraph/run ref，`update_run_style` / `update_paragraph_alignment` 对页脚 
 
 `capabilityGap` 现在只标记 `footer-page-number`；最终复跑产物在
 `target/eval/20261029-174952-467/`。
+
+### 6.3 编译器 spike A/B（任务 B，2026-10-29）
+
+P1 落地：`nondocx-toolkit` 新增第 9 组工具 `CompilerTools`
+（`create_document` / `read_document` / `validate_document`，EXPERIMENTAL 级，能力清单
+62→65），外加 Markdown 子集解析器 + 文档 IR + 样式 profile（`report-cn`/`plain`）+ 编译器。
+评测端新增 `create` 任务组（5 条从零建文档任务）与 `--surface full|compiler` 开关，
+同一批任务在两个工具面上跑（`qwen3.8-27b`，温度 0，无 Skill）：
+
+| 指标 | full 面（58 工具） | compiler 面（5 工具） |
+|---|---|---|
+| 通过率 | 1/5（20%） | **5/5（100%）** |
+| 平均工具调用 | 23.0 | **5.6** |
+| 无效调用 | 多（见各任务报告） | **0** |
+| 总耗时 | 306s | 105s |
+| runId | `20261029-231126-331` | `20261029-231703-151` |
+
+compiler 面的典型调用序列（`create-data-table`，4 次，零无效）：
+
+```text
+current_document → create_document → validate_document → review_intent
+```
+
+其中真正的「创作」只有 1 次 `create_document`；`current_document`/`validate`/`review`
+是固定开销（2~3 次）。最复杂的 `create-styled-body`（宋体小四 + 1.5 行距 + 首行缩进 +
+黑体居中标题）也只需 2 次 `create_document`（第一次 review 后补正）共 8 次调用——
+同样的任务在 full 面跑了 25 次仍因「无正文缩进工具」失败。
+
+full 面 4 条失败的归因（诚实口径）：
+
+- **无列表创建入口** ×2：`insert_paragraph` 只有 `heading_level`/`alignment` 参数，
+  BULLET/NUMBERED 列表在 full 面物理不可达（`create-meeting-notes`/`create-research-report`）；
+- **无正文首行缩进工具** ×1：BodyTools 无任何 indent 写入口（`create-styled-body`）；
+- **建表 + 标题多步组合超载** ×1：27 次调用后标题仍未设成 H1、表格未建（`create-weekly-report`）。
+
+也就是说 full 面的失败一半是**能力缺口**、一半是**多步组合超载**；compiler 面两类问题
+都不存在——能力由编译器覆盖（列表/缩进/表格一次成型），多步组合收敛为一次提交。
+
+**两个顺带的实测修正**：
+
+1. **POI `setFontFamily(name)` 是四槽同写**（ascii/hAnsi/cs/eastAsia 写同一字体名），
+   不是「只写 ascii 槽」。编译器经 `raw()` 覆写 eastAsia 槽的价值因此不是「补缺失」，
+   而是**分离**——「西文 Times New Roman + 中文宋体」的规范双槽，公开 API 做不到。
+2. **表格分页控制**（首行 `headerRow` + 数据行 `cantSplit`）core 早有读写 API，
+   编译器现在默认写入，`table-pagination` 质检项在编译产物上恒通过。
+
+**结论**：P1 假设成立——「调用数从 10+ 降到 2~3」实测为**创作调用 1~2 次、
+总调用 23.0 → 5.6（4.1×）**，同时通过率 20% → 100%。值得继续投入 P2
+（`edit_document` patch 引擎 + 模板/渲染预览），并把 compiler 面作为新建文档场景的
+默认路径接入 demo。
+
+复现：
+
+```bash
+# compiler 面
+mvn -q -pl nondocx-examples -Dexec.mainClass=...eval.EvalMain exec:java \
+  -Dexec.args="--surface compiler --group create"
+# full 面
+mvn -q -pl nondocx-examples -Dexec.mainClass=...eval.EvalMain exec:java \
+  -Dexec.args="--surface full --group create --timeout-seconds 240 --max-iterations 24"
+```
 
 ---
 

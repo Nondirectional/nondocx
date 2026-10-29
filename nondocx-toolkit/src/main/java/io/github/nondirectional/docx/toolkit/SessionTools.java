@@ -212,18 +212,9 @@ public final class SessionTools extends ToolkitToolContext {
    * @throws DocxIOException 磁盘文件无法打开
    */
   public void reopen(String docId, String path) {
-    Document old = sessions.get(docId);
+    // 先从磁盘加载：加载失败时抛 DocxIOException，会话保持原状（不触碰旧文档）。
     Document fresh = Docx.open(Path.of(path));
-    sessions.put(docId, fresh);
-    generations.merge(docId, 1L, Long::sum);
-    references.invalidate(docId);
-    if (old != null) {
-      try {
-        old.close();
-      } catch (RuntimeException ignored) {
-        // 旧文档关闭失败不影响 reopen 语义：fresh 已 put 进 sessions
-      }
-    }
+    replaceSessionDocument(docId, fresh);
   }
 
   /**

@@ -53,7 +53,12 @@ public final class EvalMain {
       return;
     }
 
-    List<EvalTask> selected = selectTasks(options.tasks);
+    if (!"full".equals(options.surface) && !"compiler".equals(options.surface)) {
+      System.err.println("未知 --surface: " + options.surface + "（可选 full / compiler）");
+      System.exit(2);
+      return;
+    }
+    List<EvalTask> selected = selectTasks(options.tasks, options.group);
     if (selected.isEmpty()) {
       System.err.println("没有匹配的任务；用 --list 查看可用 id。");
       System.exit(2);
@@ -69,18 +74,25 @@ public final class EvalMain {
             options.timeoutSeconds,
             options.thinkingBudget,
             options.temperature,
-            options.outputDir);
+            options.outputDir,
+            options.surface,
+            options.group);
 
     String runId = LocalDateTime.now().format(RUN_ID_FORMAT);
     Path runDir = config.outputDir().resolve(runId);
     String startedAt = OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     String gitCommit = gitCommit();
 
+    int toolCount =
+        "compiler".equals(config.surface())
+            ? EvalRunner.compilerToolCount()
+            : EvalRunner.exposedToolCount();
     System.out.println("nondocx Agent 评测基线");
     System.out.println("  runId:        " + runId);
     System.out.println("  model:        " + config.model());
     System.out.println("  baseUrl:      " + config.baseUrl());
-    System.out.println("  tools:        " + EvalRunner.exposedToolCount() + "（不含 Skill）");
+    System.out.println("  surface:      " + config.surface() + "（工具 " + toolCount + "，不含 Skill）");
+    System.out.println("  group:        " + config.group());
     System.out.println("  tasks:        " + selected.size());
     System.out.println("  output:       " + runDir.toAbsolutePath());
     System.out.println();
@@ -138,8 +150,10 @@ public final class EvalMain {
             gitCommit,
             config.baseUrl(),
             config.model(),
-            EvalRunner.exposedToolCount(),
+            toolCount,
             0,
+            config.surface(),
+            config.group(),
             results);
 
     try {
@@ -166,9 +180,14 @@ public final class EvalMain {
     System.out.println("  JSON: " + runDir.resolve("report.json").toAbsolutePath());
   }
 
-  private static List<EvalTask> selectTasks(String csv) {
+  private static List<EvalTask> selectTasks(String csv, String group) {
     if (csv == null || csv.isBlank()) {
-      return EvalTasks.all();
+      List<EvalTask> byGroup = EvalTasks.group(group);
+      if (byGroup == null) {
+        System.err.println("未知 --group: " + group + "（可选 baseline / create）");
+        System.exit(2);
+      }
+      return byGroup;
     }
     List<EvalTask> selected = new ArrayList<>();
     for (String raw : csv.split(",")) {
@@ -219,7 +238,9 @@ public final class EvalMain {
         "用法: EvalMain [选项]\n"
             + "\n"
             + "  --list                       列出任务\n"
-            + "  --tasks id1,id2              只跑指定任务（默认全部）\n"
+            + "  --tasks id1,id2              只跑指定任务（默认取 --group 全组）\n"
+            + "  --surface full|compiler      工具面（默认 full；compiler=编译器 5 入口）\n"
+            + "  --group baseline|create      任务组（默认 baseline；create=从零生成文档）\n"
             + "  --base-url URL               vLLM base URL（env NONDOCX_EVAL_BASE_URL）\n"
             + "  --model NAME                 模型名（env NONDOCX_EVAL_MODEL）\n"
             + "  --api-key KEY                API key（env NONDOCX_EVAL_API_KEY）\n"
@@ -243,6 +264,8 @@ public final class EvalMain {
     private double temperature = 0.0;
     private Path outputDir = Path.of("target", "eval");
     private String tasks = "";
+    private String surface = "full";
+    private String group = "baseline";
     private boolean list;
     private boolean help;
 
@@ -260,6 +283,12 @@ public final class EvalMain {
             break;
           case "--tasks":
             options.tasks = value(args, ++i, arg);
+            break;
+          case "--surface":
+            options.surface = value(args, ++i, arg);
+            break;
+          case "--group":
+            options.group = value(args, ++i, arg);
             break;
           case "--base-url":
             options.baseUrl = value(args, ++i, arg);

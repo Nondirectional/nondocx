@@ -74,7 +74,9 @@ public final class QualityCheckTools extends ToolkitToolContext {
           "toc",
           "cleanliness");
 
-  /** font-fallback 检查的安全字体白名单（跨平台常见预装字体）。 */
+  /**
+   * font-fallback 检查的安全字体白名单（跨平台常见预装字体）。consolas/courier new 为等宽字体，代码 run 常用、随 Office/Windows 预装。
+   */
   private static final Set<String> SAFE_FONTS =
       Set.of(
           "宋体",
@@ -91,7 +93,9 @@ public final class QualityCheckTools extends ToolkitToolContext {
           "fangsong",
           "仿宋",
           "kaiti",
-          "楷体");
+          "楷体",
+          "consolas",
+          "courier new");
 
   /** cleanliness 检查的占位符/草稿措辞正则。 */
   private static final Pattern PLACEHOLDER =

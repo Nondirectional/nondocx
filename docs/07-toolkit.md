@@ -45,9 +45,9 @@ agent.run("把 /tmp/a.docx 第一段第一个 run 的文本改成 'Hello'");
 
 ---
 
-## 3. 七组工具 + 一个门面
+## 3. 工具组 + 一个门面
 
-工具按功能域分成**七个类**，由 `DocxToolkit` 门面统一装配：
+工具按功能域分成**九个类**，由 `DocxToolkit` 门面统一装配：
 
 | 字段 | 类型 | 职责 |
 |---|---|---|
@@ -58,6 +58,8 @@ agent.run("把 /tmp/a.docx 第一段第一个 run 的文本改成 'Hello'");
 | `trackedChangeQuery` | `TrackedChangeQueryTools` | 修订查询 / accept / reject |
 | `trackedChangeAuthoring` | `TrackedChangeAuthoringTools` | 修订创作：insert/delete/replace/move/mark |
 | `qualityCheck` | `QualityCheckTools` | 版式/兼容性自检（10 项检查，报告不修复） |
+| `view` | `ViewTools` | 语义视图（outline/text/annotated/stats/issues/element） |
+| `compiler` | `CompilerTools` | 文档编译器（实验性）：Markdown → docx，create/read/validate_document |
 
 ### 为什么需要门面（会话状态共享）
 
@@ -201,6 +203,50 @@ check_quality({
   ───
   通过 0/2 | ❌ 1 errors | ⚠️ 1 warnings
 ```
+
+---
+
+### CompilerTools（编译器，实验性）
+
+「文档 IR + 编译器」路线（[11 · Agent 写作架构建议](11-agent-authoring-architecture.md)）的 Agent 入口：
+把「写整份文档」从几十次细粒度 API 调用收敛为**一次 Markdown 提交**。模型只表达结构与内容，
+排版脏活（CJK 双字体槽、行距换算、首行缩进、表头样式、WPS 安全列宽、表格分页控制）由
+编译器 + 样式 profile 兜底。
+
+| 工具 | 作用 |
+|---|---|
+| `create_document` | Markdown 子集 + 样式 profile 一次性编译整份 docx，**替换** doc_id 会话文档（句柄不变、generation+1） |
+| `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，与写侧同构（round-trip） |
+| `validate_document` | 复用 10 项质量检查，输出带 `v1/v2` 编号的问题清单 |
+
+**Markdown 子集**：`#`~`######` 标题（可带 `{align=center|left|right|both}` 行尾属性）、段落、
+`**粗体**`/`*斜体*`/`` `代码` ``、`- `/`1. ` 列表（缩进 2 空格一级）、`|…|` 表格
+（首行为表头，支持 `\|` 转义）、围栏代码块（降级为等宽段落）。未知语法**宽容降级**为段落
+并记 warnings，不拒绝。
+
+**样式 profile**（v1 内置两个）：
+
+| profile | 策略 |
+|---|---|
+| `report-cn` | 黑体标题（H1 16pt 居中/H2 14pt/H3 12pt）、宋体+Times New Roman 正文小四（12pt）、1.5 倍行距、首行缩进 2 字符、表头加粗灰底（F2F2F2）、等宽百分比列宽、表头行跨页重复 + 数据行不拆分 |
+| `plain` | 只做结构，不设任何排版属性 |
+
+**CJK 关键兜底**：core 公开 API 的 `font()` 走 POI 四槽同写（ascii/hAnsi/cs/eastAsia 同一
+字体名），而中文报告的规范排版是「西文 Times New Roman + 中文宋体」的**分离**双槽——
+编译器经 `raw()` 只覆写 eastAsia 槽实现分离，这是公开 API 做不到的。
+
+**调用示例**：
+
+```json
+create_document({
+  "doc_id": "d1",
+  "markdown": "# 项目周报 {align=center}\n\n本周完成了 **表格封装**。\n\n| 模块 | 状态 |\n|---|---|\n| core | 完成 |",
+  "style_profile": "report-cn"
+})
+```
+
+**位置约定**：本组在 `DocxToolkit.scanAll` 里（能力清单第 9 组，EXPERIMENTAL 级），但
+**默认不进 demo/eval 的 full 工具面**——是否成为默认面由评测数据决定（见 doc 11 §P1）。
 
 ---
 

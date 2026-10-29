@@ -199,3 +199,25 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 
 `view_element` 的 paragraph 详情输出 `location`（如 `页脚 section=0 variant=default 段落 0`）
 和 `lineSpacing`（>0 时），供复审确认目标容器与行距。
+
+## Convention: 编译器工具面（compiler surface，实验性）
+
+「文档 IR + 编译器」路线（`docs/11` §5 P1）落成了第 9 组工具 `CompilerTools`
+（`create_document` / `read_document` / `validate_document`，能力清单 EXPERIMENTAL 级）。
+工具面约定：
+
+- **会话换血不换柄**：`create_document` 经 `ToolkitToolContext.replaceSessionDocument`
+  替换 docId 背后的 Document（与 `SessionTools.reopen` 同一路径）：句柄不变、generation+1、
+  旧元素引用失效。失败路径（解析/编译/profile 错误）**不触碰会话**。
+- **demo/eval 的 full 面不 scan `compiler`**（保持 58 入口基线可对比）；compiler 面由
+  应用层显式组装：`current_document` + `compiler` 三工具 + 只读 `review_intent` = 5 入口。
+- **eastAsia 字体槽分离是编译器独有兜底**：core 公开 API `font()` 走 POI 四槽同写
+  （ascii/hAnsi/cs/eastAsia 同名）；规范的中文排版需要「西文 TNR + 中文宋体」分离。
+  编译器经 `raw()` 只覆写 eastAsia 槽（`DocumentCompiler.applyRunFonts` 是唯一用点，
+  core 提供公开分离 API 前不要在其它工具类复制此逻辑）。
+- **评测 A/B**：`EvalMain --surface full|compiler --group baseline|create`；create 组
+  （5 条从零建文档任务）两面通用，是「调用数 10+ → 2~3」假设的判定口径。
+  `EvalRunnerTest#compilerSurfaceExposesFiveEntriesOnly` 锁死 5 入口数。
+- **read/write 同构**：`read_document` 输出的 Markdown（短 ID 锚点是 HTML 注释）可原样
+  再作为 `create_document` 输入——解析器把 `<!-- … -->` 当元数据剥掉，round-trip 不产生
+  脏块。改输出格式时保持这一性质（`CompilerPipelineTest#markdownViewRoundTripsCompiledDocument`）。

@@ -38,11 +38,16 @@ class EvalResultTest {
             "m",
             58,
             0,
+            "full",
+            "baseline",
             List.of(result));
 
     assertThat(report.summary().passed()).isEqualTo(1);
     assertThat(report.toMap()).containsKeys("runId", "model", "toolCount", "tasks", "summary");
     assertThat(report.toMap().get("skillCount")).isEqualTo(0);
+    assertThat(report.surface()).isEqualTo("full");
+    assertThat(report.group()).isEqualTo("baseline");
+    assertThat(report.toMap()).containsEntry("surface", "full").containsEntry("group", "baseline");
   }
 
   private static EvalTask dummyTask(String id, String title) {

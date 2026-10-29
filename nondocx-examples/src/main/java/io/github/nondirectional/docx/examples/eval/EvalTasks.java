@@ -31,17 +31,39 @@ import java.util.Map;
 public final class EvalTasks {
 
   private static final List<EvalTask> TASKS = buildTasks();
+  private static final List<EvalTask> CREATE_TASKS = buildCreateTasks();
 
   private EvalTasks() {}
 
-  /** 返回全部任务（固定顺序）。 */
+  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 10 条任务。 */
   public static List<EvalTask> all() {
     return TASKS;
   }
 
-  /** 按 id 查找；不存在返回 null。 */
+  /** 返回 create 任务组（固定顺序）：从零生成整份文档的 5 条任务，供工具面 A/B。 */
+  public static List<EvalTask> create() {
+    return CREATE_TASKS;
+  }
+
+  /** 按组名取任务：{@code baseline}（默认）/ {@code create}；未知组名返回 null。 */
+  public static List<EvalTask> group(String name) {
+    if (name == null || name.isBlank() || "baseline".equals(name)) {
+      return TASKS;
+    }
+    if ("create".equals(name)) {
+      return CREATE_TASKS;
+    }
+    return null;
+  }
+
+  /** 按 id 查找（覆盖两组）；不存在返回 null。 */
   public static EvalTask byId(String id) {
     for (EvalTask task : TASKS) {
+      if (task.id().equals(id)) {
+        return task;
+      }
+    }
+    for (EvalTask task : CREATE_TASKS) {
       if (task.id().equals(id)) {
         return task;
       }
@@ -49,10 +71,13 @@ public final class EvalTasks {
     return null;
   }
 
-  /** 返回 id → 标题的稳定映射，供 CLI --list 使用。 */
+  /** 返回 id → 标题的稳定映射（覆盖两组），供 CLI --list 使用。 */
   public static Map<String, String> catalog() {
     Map<String, String> catalog = new LinkedHashMap<>();
     for (EvalTask task : TASKS) {
+      catalog.put(task.id(), task.title());
+    }
+    for (EvalTask task : CREATE_TASKS) {
       catalog.put(task.id(), task.title());
     }
     return catalog;
@@ -351,6 +376,227 @@ public final class EvalTasks {
             true));
 
     return List.copyOf(tasks);
+  }
+
+  // ==================== create 任务组：从零生成整份文档 ====================
+  //
+  // 供「工具面 A/B」：同一批任务分别在 full 面（58 工具，逐步 insert/update）与
+  // compiler 面（5 入口，一次 create_document）上跑，对比通过率与调用数。
+  // seed 统一为一个占位段落（非空可重开、check 恒失败），任务语义是「替换整份文档」。
+
+  private static List<EvalTask> buildCreateTasks() {
+    List<EvalTask> tasks = new ArrayList<>();
+
+    tasks.add(
+        new EvalTask(
+            "create-weekly-report",
+            "新建项目周报",
+            "把当前文档替换为一份全新的项目周报：居中一级标题「项目周报」，正文两段"
+                + "（内容围绕本周进展，自行撰写），其中至少一个关键词加粗，"
+                + "末尾一个 3 列表格（表头：模块、状态、负责人，两行数据）。",
+            doc -> doc.addParagraph("（待生成）"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "标题居中",
+                    doc -> {
+                      Paragraph title = requireParagraph(doc, 0, "标题段");
+                      EvalAssert.equal("项目周报", title.text(), "标题文本");
+                      EvalAssert.equal(HeadingLevel.H1, title.heading(), "标题级别");
+                      EvalAssert.equal(Alignment.CENTER, title.alignment(), "标题对齐");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "正文两段且含加粗",
+                    doc -> {
+                      List<Paragraph> body = nonHeadingNonListParagraphs(doc);
+                      EvalAssert.isTrue(body.size() >= 2, "期望至少 2 个正文段落，实际 " + body.size());
+                      boolean anyBold =
+                          body.stream()
+                              .anyMatch(
+                                  p ->
+                                      EvalAssert.textRuns(p).stream()
+                                          .anyMatch(
+                                              io.github.nondirectional.docx.core.api.text.Run
+                                                  ::isBold));
+                      EvalAssert.isTrue(anyBold, "期望正文中存在加粗 run");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "表格 3 行 3 列且表头加粗",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "周报表");
+                      EvalAssert.isTrue(
+                          table.rows().size() >= 3, "期望至少 3 行（表头+2 数据），实际 " + table.rows().size());
+                      EvalAssert.isTrue(
+                          table.rows().get(0).cells().size() >= 3,
+                          "期望至少 3 列，实际 " + table.rows().get(0).cells().size());
+                      EvalAssert.equal("模块", table.rows().get(0).cells().get(0).text(), "表头第 1 格");
+                      EvalAssert.assertBold(
+                          table.rows().get(0).cells().get(0).paragraph(0), true, "表头第 1 格");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "create-styled-body",
+            "新建带排版正文",
+            "生成一份中文实验报告替换当前文档：居中标题「实验报告」（黑体），" + "正文三段（内容自拟），要求宋体小四（12pt）、1.5 倍行距、首行缩进两个字符。",
+            doc -> doc.addParagraph("（待生成）"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "标题黑体居中",
+                    doc -> {
+                      Paragraph title = requireParagraph(doc, 0, "标题段");
+                      EvalAssert.equal("实验报告", title.text(), "标题文本");
+                      EvalAssert.equal(Alignment.CENTER, title.alignment(), "标题对齐");
+                      EvalAssert.assertEastAsiaFont(title, "黑体", "标题 eastAsia 字体");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "正文宋体小四",
+                    doc -> {
+                      Paragraph body = requireParagraph(doc, 1, "正文第 1 段");
+                      EvalAssert.assertEastAsiaFont(body, "宋体", "正文 eastAsia 字体");
+                      EvalAssert.assertFontSize(body, 12, "正文字号");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "1.5 倍行距",
+                    doc ->
+                        EvalAssert.closeTo(
+                            1.5, requireParagraph(doc, 1, "正文第 1 段").lineSpacing(), 0.01, "正文行距")),
+                EvalTask.NamedCheck.of(
+                    "首行缩进两个字符",
+                    doc -> {
+                      int indent = requireParagraph(doc, 1, "正文第 1 段").indentationFirstLine();
+                      EvalAssert.isTrue(
+                          indent >= 400 && indent <= 560, "首行缩进期望约 480 缇（2×12pt×20），实际 " + indent);
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "create-meeting-notes",
+            "新建会议纪要",
+            "把当前文档替换为会议纪要：一级标题「会议纪要」，两个二级小节" + "「讨论事项」与「行动项」，每节至少一段内容；" + "「行动项」一节用无序列表列出 3 条待办。",
+            doc -> doc.addParagraph("（待生成）"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "标题与小节",
+                    doc -> {
+                      EvalAssert.equal("会议纪要", requireParagraph(doc, 0, "标题段").text(), "标题文本");
+                      List<Paragraph> headings = headingParagraphs(doc);
+                      long h2Count =
+                          headings.stream().filter(p -> p.heading() == HeadingLevel.H2).count();
+                      EvalAssert.isTrue(h2Count >= 2, "期望至少 2 个二级标题，实际 " + h2Count);
+                      EvalAssert.contains(EvalAssert.bodyText(doc), "讨论事项", "小节标题");
+                      EvalAssert.contains(EvalAssert.bodyText(doc), "行动项", "小节标题");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "行动项 3 条无序列表",
+                    doc -> {
+                      long bullets =
+                          doc.paragraphs().stream()
+                              .filter(
+                                  p ->
+                                      p.listKind()
+                                          == io.github.nondirectional.docx.core.api.style.ListKind
+                                              .BULLET)
+                              .count();
+                      EvalAssert.isTrue(bullets >= 3, "期望至少 3 个无序列表项，实际 " + bullets);
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "create-data-table",
+            "新建数据表文档",
+            "生成一个数据表文档替换当前文档：标题「模块状态一览」，一个 4 列表格"
+                + "（表头：模块、状态、负责人、备注；3 行数据，其中一行的备注为「加急」），"
+                + "表格之后跟一段总结说明。",
+            doc -> doc.addParagraph("（待生成）"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "表格 4 行 4 列",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "数据表");
+                      EvalAssert.isTrue(
+                          table.rows().size() >= 4, "期望至少 4 行（表头+3 数据），实际 " + table.rows().size());
+                      EvalAssert.isTrue(
+                          table.rows().get(0).cells().size() >= 4,
+                          "期望至少 4 列，实际 " + table.rows().get(0).cells().size());
+                      EvalAssert.equal("模块", table.rows().get(0).cells().get(0).text(), "表头第 1 格");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "含加急备注", doc -> EvalAssert.contains(EvalAssert.bodyText(doc), "加急", "全文")),
+                EvalTask.NamedCheck.of(
+                    "表格后有说明段",
+                    doc -> {
+                      // body 顺序上最后一个元素应是段落（总结说明），不是表格
+                      int size = doc.bodyElements().size();
+                      EvalAssert.isTrue(size >= 2, "期望 body 至少 2 个元素，实际 " + size);
+                      Object last = doc.bodyElements().get(size - 1);
+                      EvalAssert.isTrue(
+                          last instanceof Paragraph,
+                          "body 最后一个元素应为段落（说明文字），实际是 " + last.getClass().getSimpleName());
+                      String text = ((Paragraph) last).text();
+                      EvalAssert.isTrue(text != null && !text.isBlank(), "末段应为非空说明文字");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "create-research-report",
+            "新建调研报告",
+            "写一份完整的技术调研报告替换当前文档：居中标题「技术选型调研报告」，"
+                + "三个二级小节，每节至少两段正文；第二节包含一个 3 列对比表；"
+                + "最后一节末尾用有序列表给出 3 条结论。",
+            doc -> doc.addParagraph("（待生成）"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "标题与三个小节",
+                    doc -> {
+                      Paragraph title = requireParagraph(doc, 0, "标题段");
+                      EvalAssert.equal("技术选型调研报告", title.text(), "标题文本");
+                      EvalAssert.equal(Alignment.CENTER, title.alignment(), "标题对齐");
+                      long h2Count =
+                          headingParagraphs(doc).stream()
+                              .filter(p -> p.heading() == HeadingLevel.H2)
+                              .count();
+                      EvalAssert.isTrue(h2Count >= 3, "期望至少 3 个二级标题，实际 " + h2Count);
+                    }),
+                EvalTask.NamedCheck.of(
+                    "对比表存在",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "对比表");
+                      EvalAssert.isTrue(
+                          table.rows().get(0).cells().size() >= 3,
+                          "期望至少 3 列，实际 " + table.rows().get(0).cells().size());
+                    }),
+                EvalTask.NamedCheck.of(
+                    "3 条有序结论",
+                    doc -> {
+                      long numbered =
+                          doc.paragraphs().stream()
+                              .filter(
+                                  p ->
+                                      p.listKind()
+                                          == io.github.nondirectional.docx.core.api.style.ListKind
+                                              .NUMBERED)
+                              .count();
+                      EvalAssert.isTrue(numbered >= 3, "期望至少 3 个有序列表项，实际 " + numbered);
+                    }),
+                EvalTask.NamedCheck.of(
+                    "篇幅达标",
+                    doc ->
+                        EvalAssert.isTrue(
+                            doc.paragraphs().size() >= 10,
+                            "期望至少 10 段，实际 " + doc.paragraphs().size())))));
+
+    return List.copyOf(tasks);
+  }
+
+  /** 非标题、非列表的正文段落（create 任务「正文两段」类 check 用）。 */
+  private static List<Paragraph> nonHeadingNonListParagraphs(Document doc) {
+    List<Paragraph> result = new ArrayList<>();
+    for (Paragraph p : doc.paragraphs()) {
+      if (p.heading() == null && p.listKind() == null && p.text() != null && !p.text().isBlank()) {
+        result.add(p);
+      }
+    }
+    return result;
   }
 
   // ==================== fixture helpers ====================

@@ -17,7 +17,13 @@ public final class EvalConfig {
   private final int thinkingBudget;
   private final double temperature;
   private final Path outputDir;
+  private final String surface;
+  private final String group;
 
+  /**
+   * @param surface 工具面：{@code full}（demo 全量 58 工具）/ {@code compiler}（编译器 5 入口）
+   * @param group 任务组：{@code baseline}（编辑既有文档）/ {@code create}（从零生成整份文档）
+   */
   public EvalConfig(
       String baseUrl,
       String model,
@@ -26,7 +32,9 @@ public final class EvalConfig {
       int timeoutSeconds,
       int thinkingBudget,
       double temperature,
-      Path outputDir) {
+      Path outputDir,
+      String surface,
+      String group) {
     this.baseUrl = baseUrl;
     this.model = model;
     this.apiKey = apiKey == null ? "" : apiKey;
@@ -35,6 +43,18 @@ public final class EvalConfig {
     this.thinkingBudget = thinkingBudget;
     this.temperature = temperature;
     this.outputDir = outputDir;
+    this.surface = surface == null || surface.isBlank() ? "full" : surface;
+    this.group = group == null || group.isBlank() ? "baseline" : group;
+  }
+
+  /** 工具面名：full / compiler。 */
+  public String surface() {
+    return surface;
+  }
+
+  /** 任务组名：baseline / create。 */
+  public String group() {
+    return group;
   }
 
   public String baseUrl() {

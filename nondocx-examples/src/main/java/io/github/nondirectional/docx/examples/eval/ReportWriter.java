@@ -40,6 +40,11 @@ public final class ReportWriter {
     sb.append("> git: `").append(emptyAs(report.gitCommit(), "unknown")).append("`  \n");
     sb.append("> 模型: `").append(report.model()).append("`  \n");
     sb.append("> baseUrl: `").append(report.baseUrl()).append("`  \n");
+    sb.append("> 工具面: `")
+        .append(report.surface())
+        .append("` · 任务组: `")
+        .append(report.group())
+        .append("`  \n");
     sb.append("> 工具数: ").append(report.toolCount());
     sb.append("（Skill 数: ").append(report.skillCount()).append("）  \n");
     sb.append("> 判定口径：所有 check 通过才算任务成功；不使用 LLM 判断。  \n");

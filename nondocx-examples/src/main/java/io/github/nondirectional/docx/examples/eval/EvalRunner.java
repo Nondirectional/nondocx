@@ -59,6 +59,22 @@ public final class EvalRunner {
           + "不要调用或描述 Dispatcher、计划、专家分派或提交阶段。"
           + "不要使用对话记忆或推断得来的旧 doc_id。";
 
+  /**
+   * compiler 面的 system prompt：文档生成走「一次 Markdown 提交」而非逐 API 编辑。
+   *
+   * <p>核心指令是让模型把整篇文档写成 Markdown 一次 create_document——排版（中文字体双槽、 行距、缩进、表头样式）由 style_profile
+   * 兜底，模型只表达结构与内容。
+   */
+  private static final String COMPILER_SYSTEM_PROMPT =
+      "你是文档 Agent。当前对话只有一个文档（先调用 current_document 获取 doc_id）。"
+          + "用户要求生成/重写整份文档时，把完整内容写成 Markdown，一次调用 create_document 生成"
+          + "（它会替换当前文档，句柄不变）。Markdown 支持 # 标题、**粗体**、无序/有序列表、"
+          + "|表格|（首行为表头）、{align=center} 属性；排版（黑体标题、宋体小四正文、1.5 倍行距、"
+          + "首行缩进、表头加粗灰底）由 style_profile=report-cn 自动完成，不要在 Markdown 里描述字体字号。"
+          + "可用 read_document 查看当前文档，validate_document 做质量检查。"
+          + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
+          + "完成后调用 review_intent 复审用户期望的修改是否已经达成。若任一工具失败，停止并说明失败。";
+
   private static final String REVIEW_SYSTEM_PROMPT =
       "你是文档意图复审员。你会收到用户本轮对文档的修改请求，并通过只读 view_* 工具读取文档当前内容。"
           + "你的任务是判断文档是否已经完成了用户期望的修改，输出三态结论与差异说明。\n"
@@ -80,7 +96,13 @@ public final class EvalRunner {
   /** 当前 demo 工具面的暴露数量（普通工具 + 1 个只读复审 SubAgent）。 */
   public static int exposedToolCount() {
     DocxToolkit toolkit = new DocxToolkit();
-    return baseRegistry(toolkit, "doc-0").getRegularTools().size() + 1;
+    return baseRegistry(toolkit, "doc-0", "full").getRegularTools().size() + 1;
+  }
+
+  /** compiler 工具面的暴露数量（current_document + 3 编译工具 + 1 个只读复审 SubAgent）。 */
+  public static int compilerToolCount() {
+    DocxToolkit toolkit = new DocxToolkit();
+    return baseRegistry(toolkit, "doc-0", "compiler").getRegularTools().size() + 1;
   }
 
   /**
@@ -298,7 +320,8 @@ public final class EvalRunner {
       List<String> traceLines,
       AtomicLong promptTokens,
       AtomicLong completionTokens) {
-    ToolRegistry tools = baseRegistry(toolkit, docId);
+    String surface = config.surface();
+    ToolRegistry tools = baseRegistry(toolkit, docId, surface);
     tools
         .registerSubAgent("review_intent", "[复审] 对比用户本轮修改请求与文档现状，返回达成/部分达成/未达成结论及差异说明。修改完成后调用。")
         .systemPrompt(REVIEW_SYSTEM_PROMPT)
@@ -324,7 +347,7 @@ public final class EvalRunner {
         Agent.builder(llm, tools)
             .maxIterations(config.maxIterations())
             .executor(null)
-            .systemPrompt(SYSTEM_PROMPT)
+            .systemPrompt("compiler".equals(surface) ? COMPILER_SYSTEM_PROMPT : SYSTEM_PROMPT)
             .callback(callback)
             .build();
 
@@ -388,9 +411,19 @@ public final class EvalRunner {
 
   // ==================== 工具面 ====================
 
-  private static ToolRegistry baseRegistry(DocxToolkit toolkit, String docId) {
-    return new ToolRegistry()
-        .scan(new CurrentDocumentTool(docId))
+  /**
+   * 按工具面组装 registry。
+   *
+   * <p>{@code full}：demo 对齐面（current_document + view/body/table/header/tracker，58 入口）。 {@code
+   * compiler}：编译器面（current_document + create/read/validate_document，4 入口）。 两个面都不含保存工具；review
+   * SubAgent 由调用方在返回的 registry 上注册。
+   */
+  private static ToolRegistry baseRegistry(DocxToolkit toolkit, String docId, String surface) {
+    ToolRegistry registry = new ToolRegistry().scan(new CurrentDocumentTool(docId));
+    if ("compiler".equals(surface)) {
+      return registry.scan(toolkit.compiler);
+    }
+    return registry
         .scan(toolkit.view)
         .scan(toolkit.body)
         .scan(toolkit.table)

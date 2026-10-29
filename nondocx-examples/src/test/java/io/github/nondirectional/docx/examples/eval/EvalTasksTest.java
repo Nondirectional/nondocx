@@ -37,9 +37,38 @@ class EvalTasksTest {
   }
 
   @Test
-  void catalogMatchesTasks() {
-    assertThat(EvalTasks.catalog()).hasSize(EvalTasks.all().size());
+  void hasFiveCreateTasksWithUniqueIdsAcrossGroups() {
+    List<EvalTask> create = EvalTasks.create();
+    assertThat(create).hasSize(5);
+
+    Set<String> ids = new HashSet<>(EvalTasks.all().size() + create.size());
+    for (EvalTask task : create) {
+      assertThat(task.id()).startsWith("create-");
+      // 两组之间 id 也不得重复（byId/catalog 覆盖两组）
+      assertThat(ids.add(task.id())).as("跨组任务 id 重复: %s", task.id()).isTrue();
+      assertThat(task.checks()).as("%s 的 check 不应为空", task.id()).isNotEmpty();
+    }
     for (EvalTask task : EvalTasks.all()) {
+      assertThat(ids.add(task.id())).as("跨组任务 id 重复: %s", task.id()).isTrue();
+    }
+  }
+
+  @Test
+  void groupResolvesByName() {
+    assertThat(EvalTasks.group("baseline")).isEqualTo(EvalTasks.all());
+    assertThat(EvalTasks.group("create")).isEqualTo(EvalTasks.create());
+    assertThat(EvalTasks.group(null)).isEqualTo(EvalTasks.all());
+    assertThat(EvalTasks.group("nope")).isNull();
+  }
+
+  @Test
+  void catalogMatchesTasks() {
+    assertThat(EvalTasks.catalog()).hasSize(EvalTasks.all().size() + EvalTasks.create().size());
+    for (EvalTask task : EvalTasks.all()) {
+      assertThat(EvalTasks.catalog()).containsEntry(task.id(), task.title());
+      assertThat(EvalTasks.byId(task.id())).isSameAs(task);
+    }
+    for (EvalTask task : EvalTasks.create()) {
       assertThat(EvalTasks.catalog()).containsEntry(task.id(), task.title());
       assertThat(EvalTasks.byId(task.id())).isSameAs(task);
     }
@@ -58,7 +87,7 @@ class EvalTasksTest {
 
   @Test
   void everySeedCanBeWrittenAndReopened() {
-    for (EvalTask task : EvalTasks.all()) {
+    for (EvalTask task : allTasks()) {
       Path path = temp.resolve(task.id() + ".docx");
       task.writeSeed(path);
       assertThat(path).as("%s seed 未生成", task.id()).exists();
@@ -70,7 +99,7 @@ class EvalTasksTest {
 
   @Test
   void everyTaskFailsAtLeastOneCheckOnUnmodifiedSeed() {
-    for (EvalTask task : EvalTasks.all()) {
+    for (EvalTask task : allTasks()) {
       Path path = temp.resolve(task.id() + "-seed.docx");
       task.writeSeed(path);
       try (Document doc = Docx.open(path)) {
@@ -91,5 +120,12 @@ class EvalTasksTest {
             .isTrue();
       }
     }
+  }
+
+  /** baseline + create 两组任务（防恒真与 seed 校验覆盖两组）。 */
+  private static List<EvalTask> allTasks() {
+    List<EvalTask> all = new java.util.ArrayList<>(EvalTasks.all());
+    all.addAll(EvalTasks.create());
+    return all;
   }
 }

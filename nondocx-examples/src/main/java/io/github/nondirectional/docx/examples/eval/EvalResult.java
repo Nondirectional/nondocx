@@ -351,6 +351,8 @@ public final class EvalResult {
     private final String model;
     private final int toolCount;
     private final int skillCount;
+    private final String surface;
+    private final String group;
     private final List<TaskResult> tasks;
     private final Summary summary;
 
@@ -362,6 +364,8 @@ public final class EvalResult {
         String model,
         int toolCount,
         int skillCount,
+        String surface,
+        String group,
         List<TaskResult> tasks) {
       this.runId = runId;
       this.startedAt = startedAt;
@@ -370,8 +374,20 @@ public final class EvalResult {
       this.model = model;
       this.toolCount = toolCount;
       this.skillCount = skillCount;
+      this.surface = surface == null || surface.isBlank() ? "full" : surface;
+      this.group = group == null || group.isBlank() ? "baseline" : group;
       this.tasks = List.copyOf(tasks);
       this.summary = Summary.from(tasks);
+    }
+
+    /** 工具面名：full / compiler。 */
+    public String surface() {
+      return surface;
+    }
+
+    /** 任务组名：baseline / create。 */
+    public String group() {
+      return group;
     }
 
     public String runId() {
@@ -419,6 +435,8 @@ public final class EvalResult {
       map.put("model", model);
       map.put("toolCount", toolCount);
       map.put("skillCount", skillCount);
+      map.put("surface", surface);
+      map.put("group", group);
       map.put("tasks", mapList(tasks));
       map.put("summary", summary.toMap());
       return map;
