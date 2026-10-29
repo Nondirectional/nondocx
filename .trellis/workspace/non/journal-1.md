@@ -1527,3 +1527,26 @@ Demo 前端改为统一 SSE/JSONL reducer 和按批次时间线，展示授权�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: Agent 评测基线 + 正文行距与 header/footer ref 修复
+<!-- trellis-session: v=2 fp=8ffa3cdf6a1d22ec -->
+
+**Date**: 2026-10-29
+**Task**: Agent 评测基线 + 正文行距与 header/footer ref 修复
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+nondocx-examples 新增 10 条任务评测基线（v1: 8/10, 平均 6.8 次调用）；随后修复两个 P0：BodyTools 新增 update_paragraph_spacing、ElementResolver 新增 resolveAny/description 打通页眉页脚 ref 只读解析，写工具对非正文 ref 明确拒绝。复跑 9/10（平均 6.2 次），正文行距任务通过；页脚 PAGE 域写入仍为已知缺口。manifest 61→62 工具。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `67d89e3` | feat(toolkit): update_paragraph_spacing 正文行距工具 + header/footer ref 只读解析打通 |
+| `bdeee48` | test(examples): Agent 评测基线（10 条任务 + 评测 CLI + 报告） |
+
+### Status
+
+[OK] **Completed**
