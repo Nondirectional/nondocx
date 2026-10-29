@@ -212,6 +212,13 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 - **demo/eval 的 full 面不 scan `compiler`**（保持 58 入口基线可对比）；compiler 面由
   应用层显式组装：`current_document` + `compiler` 四工具（create/read/validate/edit）
   + 只读 `review_intent` = 6 入口。
+- **demo 默认 compiler 面**（2026-10-30 起）：`AgentBridge.buildToolRegistry(surface,…)`
+  按面装配（compiler = documentTools + `toolkit.compiler`；full = 原六组 scan），
+  `NONDOCX_AGENT_SURFACE=full` 回退。**配套必须随面切换**：system prompt
+  （`systemPromptFor`）与 Skill 策略（`skillRegistryFor`——full 面 Skill 教的是
+  compiler 面不存在的工具，compiler 面必须空 `SkillRegistry`）。复审 SubAgent 两面共用
+  （仅 `toolkit.view`，物理保证不变）。`validate_document` 归只读前缀（质量检查不置
+  dirty，纯咨询轮不触发落盘）。测试 `SurfaceSwitchTest` 锁定双面装配。
 - **eastAsia 字体槽分离是编译器独有兜底**：core 公开 API `font()` 走 POI 四槽同写
   （ascii/hAnsi/cs/eastAsia 同名）；规范的中文排版需要「西文 TNR + 中文宋体」分离。
   编译器经 `raw()` 只覆写 eastAsia 槽（`DocumentCompiler.applyRunFonts` 是唯一用点，

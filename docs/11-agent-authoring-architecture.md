@@ -563,8 +563,8 @@ baseline 组复跑（同口径 `qwen3.8-27b`，温度 0，runId `20261030-010150
   （MarkdownView v2 新增，round-trip 安全）。
 
 **结论**：op 集补齐后 compiler 面 baseline 10/10，「文档 IR + patch」路线在编辑侧也站住了。
-下一步的高价值项：demo 切 compiler 面（数据已齐：新建 5/5、编辑 10/10）、
-`insert-centered-title` 的记号混淆 prompt 治理。
+demo 已于同日默认切到 compiler 面（`NONDOCX_AGENT_SURFACE=full` 回退，见 nondocx-demo/README）；
+剩余高价值项：`insert-centered-title` 的记号混淆 prompt 治理（本次 26 次）。
 
 ---
 

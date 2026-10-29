@@ -35,16 +35,22 @@ import org.slf4j.LoggerFactory;
  * <p><b>架构</b>：单个 {@link Agent} 持有全部只读 + 写工具，但<b>不持有保存工具</b>。保存（落盘）由应用层在 agent 主循环结束（{@link
  * AgentEvent.Complete}）时强制执行——见 {@link #onAgentComplete}。这从源头消灭了 "LLM 漏调 save / 谎报成功"导致的自述与磁盘真相鸿沟。
  *
+ * <p><b>工具面（2026-10-30 起）</b>：默认 <b>compiler 面</b>（{@code current_document} + {@code
+ * create/read/validate/edit_document} + 只读复审 SubAgent = 6 入口）——依据 eval A/B（docs/11
+ * §6.3/§6.4/§6.5：新建 5/5、编辑 10/10，均优于 full 面）。{@code NONDOCX_AGENT_SURFACE=full} 回退原 58+
+ * 入口细粒度面；system prompt 与 Skill 策略随面切换（full 面的 Skill 教的是 compiler 面不存在的工具，不能混用）。
+ *
  * <p><b>意图复审（2026-07-17 重构）</b>：质检目标从「客观版式规则自检」改为「复审用户本轮期望的修改是否达成」，由<b>只读复审 SubAgent</b> {@code
  * review_intent} 承担。该 SubAgent 仅持有 {@code view_*} 只读工具 + 复审指令，对比「本轮用户请求 vs
  * 文档现状」输出三态结论（达成/部分达成/未达成）+ 差异说明。 它不持有写工具、不接触保存，因此<b>不触发</b>历史 SubAgent 的「自述≠真相」鸿沟——这是 {@code
- * agent-single.md} spec 允许的唯一 SubAgent 例外。
+ * agent-single.md} spec 允许的唯一 SubAgent 例外。两面共用同一个复审 SubAgent。
  *
  * <p><b>软警告门控</b>：复审判「未达成」<b>不拦截保存</b>——dirty 即落盘，复审结论随 {@code edit_outcome.qualityReport}
  * 回传供用户/前端判断。 故 {@link DocumentTools#saveCurrentDocument} 不再做任何质检门控。
  *
  * <p><b>dirty 检测</b>：写工具的 {@code AfterToolCall} 把 {@code dirty} 置 true，标记本轮发生过文档写入。只读工具
- * （view/read/get/list/search/check 等）及复审 SubAgent 调用不置 dirty。{@code Complete} 时仅在 dirty 时 flush。
+ * （view/read/get/list/search/check/validate 及复审 SubAgent 调用）不置 dirty。{@code Complete} 时仅在 dirty 时
+ * flush。
  *
  * <p><b>记忆污染治理</b>：写工具结果在 {@code AfterToolCall} 瘦身为一行确认；{@code review_intent} 原文挂 {@link
  * Message#note}（{@code llmVisible=false}，不占窗口、不喂 LLM），紧凑摘要作真工具结果喂 LLM。
@@ -57,6 +63,15 @@ final class AgentBridge {
 
   /** 复审 SubAgent 工具名（DIRECT 模式下，SubAgent name 即暴露给主 Agent 的工具名）。 */
   static final String REVIEW_TOOL = "review_intent";
+
+  /** compiler 面名（默认）：current_document + 4 编译工具 + review_intent。 */
+  static final String SURFACE_COMPILER = "compiler";
+
+  /** full 面名：细粒度工具面（58+ 入口），NONDOCX_AGENT_SURFACE=full 时启用。 */
+  static final String SURFACE_FULL = "full";
+
+  /** 选择工具面的环境变量名。 */
+  static final String SURFACE_ENV = "NONDOCX_AGENT_SURFACE";
 
   /** 复审 SubAgent 的 systemPrompt：约束输出固定前缀三态 + 差异说明，便于 afterToolCall 解析。 */
   private static final String REVIEW_SYSTEM_PROMPT =
@@ -79,12 +94,15 @@ final class AgentBridge {
    * view_*}，不改文档，故归只读。
    */
   private static final Set<String> READONLY_TOOL_PREFIXES =
-      Set.of("view_", "read_", "get_", "list_", "search_", "check_", "review_");
+      Set.of("view_", "read_", "get_", "list_", "search_", "check_", "validate_", "review_");
 
   private static final Set<String> READONLY_TOOL_EXACT =
       Set.of("current_document", "describe_capabilities", "get_subagent_result", "steer_subagent");
 
   private final boolean enabled;
+
+  /** 当前工具面名：{@link #SURFACE_COMPILER} 或 {@link #SURFACE_FULL}。 */
+  private final String surface;
 
   /**
    * Agent 被禁用的原因（{@code enabled=true} 时为 {@code null}）。
@@ -124,6 +142,7 @@ final class AgentBridge {
 
   AgentBridge(String apiKey, String currentDocPath) {
     this.currentDocPath = Path.of(currentDocPath);
+    this.surface = surfaceFromEnv();
     if (apiKey == null || apiKey.isBlank()) {
       disabledReason = "未配置 DASHSCOPE_API_KEY";
       enabled = false;
@@ -163,9 +182,11 @@ final class AgentBridge {
     memory =
         MessageWindowChatMemory.builder().conversationId("demo-document").maxMessages(24).build();
     documentTools = new DocumentTools(toolkit, () -> docId, () -> this.currentDocPath);
-    skillRegistry = DemoSkills.create();
+    // Skill 策略随面切换：full 面 Skill 教的是细粒度工具用法，compiler 面没有这些工具，不能注入。
+    skillRegistry = skillRegistryFor(surface);
 
     ToolRegistry tools = buildToolRegistry();
+    log.info("Agent surface: {}（{} 入口）", surface, tools.getRegularTools().size() + 1);
 
     agent =
         Agent.builder(llm, tools)
@@ -176,44 +197,121 @@ final class AgentBridge {
             .skillInjectionMode(SkillInjectionMode.SYSTEM)
             .addBeforeToolCall(this::beforeToolCall)
             .addAfterToolCall(this::afterToolCall)
-            .systemPrompt(
-                "你是文档 Agent。先调用 current_document 获取唯一允许使用的 doc_id，再按任务需要工作。"
-                    + "普通咨询只调用只读 view/read 工具；用户提出明确编辑请求时，直接调用写工具修改文档，"
-                    + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
-                    + "完成修改后调用 review_intent 复审用户期望的修改是否已经达成。若任一工具失败，停止并说明失败。"
-                    + "不要调用或描述 Dispatcher、计划、专家分派或提交阶段。"
-                    + "不要使用对话记忆或推断得来的旧 doc_id。"
-                    // Skill 是可选过程知识：不强制相关请求必须激活某条 Skill，模型可自主判断是否需要。
-                    + "部分 Skill（以 [Skill] 标注、无参数）是可选的过程性知识，仅在确实需要时调用，"
-                    + "同一 Skill 在一轮内最多调用一次，不重复点选。")
+            .systemPrompt(systemPromptFor(surface))
             .build();
   }
 
   /**
-   * 构建主 Agent 的 {@link ToolRegistry}：只读 + 写工具，外加<b>只读复审 SubAgent</b> {@code review_intent}。
+   * 构建主 Agent 的 {@link ToolRegistry}：按面装配写侧 + <b>只读复审 SubAgent</b> {@code review_intent}。
+   *
+   * <p><b>compiler 面（默认）</b>：{@code documentTools}（current_document）+ {@code
+   * toolkit.compiler}（create/read/validate/edit_document），主面 5 regular 工具 + 复审 SubAgent = 6 入口——与
+   * eval 的 compiler 面同构（docs/11 §6.3~§6.5 的 A/B 数据即此装配）。
+   *
+   * <p><b>full 面</b>：现行细粒度装配（view/body/table/headerFooterToc/trackedChangeQuery/
+   * trackedChangeAuthoring 六组 scan），供回退对比。
    *
    * <p>复审 SubAgent 的 {@link ToolRegistry} 刻意<b>只 scan {@code
    * toolkit.view}</b>——不持有任何写工具、不持有保存工具、不持有其它 SubAgent（仅一层委派）。这是它被 {@code agent-single.md} spec
    * 允许为例外的物理保证：只读复审 SubAgent 无法触发「漏调 save / 谎报成功」的真相鸿沟。复审 SubAgent 复用主 Agent 的 {@link
-   * #llm}，不引入第二模型。
+   * #llm}，不引入第二模型；<b>两面共用同一复审装配</b>。
    */
   private ToolRegistry buildToolRegistry() {
+    return buildToolRegistry(surface, documentTools, toolkit, llm, this::selectReviewContext);
+  }
+
+  /** 静态装配（package-private 便于测试锁定双面工具集，不经 LLM/网络）。 */
+  static ToolRegistry buildToolRegistry(
+      String surface,
+      DocumentTools documentTools,
+      DocxToolkit toolkit,
+      LLM llm,
+      com.non.chain.agent.ContextSelector reviewSelector) {
+    ToolRegistry main = new ToolRegistry().scan(documentTools);
+    if (SURFACE_FULL.equals(surface)) {
+      main.scan(toolkit.view)
+          .scan(toolkit.body)
+          .scan(toolkit.table)
+          .scan(toolkit.headerFooterToc)
+          .scan(toolkit.trackedChangeQuery)
+          .scan(toolkit.trackedChangeAuthoring);
+    } else {
+      // compiler 面（默认）
+      main.scan(toolkit.compiler);
+    }
     ToolRegistry reviewTools = new ToolRegistry().scan(toolkit.view);
-    return new ToolRegistry()
-        .scan(documentTools)
-        .scan(toolkit.view)
-        .scan(toolkit.body)
-        .scan(toolkit.table)
-        .scan(toolkit.headerFooterToc)
-        .scan(toolkit.trackedChangeQuery)
-        .scan(toolkit.trackedChangeAuthoring)
-        .registerSubAgent(REVIEW_TOOL, "[复审] 对比用户本轮修改请求与文档现状，返回达成/部分达成/未达成结论及差异说明。修改完成后调用。")
+    return main.registerSubAgent(REVIEW_TOOL, "[复审] 对比用户本轮修改请求与文档现状，返回达成/部分达成/未达成结论及差异说明。修改完成后调用。")
         .systemPrompt(REVIEW_SYSTEM_PROMPT)
         .toolRegistry(reviewTools)
         .llm(llm)
         .maxIterations(6)
-        .contextSelector(this::selectReviewContext)
+        .contextSelector(reviewSelector)
         .build();
+  }
+
+  /**
+   * 面向工具面的 system prompt（package-private 便于测试）。
+   *
+   * <p>compiler 版改编自 eval 的 COMPILER_SYSTEM_PROMPT（同口径才能复现 A/B 数据），叠加交互场景差异： demo
+   * 是多轮对话，不预设「用户要求生成/重写整份文档」的一次性任务框架。
+   */
+  static String systemPromptFor(String surface) {
+    if (SURFACE_FULL.equals(surface)) {
+      return "你是文档 Agent。先调用 current_document 获取唯一允许使用的 doc_id，再按任务需要工作。"
+          + "普通咨询只调用只读 view/read 工具；用户提出明确编辑请求时，直接调用写工具修改文档，"
+          + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
+          + "完成修改后调用 review_intent 复审用户期望的修改是否已经达成。若任一工具失败，停止并说明失败。"
+          + "不要调用或描述 Dispatcher、计划、专家分派或提交阶段。"
+          + "不要使用对话记忆或推断得来的旧 doc_id。"
+          // Skill 是可选过程知识：不强制相关请求必须激活某条 Skill，模型可自主判断是否需要。
+          + "部分 Skill（以 [Skill] 标注、无参数）是可选的过程性知识，仅在确实需要时调用，"
+          + "同一 Skill 在一轮内最多调用一次，不重复点选。";
+    }
+    return "你是文档 Agent。先调用 current_document 获取唯一允许使用的 doc_id。"
+        + "用户要求生成/重写整份文档时，把完整内容写成 Markdown，一次调用 create_document 生成"
+        + "（它会替换当前文档，句柄不变）。Markdown 支持 # 标题、**粗体**、无序/有序列表、"
+        + "|表格|（首行为表头）、{align=center} 属性；排版（黑体标题、宋体小四正文、1.5 倍行距、"
+        + "首行缩进、表头加粗灰底）由 style_profile=report-cn 自动完成，不要在 Markdown 里描述字体字号。"
+        + "了解或核对文档用 read_document（段落/表格带 pN/tN 短 ID，页脚在末尾元数据行），"
+        + "版式质量用 validate_document。"
+        + "注意：read_document 的输出是 Markdown 视图——# 前缀、{align=…}、<!-- pN --> 都是"
+        + "结构/属性标记，不是正文文本，不要试图删除或替换它们。"
+        + "编辑既有文档时，把一批修改整理成 ops 一次调用 edit_document（锚点用短 ID，"
+        + "插入内容用 Markdown 块），不要逐段零散修改。"
+        + "用户要求「修订模式/以修订」修改时用 tracked.replace / tracked.insert / tracked.delete op"
+        + "（必传 author=修订作者，用户给了作者名就用它）；"
+        + "用户要求在页脚插页码时用 footer.set_page_number op（format 如「第 {page} 页」）。"
+        + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
+        + "完成修改后调用 review_intent 复审用户期望的修改是否已经达成。若任一工具失败，停止并说明失败。"
+        + "不要使用对话记忆或推断得来的旧 doc_id。";
+  }
+
+  /**
+   * Skill 策略（package-private 便于测试）：full 面 6 条过程知识 Skill；compiler 面<b>空</b> ——Skill 正文教的是
+   * insert_paragraph 等细粒度工具用法，compiler 面没有这些工具，注入即误导。
+   */
+  static SkillRegistry skillRegistryFor(String surface) {
+    return SURFACE_FULL.equals(surface) ? DemoSkills.create() : new SkillRegistry();
+  }
+
+  /**
+   * 解析工具面环境变量（package-private 便于测试）：空/null → compiler（默认）； compiler/full 原样；非法值记 error 并回退
+   * compiler（demo 保持可用，不因拼写错误拒绝启动）。
+   */
+  static String surfaceFromRaw(String raw) {
+    String value = raw == null ? "" : raw.trim().toLowerCase(java.util.Locale.ROOT);
+    if (value.isEmpty() || SURFACE_COMPILER.equals(value)) {
+      return SURFACE_COMPILER;
+    }
+    if (SURFACE_FULL.equals(value)) {
+      return SURFACE_FULL;
+    }
+    log.error("未知 NONDOCX_AGENT_SURFACE={}（可用: compiler/full），回退默认 compiler", raw);
+    return SURFACE_COMPILER;
+  }
+
+  static String surfaceFromEnv() {
+    return surfaceFromRaw(System.getenv(SURFACE_ENV));
   }
 
   /**
@@ -246,6 +344,11 @@ final class AgentBridge {
   /** Agent 被禁用的原因；启用时为 {@code null}。供启动日志与前端状态展示。 */
   String disabledReason() {
     return disabledReason;
+  }
+
+  /** 当前工具面名（compiler/full），供 /api/status 与前端展示。 */
+  String surface() {
+    return surface;
   }
 
   void clearMemory() {

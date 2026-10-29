@@ -119,6 +119,7 @@ public final class DemoServer {
           java.util.Map<String, Object> status = new java.util.HashMap<>();
           status.put("agentEnabled", agentBridge.enabled());
           status.put("agentDisabledReason", agentBridge.disabledReason());
+          status.put("surface", agentBridge.surface());
           ctx.json(status);
         });
 
