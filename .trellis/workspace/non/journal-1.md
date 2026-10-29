@@ -1653,3 +1653,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - demo 切 compiler 面（新建 5/5、编辑 10/10 数据已齐）；insert-centered-title 记号混淆 prompt 治理（本次 26 次）；批注 op 视需要补
+
+
+## Session 41: demo 默认切 compiler 面（6 入口），env 可回退 full
+<!-- trellis-session: v=2 fp=2d172454d7cf2235 -->
+
+**Date**: 2026-10-30
+**Task**: demo 默认切 compiler 面（6 入口），env 可回退 full
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- AgentBridge 按面装配工具 registry（compiler=current_document+4 编译工具+review_intent=6 入口，与 eval 同构；full=原六组 scan）；systemPromptFor/skillRegistryFor 随面切换（compiler 面空 Skill——full 面 Skill 教的是不存在的工具）；validate_ 归只读前缀；/api/status+前端 chip 暴露 surface；NONDOCX_AGENT_SURFACE=full 回退；README/spec 更新
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bb95987` | feat(demo): 主工具面默认切 compiler（6 入口），NONDOCX_AGENT_SURFACE=full 可回退 |
+
+### Testing
+
+- [OK] SurfaceSwitchTest 7 条锁定双面装配；冒烟 /api/status 返回 surface=compiler；core 349/toolkit 232/examples 19/demo 47 全绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 带真实 key 的 demo 端到端对话体验；insert-centered-title 记号混淆 prompt 治理（评测 26 次波动）
