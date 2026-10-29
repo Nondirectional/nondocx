@@ -1619,3 +1619,37 @@ A/B：baseline 组 compiler 面 8/10（2 条=预告缺口：修订/页脚 op）�
 ### Next Steps
 
 - P2 续：修订/批注/页脚 op；demo 是否切 compiler 面等用户拍板
+
+
+## Session 40: P2 续：修订与页脚 op，compiler 面 baseline 10/10
+<!-- trellis-session: v=2 fp=4a1ef0def32d5273 -->
+
+**Date**: 2026-10-30
+**Task**: P2 续：修订与页脚 op，compiler 面 baseline 10/10
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- core 新增 Paragraph.replaceTrackedRange（范围级最小 diff 修订替换，下沉 addInsertionAfter 定位 ins）与 addSimpleField(instruction, cachedResult)（五 run 带缓存结果域）；PatchEngine op 集 6→10（tracked.insert/delete/replace + footer.set_page_number），同锚点改文本独占；MarkdownView 页脚元数据行；COMPILER_SYSTEM_PROMPT 增补
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fbf4b17` | feat(core,toolkit): 修订与页脚 op——compiler 面补齐最后两个缺口（P2 续） |
+
+### Testing
+
+- [OK] core 349 / toolkit 232 / examples 19 / demo 40 全绿；eval compiler 面 baseline 10/10（runId 20261030-010150-507），tracked-replace 6 次、footer-page-number 4 次均一次命中，首次反超 full 面 9/10
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- demo 切 compiler 面（新建 5/5、编辑 10/10 数据已齐）；insert-centered-title 记号混淆 prompt 治理（本次 26 次）；批注 op 视需要补
