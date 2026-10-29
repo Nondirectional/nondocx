@@ -1,0 +1,95 @@
+package io.github.nondirectional.docx.examples.eval;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
+
+import io.github.nondirectional.docx.core.Docx;
+import io.github.nondirectional.docx.core.api.Document;
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+/**
+ * 验证评测集本身的质量：任务数量、seed 可生成，以及最重要的——check 在未修改 seed 上必须失败。
+ *
+ * <p>最后一条是防止 tautological test：如果种子文档不满足任务目标，而 check 仍然通过， 说明这条 check 根本没测到模型的改动。
+ */
+class EvalTasksTest {
+
+  @TempDir Path temp;
+
+  @Test
+  void hasTenUniqueTasks() {
+    List<EvalTask> tasks = EvalTasks.all();
+    assertThat(tasks).hasSize(10);
+
+    Set<String> ids = new HashSet<>();
+    for (EvalTask task : tasks) {
+      assertThat(task.id()).isNotBlank();
+      assertThat(ids.add(task.id())).as("任务 id 重复: %s", task.id()).isTrue();
+      assertThat(task.title()).isNotBlank();
+      assertThat(task.prompt()).isNotBlank();
+      assertThat(task.checks()).as("%s 的 check 不应为空", task.id()).isNotEmpty();
+    }
+  }
+
+  @Test
+  void catalogMatchesTasks() {
+    assertThat(EvalTasks.catalog()).hasSize(EvalTasks.all().size());
+    for (EvalTask task : EvalTasks.all()) {
+      assertThat(EvalTasks.catalog()).containsEntry(task.id(), task.title());
+      assertThat(EvalTasks.byId(task.id())).isSameAs(task);
+    }
+    assertThat(EvalTasks.byId("does-not-exist")).isNull();
+  }
+
+  @Test
+  void marksKnownCapabilityGapTasks() {
+    assertThat(
+            EvalTasks.all().stream()
+                .filter(EvalTask::capabilityGap)
+                .map(EvalTask::id)
+                .collect(java.util.stream.Collectors.toList()))
+        .containsExactly("footer-page-number");
+  }
+
+  @Test
+  void everySeedCanBeWrittenAndReopened() {
+    for (EvalTask task : EvalTasks.all()) {
+      Path path = temp.resolve(task.id() + ".docx");
+      task.writeSeed(path);
+      assertThat(path).as("%s seed 未生成", task.id()).exists();
+      try (Document doc = Docx.open(path)) {
+        assertThat(doc.paragraphs()).as("%s seed 读回为空", task.id()).isNotEmpty();
+      }
+    }
+  }
+
+  @Test
+  void everyTaskFailsAtLeastOneCheckOnUnmodifiedSeed() {
+    for (EvalTask task : EvalTasks.all()) {
+      Path path = temp.resolve(task.id() + "-seed.docx");
+      task.writeSeed(path);
+      try (Document doc = Docx.open(path)) {
+        boolean anyFailed = false;
+        for (EvalTask.NamedCheck check : task.checks()) {
+          try {
+            check.check().verify(doc);
+          } catch (AssertionError expected) {
+            anyFailed = true;
+          } catch (Exception unexpected) {
+            fail(
+                "任务 %s 的 check「%s」在 seed 上抛出非 AssertionError: %s",
+                task.id(), check.name(), unexpected);
+          }
+        }
+        assertThat(anyFailed)
+            .as("任务 %s 的所有 check 在未修改 seed 上都能通过，check 可能是恒真的", task.id())
+            .isTrue();
+      }
+    }
+  }
+}

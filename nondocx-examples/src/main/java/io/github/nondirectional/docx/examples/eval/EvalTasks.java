@@ -1,0 +1,436 @@
+package io.github.nondirectional.docx.examples.eval;
+
+import io.github.nondirectional.docx.core.api.Document;
+import io.github.nondirectional.docx.core.api.header.Footer;
+import io.github.nondirectional.docx.core.api.style.Alignment;
+import io.github.nondirectional.docx.core.api.style.HeadingLevel;
+import io.github.nondirectional.docx.core.api.table.Cell;
+import io.github.nondirectional.docx.core.api.table.Row;
+import io.github.nondirectional.docx.core.api.table.Table;
+import io.github.nondirectional.docx.core.api.text.Paragraph;
+import io.github.nondirectional.docx.core.api.track.TrackedChange;
+import io.github.nondirectional.docx.core.api.track.TrackedChangeType;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 第一版评测集的 10 条任务。
+ *
+ * <p>每条任务都从代码构造 seed，断言只依赖最终 docx 的结构/文本/样式，不依赖模型自述。 任务选择的原则不是「覆盖全部能力」，而是「能区分模型问题、接口问题、能力缺失」：
+ *
+ * <ul>
+ *   <li>1~3：基础写入，应该能过；过不了说明工具/提示词有硬伤。
+ *   <li>4~5：全文格式，检查是否有批量样式能力。
+ *   <li>6~7：表格，检查多级坐标与建表/样式分步。
+ *   <li>8~9：修订与批量替换，检查语义工具选择。
+ *   <li>10：页脚页码，检查只读能力缺口。
+ * </ul>
+ */
+public final class EvalTasks {
+
+  private static final List<EvalTask> TASKS = buildTasks();
+
+  private EvalTasks() {}
+
+  /** 返回全部任务（固定顺序）。 */
+  public static List<EvalTask> all() {
+    return TASKS;
+  }
+
+  /** 按 id 查找；不存在返回 null。 */
+  public static EvalTask byId(String id) {
+    for (EvalTask task : TASKS) {
+      if (task.id().equals(id)) {
+        return task;
+      }
+    }
+    return null;
+  }
+
+  /** 返回 id → 标题的稳定映射，供 CLI --list 使用。 */
+  public static Map<String, String> catalog() {
+    Map<String, String> catalog = new LinkedHashMap<>();
+    for (EvalTask task : TASKS) {
+      catalog.put(task.id(), task.title());
+    }
+    return catalog;
+  }
+
+  private static List<EvalTask> buildTasks() {
+    List<EvalTask> tasks = new ArrayList<>();
+
+    tasks.add(
+        new EvalTask(
+            "append-paragraph",
+            "末尾追加一段",
+            "在文档末尾追加一段：本周进度正常。",
+            doc -> doc.addParagraph("开头段落。"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "段落数增加",
+                    doc ->
+                        EvalAssert.isTrue(
+                            doc.paragraphs().size() >= 2,
+                            "期望至少 2 段，实际 " + doc.paragraphs().size())),
+                EvalTask.NamedCheck.of(
+                    "末尾包含新段落",
+                    doc -> EvalAssert.contains(lastNonBlankText(doc), "本周进度正常", "最后一个非空段落")))));
+
+    tasks.add(
+        new EvalTask(
+            "insert-centered-title",
+            "开头插入居中标题",
+            "在文档开头插入一个居中标题「项目周汇报」。",
+            doc -> doc.addParagraph("正文"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "首段文本",
+                    doc ->
+                        EvalAssert.equal(
+                            "项目周汇报", requireParagraph(doc, 0, "第 0 段").text(), "第 0 段文本")),
+                EvalTask.NamedCheck.of(
+                    "首段是一级标题",
+                    doc ->
+                        EvalAssert.equal(
+                            HeadingLevel.H1,
+                            requireParagraph(doc, 0, "第 0 段").heading(),
+                            "第 0 段标题级别")),
+                EvalTask.NamedCheck.of(
+                    "首段居中",
+                    doc ->
+                        EvalAssert.equal(
+                            Alignment.CENTER,
+                            requireParagraph(doc, 0, "第 0 段").alignment(),
+                            "第 0 段对齐")))));
+
+    tasks.add(
+        new EvalTask(
+            "replace-exact-text",
+            "精确替换文本",
+            "把文档中的「旧版本说明」替换为「新版本说明」，不要改其他内容。",
+            doc -> {
+              doc.addParagraph("旧版本说明。");
+              doc.addParagraph("保留内容。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "新文本出现", doc -> EvalAssert.contains(EvalAssert.bodyText(doc), "新版本说明", "正文")),
+                EvalTask.NamedCheck.of(
+                    "旧文本消失",
+                    doc -> EvalAssert.notContains(EvalAssert.bodyText(doc), "旧版本说明", "正文")),
+                EvalTask.NamedCheck.of(
+                    "其他段落不变",
+                    doc ->
+                        EvalAssert.equal(
+                            "保留内容。", requireParagraph(doc, 1, "第 1 段").text(), "第 1 段")))));
+
+    tasks.add(
+        new EvalTask(
+            "body-font-line-spacing",
+            "正文宋体小四 + 1.5 倍行距",
+            "把正文所有段落设置为宋体、小四（12pt）、1.5 倍行距。",
+            doc -> {
+              doc.addParagraph("第一段正文。");
+              doc.addParagraph("第二段正文。");
+              doc.addParagraph("第三段正文。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "正文行距 1.5",
+                    doc -> {
+                      for (Paragraph p : nonBlankBodyParagraphs(doc)) {
+                        EvalAssert.closeTo(1.5, p.lineSpacing(), 0.01, "段落「" + p.text() + "」行距");
+                      }
+                    }),
+                EvalTask.NamedCheck.of(
+                    "正文宋体",
+                    doc -> {
+                      for (Paragraph p : nonBlankBodyParagraphs(doc)) {
+                        EvalAssert.assertFont(p, "宋体", "段落「" + p.text() + "」字体");
+                      }
+                    }),
+                EvalTask.NamedCheck.of(
+                    "正文字号 12",
+                    doc -> {
+                      for (Paragraph p : nonBlankBodyParagraphs(doc)) {
+                        EvalAssert.assertFontSize(p, 12, "段落「" + p.text() + "」字号");
+                      }
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "heading-font",
+            "所有标题设为黑体",
+            "把文档里所有标题的字体设置为黑体，正文不要改。",
+            doc -> {
+              heading(doc, HeadingLevel.H1, "项目周报");
+              heading(doc, HeadingLevel.H2, "本周进展");
+              doc.addParagraph("本周完成了表格与超链接封装。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "标题数量",
+                    doc ->
+                        EvalAssert.isTrue(
+                            headingParagraphs(doc).size() >= 2,
+                            "期望至少 2 个标题，实际 " + headingParagraphs(doc).size())),
+                EvalTask.NamedCheck.of(
+                    "标题黑体",
+                    doc -> {
+                      for (Paragraph p : headingParagraphs(doc)) {
+                        EvalAssert.assertFont(p, "黑体", "标题「" + p.text() + "」");
+                      }
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "create-table-header",
+            "建表并加粗表头",
+            "在文档末尾插入一个 2 行 3 列的表格，表头是「任务、负责人、状态」，" + "第二行填「联调、小王、完成」，表头加粗。",
+            doc -> doc.addParagraph("项目周报"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "表格存在",
+                    doc ->
+                        EvalAssert.isTrue(
+                            doc.tables().size() >= 1, "期望至少 1 个表格，实际 " + doc.tables().size())),
+                EvalTask.NamedCheck.of(
+                    "2 行 3 列",
+                    doc -> {
+                      Table table = requireLastTable(doc, "建表任务");
+                      EvalAssert.equal(2, table.rows().size(), "表格行数");
+                      for (Row row : table.rows()) {
+                        EvalAssert.equal(3, row.cells().size(), "行单元格数");
+                      }
+                    }),
+                EvalTask.NamedCheck.of(
+                    "表头文本",
+                    doc -> {
+                      Table table = requireLastTable(doc, "建表任务");
+                      EvalAssert.isTrue(!table.rows().isEmpty(), "表格没有行，无法检查表头");
+                      Row header = table.rows().get(0);
+                      EvalAssert.equal("任务", header.cells().get(0).text(), "表头 1");
+                      EvalAssert.equal("负责人", header.cells().get(1).text(), "表头 2");
+                      EvalAssert.equal("状态", header.cells().get(2).text(), "表头 3");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "表头加粗",
+                    doc -> {
+                      Table table = requireLastTable(doc, "建表任务");
+                      EvalAssert.isTrue(!table.rows().isEmpty(), "表格没有行，无法检查表头");
+                      Row header = table.rows().get(0);
+                      for (Cell cell : header.cells()) {
+                        EvalAssert.assertBold(
+                            cell.paragraph(0), true, "表头单元格「" + cell.text() + "」");
+                      }
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "table-cell-edit",
+            "修改表格单元格",
+            "把表格第 2 行第 2 列的内容改为「已完成」。",
+            doc -> {
+              doc.addParagraph("进度表");
+              Table table = doc.addTable();
+              Row row0 = table.addRow();
+              row0.addCell().text("A");
+              row0.addCell().text("B");
+              Row row1 = table.addRow();
+              row1.addCell().text("C");
+              row1.addCell().text("D");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "目标单元格",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "进度表");
+                      EvalAssert.isTrue(table.rows().size() >= 2, "表格行数不足 2");
+                      EvalAssert.isTrue(table.rows().get(1).cells().size() >= 2, "第 2 行单元格不足 2");
+                      EvalAssert.equal(
+                          "已完成", table.rows().get(1).cells().get(1).text(), "第 2 行第 2 列");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "其他单元格不变",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "进度表");
+                      EvalAssert.isTrue(!table.rows().isEmpty(), "表格没有行");
+                      EvalAssert.isTrue(!table.rows().get(0).cells().isEmpty(), "第 1 行没有单元格");
+                      EvalAssert.equal(
+                          "A", table.rows().get(0).cells().get(0).text(), "第 1 行第 1 列");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "tracked-replace",
+            "修订模式替换",
+            "以修订模式把「一百万元」改成「两百万元」，作者填「审查员」。",
+            doc -> doc.addParagraph("合同金额为一百万元。"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "存在修订",
+                    doc ->
+                        EvalAssert.isTrue(
+                            !doc.trackedChanges().list().isEmpty(), "期望至少 1 条修订，实际 0 条")),
+                EvalTask.NamedCheck.of(
+                    "作者正确",
+                    doc -> {
+                      boolean found = false;
+                      for (TrackedChange change : doc.trackedChanges().list()) {
+                        if ("审查员".equals(change.author())) {
+                          found = true;
+                          break;
+                        }
+                      }
+                      EvalAssert.isTrue(found, "期望存在作者为「审查员」的修订");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "包含插入与删除",
+                    doc -> {
+                      boolean ins = false;
+                      boolean del = false;
+                      for (TrackedChange change : doc.trackedChanges().list()) {
+                        if (change.type() == TrackedChangeType.INS) {
+                          ins = true;
+                        }
+                        if (change.type() == TrackedChangeType.DEL) {
+                          del = true;
+                        }
+                      }
+                      EvalAssert.isTrue(ins, "期望存在插入修订（INS）");
+                      EvalAssert.isTrue(del, "期望存在删除修订（DEL）");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "replace-all-occurrences",
+            "替换所有 TODO",
+            "把文档里所有「TODO」替换为「已完成」。",
+            doc -> {
+              doc.addParagraph("TODO: 完成接口");
+              doc.addParagraph("TODO: 补充测试");
+              doc.addParagraph("TODO: 更新文档");
+              doc.addParagraph("其他内容。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "TODO 消失",
+                    doc -> EvalAssert.notContains(EvalAssert.bodyText(doc), "TODO", "正文")),
+                EvalTask.NamedCheck.of(
+                    "三处都已替换",
+                    doc -> {
+                      int count = countOccurrences(EvalAssert.bodyText(doc), "已完成");
+                      EvalAssert.isTrue(count >= 3, "期望「已完成」至少 3 处，实际 " + count);
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "footer-page-number",
+            "页脚插入页码",
+            "在页脚插入页码，格式为「第 X 页」。",
+            doc -> {
+              doc.addParagraph("正文");
+              doc.ensureFooter().addParagraph().addRun("页脚");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "页脚存在", doc -> EvalAssert.isTrue(doc.footer() != null, "期望存在页脚")),
+                EvalTask.NamedCheck.of(
+                    "正文不被误改",
+                    doc -> EvalAssert.equal("正文", requireParagraph(doc, 0, "正文").text(), "第 0 段")),
+                EvalTask.NamedCheck.of(
+                    "页脚含页码",
+                    doc -> {
+                      Footer footer = doc.footer();
+                      String text = footer == null ? "" : footer.text();
+                      EvalAssert.contains(text, "第", "页脚文本");
+                      EvalAssert.isTrue(containsDigit(text), "页脚文本应包含数字，实际「" + text + "」");
+                    })),
+            true));
+
+    return List.copyOf(tasks);
+  }
+
+  // ==================== fixture helpers ====================
+
+  private static Paragraph requireParagraph(Document doc, int index, String what) {
+    EvalAssert.isTrue(
+        doc.paragraphs().size() > index,
+        what + "：期望至少 " + (index + 1) + " 段，实际 " + doc.paragraphs().size());
+    return doc.paragraphs().get(index);
+  }
+
+  private static Table requireTable(Document doc, int index, String what) {
+    EvalAssert.isTrue(
+        doc.tables().size() > index,
+        what + "：期望至少 " + (index + 1) + " 个表格，实际 " + doc.tables().size());
+    return doc.tables().get(index);
+  }
+
+  private static Table requireLastTable(Document doc, String what) {
+    EvalAssert.isTrue(doc.tables().size() > 0, what + "：期望至少 1 个表格，实际 0");
+    return doc.tables().get(doc.tables().size() - 1);
+  }
+
+  private static void heading(Document doc, HeadingLevel level, String text) {
+    doc.addParagraph(text).heading(level);
+  }
+
+  private static List<Paragraph> nonBlankBodyParagraphs(Document doc) {
+    List<Paragraph> result = new ArrayList<>();
+    for (Paragraph p : doc.paragraphs()) {
+      if (p.text() != null && !p.text().isBlank()) {
+        result.add(p);
+      }
+    }
+    return result;
+  }
+
+  private static List<Paragraph> headingParagraphs(Document doc) {
+    List<Paragraph> result = new ArrayList<>();
+    for (Paragraph p : doc.paragraphs()) {
+      if (p.heading() != null) {
+        result.add(p);
+      }
+    }
+    return result;
+  }
+
+  private static String lastNonBlankText(Document doc) {
+    List<Paragraph> paragraphs = doc.paragraphs();
+    for (int i = paragraphs.size() - 1; i >= 0; i--) {
+      String text = paragraphs.get(i).text();
+      if (text != null && !text.isBlank()) {
+        return text;
+      }
+    }
+    return "";
+  }
+
+  private static int countOccurrences(String text, String needle) {
+    if (text == null || text.isEmpty() || needle == null || needle.isEmpty()) {
+      return 0;
+    }
+    int count = 0;
+    int index = 0;
+    while ((index = text.indexOf(needle, index)) >= 0) {
+      count++;
+      index += needle.length();
+    }
+    return count;
+  }
+
+  private static boolean containsDigit(String text) {
+    if (text == null) {
+      return false;
+    }
+    for (int i = 0; i < text.length(); i++) {
+      if (Character.isDigit(text.charAt(i))) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
