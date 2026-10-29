@@ -8,6 +8,7 @@ import io.github.nondirectional.docx.core.Docx;
 import io.github.nondirectional.docx.core.api.Document;
 import io.github.nondirectional.docx.toolkit.result.ToolResultParser;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -126,6 +127,48 @@ class CompilerToolsTest {
     }
 
     assertThat(ToolTestSupport.isFailure(tk.compiler.validateDocument("doc-99"))).isTrue();
+    tk.session.closeDocx(docId);
+  }
+
+  @Test
+  void editDocumentAppliesAtomicPatchAndRejectsOnPreflightFailure(@TempDir Path temp)
+      throws Exception {
+    DocxToolkit tk = new DocxToolkit();
+    String docId = ToolTestSupport.extractDocId(tk.session.openDocx(seed(temp)));
+
+    // 合法 patch：插入 + 套样式，一次调用
+    java.util.Map<String, Object> insert =
+        new java.util.LinkedHashMap<>(
+            java.util.Map.of("op", "insert", "position", "end", "block", "追加的一段。"));
+    java.util.Map<String, Object> style =
+        new java.util.LinkedHashMap<>(
+            java.util.Map.of("op", "set_style", "anchor", "p0", "style", "body"));
+    String raw = tk.compiler.editDocument(docId, List.of(insert, style), null, null, null);
+    ToolResultParser.Snapshot parsed = ToolTestSupport.parse(raw);
+    assertThat(parsed).isNotNull();
+    assertThat(parsed.success()).isTrue();
+    JsonNode data = MAPPER.readTree(parsed.dataText());
+    assertThat(data.get("applied").asInt()).isEqualTo(2);
+    Document after = tk.session.getDocument(docId);
+    assertThat(after.paragraphs()).hasSize(2);
+    assertThat(after.paragraph(0).lineSpacing()).isEqualTo(1.5);
+
+    // preflight 失败：零写入 + 明确消息；generation 不匹配：拒绝
+    java.util.Map<String, Object> badAnchor =
+        new java.util.LinkedHashMap<>(java.util.Map.of("op", "delete", "anchor", "p99"));
+    String failed = tk.compiler.editDocument(docId, List.of(badAnchor), null, null, null);
+    assertThat(ToolTestSupport.isFailure(failed)).isTrue();
+    assertThat(ToolTestSupport.parse(failed).message()).contains("未被修改");
+    assertThat(tk.session.getDocument(docId).paragraphs()).hasSize(2);
+
+    String stale = tk.compiler.editDocument(docId, List.of(insert), null, null, 99);
+    assertThat(ToolTestSupport.isFailure(stale)).isTrue();
+    assertThat(ToolTestSupport.parse(stale).message()).contains("generation");
+
+    assertThat(
+            ToolTestSupport.isFailure(
+                tk.compiler.editDocument("doc-99", List.of(insert), null, null, null)))
+        .isTrue();
     tk.session.closeDocx(docId);
   }
 

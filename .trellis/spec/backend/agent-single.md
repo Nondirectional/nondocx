@@ -210,7 +210,8 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   替换 docId 背后的 Document（与 `SessionTools.reopen` 同一路径）：句柄不变、generation+1、
   旧元素引用失效。失败路径（解析/编译/profile 错误）**不触碰会话**。
 - **demo/eval 的 full 面不 scan `compiler`**（保持 58 入口基线可对比）；compiler 面由
-  应用层显式组装：`current_document` + `compiler` 三工具 + 只读 `review_intent` = 5 入口。
+  应用层显式组装：`current_document` + `compiler` 四工具（create/read/validate/edit）
+  + 只读 `review_intent` = 6 入口。
 - **eastAsia 字体槽分离是编译器独有兜底**：core 公开 API `font()` 走 POI 四槽同写
   （ascii/hAnsi/cs/eastAsia 同名）；规范的中文排版需要「西文 TNR + 中文宋体」分离。
   编译器经 `raw()` 只覆写 eastAsia 槽（`DocumentCompiler.applyRunFonts` 是唯一用点，
@@ -221,3 +222,8 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 - **read/write 同构**：`read_document` 输出的 Markdown（短 ID 锚点是 HTML 注释）可原样
   再作为 `create_document` 输入——解析器把 `<!-- … -->` 当元数据剥掉，round-trip 不产生
   脏块。改输出格式时保持这一性质（`CompilerPipelineTest#markdownViewRoundTripsCompiledDocument`）。
+- **edit_document 原子性**（P2）：`PatchEngine` 先 preflight 全部 op（锚点存在/参数合法/
+  find 在文中/行列在界/表格块仅 end/前序删除的锚点不得复用），任一失败抛
+  `PatchException` 且**零写入**；执行期不应有可预期失败。锚点编号与 `read_document`
+  同源（`pN`/`tN`），插入块复用 Markdown 解析器。执行期意外异常按「可能部分应用」上报，
+  不得伪装成功——`PatchEngineTest#atomicPreflightFailureLeavesDocumentUntouched` 锁死零写入。

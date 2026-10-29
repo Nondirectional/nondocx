@@ -173,25 +173,37 @@ public final class MarkdownParser {
   /**
    * 解析一段连续的 {@code |…|} 行。
    *
-   * <p>第 2 行是分隔行（{@code |---|---|}，允许 {@code :}）才认定为表格；否则整块降级为 段落并记 warning。行列数与表头不一致时补空/截断并记
-   * warning。
+   * <p>第 2 行是分隔行（{@code |---|---|}，允许 {@code :}）认定为标准表格；<b>缺少分隔行</b> 时按行数分流：≥2 行仍按表格解析（首行视为表头，记
+   * warning——LLM 常漏写分隔行，倒进 段落会产生带管道符的脏文本）；单行才降级为段落。行列数与表头不一致时补空/截断并记 warning。
    */
   private static void parseTable(
       List<String> tableLines, List<Block> blocks, List<String> warnings) {
-    if (tableLines.size() < 2 || !isSeparatorRow(tableLines.get(1))) {
+    boolean hasSeparator = tableLines.size() >= 2 && isSeparatorRow(tableLines.get(1));
+    if (!hasSeparator && tableLines.size() < 2) {
       warnings.add("表格缺少 |---| 分隔行，已按普通段落处理（首个表格行: " + truncate(tableLines.get(0)) + "）");
       for (String line : tableLines) {
         blocks.add(new Para(List.of(Span.text(line)), null));
       }
       return;
     }
-    List<String> header = splitCells(tableLines.get(0));
+    if (!hasSeparator) {
+      warnings.add("表格缺少 |---| 分隔行，首行已按表头处理");
+    }
+    int firstDataRow = hasSeparator ? 2 : 1;
+    // 单元格按纯文本处理（v1 不承载富文本）：行内标记剥掉，避免「**加粗**」星号污染文本。
+    List<String> header = stripCellMarkers(splitCells(tableLines.get(0)));
     List<List<String>> rows = new ArrayList<>();
-    for (int k = 2; k < tableLines.size(); k++) {
-      List<String> cells = splitCells(tableLines.get(k));
+    for (int k = firstDataRow; k < tableLines.size(); k++) {
+      List<String> cells = stripCellMarkers(splitCells(tableLines.get(k)));
       if (cells.size() != header.size()) {
         warnings.add(
-            "表格第 " + (k - 1) + " 行有 " + cells.size() + " 列，与表头 " + header.size() + " 列不一致，已补空/截断");
+            "表格第 "
+                + (k - firstDataRow + 1)
+                + " 行有 "
+                + cells.size()
+                + " 列，与表头 "
+                + header.size()
+                + " 列不一致，已补空/截断");
       }
       while (cells.size() < header.size()) {
         cells.add("");
@@ -199,6 +211,15 @@ public final class MarkdownParser {
       rows.add(new ArrayList<>(cells.subList(0, Math.min(cells.size(), header.size()))));
     }
     blocks.add(new Table(header, rows));
+  }
+
+  /** 逐格剥行内标记（粗体/斜体/代码），保持单元格纯文本。 */
+  private static List<String> stripCellMarkers(List<String> cells) {
+    List<String> stripped = new ArrayList<>();
+    for (String cell : cells) {
+      stripped.add(stripInlineMarkers(cell));
+    }
+    return stripped;
   }
 
   /** 分隔行判定：整行只含 {@code | - : 空白} 且至少一个 {@code -}。 */

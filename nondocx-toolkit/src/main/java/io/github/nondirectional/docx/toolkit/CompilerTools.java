@@ -5,6 +5,7 @@ import com.non.chain.tool.ToolParam;
 import io.github.nondirectional.docx.core.api.Document;
 import io.github.nondirectional.docx.toolkit.capability.CapabilityLevel;
 import io.github.nondirectional.docx.toolkit.capability.CapabilityOperation;
+import io.github.nondirectional.docx.toolkit.capability.NestedParamCapability;
 import io.github.nondirectional.docx.toolkit.capability.ParamCapability;
 import io.github.nondirectional.docx.toolkit.capability.ParamType;
 import io.github.nondirectional.docx.toolkit.capability.ToolCapability;
@@ -12,6 +13,7 @@ import io.github.nondirectional.docx.toolkit.compiler.DocumentCompiler;
 import io.github.nondirectional.docx.toolkit.compiler.MarkdownDoc;
 import io.github.nondirectional.docx.toolkit.compiler.MarkdownParser;
 import io.github.nondirectional.docx.toolkit.compiler.MarkdownView;
+import io.github.nondirectional.docx.toolkit.compiler.PatchEngine;
 import io.github.nondirectional.docx.toolkit.compiler.StyleProfile;
 import io.github.nondirectional.docx.toolkit.result.ToolResult;
 import io.github.nondirectional.docx.toolkit.result.ToolResultCode;
@@ -231,5 +233,123 @@ public final class CompilerTools extends ToolkitToolContext {
             ? "质量检查全部通过（" + results.size() + " 项）"
             : "质量检查发现 " + failed + " 个问题（共 " + results.size() + " 项检查）";
     return ToolResultRenderer.render(ToolResult.ok(data, message));
+  }
+
+  /**
+   * 对既有文档应用一批原子编辑（patch）。
+   *
+   * @param docId 文档句柄
+   * @param ops op 数组，每个 op 至少含 {@code op} 字段；锚点用 {@code read_document} 的短 ID
+   * @param dryRun 只返回计划不写入
+   * @param styleProfile set_style 套用的样式 profile
+   * @param expectedGeneration 调用方持有的 generation（不匹配则拒绝）
+   * @return applied/changed/warnings（dry_run 时为 planned 清单）
+   */
+  @ToolDef(
+      name = "edit_document",
+      description =
+          "对当前文档应用一批原子编辑 ops。锚点是 read_document 输出的短 ID（pN=段落，tN=表格）。"
+              + "op 类型：insert（position=before/after/start/end + block=Markdown 块，含表格时仅 end）、"
+              + "replace_text（anchor+find+text，段落内精确子串）、delete（anchor 段落）、"
+              + "set_style（anchor + style=body/heading 或 align/line_spacing）、"
+              + "table.set_cell（anchor+row+col+text）、table.add_row（anchor+cells）。"
+              + "先校验全部 op 再写入：任一 op 非法则整体拒绝、零改动。"
+              + "多步编辑优先用它一次表达，不要逐段调用。dry_run=true 只返回计划。")
+  @ToolCapability(
+      operation = CapabilityOperation.UPDATE,
+      element = "document",
+      level = CapabilityLevel.EXPERIMENTAL)
+  public String editDocument(
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(
+              name = "ops",
+              description =
+                  "op 对象数组，如 [{\"op\":\"insert\",\"anchor\":\"p3\",\"position\":\"after\","
+                      + "\"block\":\"# 小节 {align=center}\"}, {\"op\":\"set_style\",\"anchor\":\"p1\","
+                      + "\"style\":\"body\"}, {\"op\":\"table.set_cell\",\"anchor\":\"t0\","
+                      + "\"row\":1,\"col\":2,\"text\":\"完成\"}]")
+          @NestedParamCapability(path = "ops.op", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.anchor", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.position", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.block", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.find", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.text", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.style", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.align", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.line_spacing", type = ParamType.NUMBER)
+          @NestedParamCapability(path = "ops.row", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "ops.col", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "ops.cells", type = ParamType.STRING_ARRAY)
+          List<Map<String, Object>> ops,
+      @ToolParam(name = "dry_run", description = "只返回计划不写入（默认 false）", required = false)
+          @ParamCapability(type = ParamType.BOOLEAN)
+          Boolean dryRun,
+      @ToolParam(
+              name = "style_profile",
+              description = "set_style 套用的样式 profile（默认 report-cn）",
+              required = false)
+          @ParamCapability(type = ParamType.STRING)
+          String styleProfile,
+      @ToolParam(
+              name = "expected_generation",
+              description = "调用方持有的 session generation，与当前不符则拒绝写入",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      long current = generations.getOrDefault(docId, 1L);
+      return renderGenerationMismatch(
+          expectedGeneration == null ? current : expectedGeneration, current);
+    }
+    StyleProfile profile =
+        styleProfile == null || styleProfile.isBlank()
+            ? StyleProfile.builtin("report-cn")
+            : StyleProfile.builtin(styleProfile.trim());
+    if (profile == null) {
+      return renderInvalidArgument(
+          "未知样式 profile: "
+              + styleProfile
+              + "（可选: "
+              + String.join("/", StyleProfile.builtins().keySet())
+              + "）");
+    }
+    try {
+      PatchEngine.PatchResult result =
+          PatchEngine.apply(doc, coerceList(ops), profile, Boolean.TRUE.equals(dryRun));
+      Map<String, Object> data = new LinkedHashMap<>();
+      data.put("docId", docId);
+      data.put("generation", generations.getOrDefault(docId, 1L));
+      if (result.dryRun()) {
+        data.put("dryRun", true);
+        data.put("planned", result.planned());
+        data.put("warnings", result.warnings());
+        String message = "dry-run 通过：将应用 " + result.applied() + " 个 op（未写入）";
+        return ToolResultRenderer.render(ToolResult.ok(data, message));
+      }
+      data.put("applied", result.applied());
+      data.put("changed", result.changed());
+      data.put("warnings", result.warnings());
+      String message =
+          "已应用 "
+              + result.applied()
+              + " 个 op，触碰 "
+              + result.changed().size()
+              + " 个锚点"
+              + (result.warnings().isEmpty() ? "" : "，警告 " + result.warnings().size() + " 条");
+      return ToolResultRenderer.render(ToolResult.ok(data, message));
+    } catch (PatchEngine.PatchException e) {
+      // preflight 失败 = 零写入，明确告知
+      return renderInvalidArgument(e.getMessage() + "（已拒绝，文档未被修改）");
+    } catch (RuntimeException e) {
+      return ToolResultRenderer.render(
+          ToolResult.fail(
+              ToolResultCode.INVALID_ARGUMENT,
+              "patch 执行异常（文档可能被部分修改，建议 read_document 核对）: " + rootMessage(e)));
+    }
   }
 }

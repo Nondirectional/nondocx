@@ -218,6 +218,7 @@ check_quality({
 | `create_document` | Markdown 子集 + 样式 profile 一次性编译整份 docx，**替换** doc_id 会话文档（句柄不变、generation+1） |
 | `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，与写侧同构（round-trip） |
 | `validate_document` | 复用 10 项质量检查，输出带 `v1/v2` 编号的问题清单 |
+| `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row），短 ID 锚点，支持 dry_run |
 
 **Markdown 子集**：`#`~`######` 标题（可带 `{align=center|left|right|both}` 行尾属性）、段落、
 `**粗体**`/`*斜体*`/`` `代码` ``、`- `/`1. ` 列表（缩进 2 空格一级）、`|…|` 表格
@@ -245,8 +246,23 @@ create_document({
 })
 ```
 
+**edit_document 的 op 集**（锚点 = `read_document` 的短 ID）：
+
+```json
+{"op":"insert","anchor":"p3","position":"after","block":"# 小节 {align=center}\n\n正文。"}
+{"op":"replace_text","anchor":"p8","find":"旧文本","text":"新文本"}
+{"op":"delete","anchor":"p5"}
+{"op":"set_style","anchor":"p8","style":"body"}          // 或 heading；也可只用 align/line_spacing
+{"op":"table.set_cell","anchor":"t0","row":1,"col":2,"text":"完成"}
+{"op":"table.add_row","anchor":"t0","cells":["a","b"]}
+```
+
+先 preflight 全部 op 再统一写入：锚点不存在、`find` 不在文中、行列越界、表格块非 end
+插入、引用本 patch 前序删除的锚点——任一失败**整体拒绝、零改动**。`replace_text` 跨 run
+时整段重建为单 run（丢段内直接格式，记 warning）。
+
 **位置约定**：本组在 `DocxToolkit.scanAll` 里（能力清单第 9 组，EXPERIMENTAL 级），但
-**默认不进 demo/eval 的 full 工具面**——是否成为默认面由评测数据决定（见 doc 11 §P1）。
+**默认不进 demo/eval 的 full 工具面**——是否成为默认面由评测数据决定（见 doc 11 §P1/P2）。
 
 ---
 

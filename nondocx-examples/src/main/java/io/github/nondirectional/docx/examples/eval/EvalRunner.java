@@ -71,7 +71,11 @@ public final class EvalRunner {
           + "（它会替换当前文档，句柄不变）。Markdown 支持 # 标题、**粗体**、无序/有序列表、"
           + "|表格|（首行为表头）、{align=center} 属性；排版（黑体标题、宋体小四正文、1.5 倍行距、"
           + "首行缩进、表头加粗灰底）由 style_profile=report-cn 自动完成，不要在 Markdown 里描述字体字号。"
-          + "可用 read_document 查看当前文档，validate_document 做质量检查。"
+          + "可用 read_document 查看当前文档（段落/表格带 pN/tN 短 ID），validate_document 做质量检查。"
+          + "注意：read_document 的输出是 Markdown 视图——# 前缀、{align=…}、<!-- pN --> 都是"
+          + "结构/属性标记，不是正文文本，不要试图删除或替换它们。"
+          + "编辑既有文档时，把一批修改整理成 ops 一次调用 edit_document（锚点用短 ID，"
+          + "插入内容用 Markdown 块），不要逐段零散修改。"
           + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
           + "完成后调用 review_intent 复审用户期望的修改是否已经达成。若任一工具失败，停止并说明失败。";
 

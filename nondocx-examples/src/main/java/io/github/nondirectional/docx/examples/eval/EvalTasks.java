@@ -173,7 +173,9 @@ public final class EvalTasks {
                     "正文宋体",
                     doc -> {
                       for (Paragraph p : nonBlankBodyParagraphs(doc)) {
-                        EvalAssert.assertFont(p, "宋体", "段落「" + p.text() + "」字体");
+                        // 中文按 eastAsia 槽渲染：full 面 font() 四槽同写、compiler 面
+                        // ascii/eastAsia 分离，读 eastAsia 槽对两个工具面都成立。
+                        EvalAssert.assertEastAsiaFont(p, "宋体", "段落「" + p.text() + "」");
                       }
                     }),
                 EvalTask.NamedCheck.of(
@@ -205,7 +207,7 @@ public final class EvalTasks {
                     "标题黑体",
                     doc -> {
                       for (Paragraph p : headingParagraphs(doc)) {
-                        EvalAssert.assertFont(p, "黑体", "标题「" + p.text() + "」");
+                        EvalAssert.assertEastAsiaFont(p, "黑体", "标题「" + p.text() + "」");
                       }
                     }))));
 

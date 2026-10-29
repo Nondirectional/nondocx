@@ -14,10 +14,10 @@ class EvalRunnerTest {
   }
 
   @Test
-  void compilerSurfaceExposesFiveEntriesOnly() {
-    // compiler 面 = current_document + create/read/validate_document + 1 个只读复审 SubAgent。
-    // 工具数从 58 收敛到 5 是「文档 IR + 编译器」路线的核心假设，必须锁死。
-    assertThat(EvalRunner.compilerToolCount()).isEqualTo(5);
+  void compilerSurfaceExposesSixEntriesOnly() {
+    // compiler 面 = current_document + create/read/validate/edit_document + 1 个只读复审 SubAgent。
+    // 工具数从 58 收敛到 6 是「文档 IR + 编译器」路线的核心假设，必须锁死。
+    assertThat(EvalRunner.compilerToolCount()).isEqualTo(6);
   }
 
   @Test

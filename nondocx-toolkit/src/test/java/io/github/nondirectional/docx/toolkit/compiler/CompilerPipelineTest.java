@@ -153,13 +153,23 @@ class CompilerPipelineTest {
 
   @Test
   void lenientParsingDegradesUnknownSyntaxToParagraphsWithWarnings() {
-    // 表格缺分隔行 → 降级为段落 + warning；未闭合粗体 → 原样保留
-    MarkdownDoc parsed = MarkdownParser.parse("| A | B |\n| 1 | 2 |\n\n这是 **未闭合 粗体\n");
+    // 单行管道行 → 降级为段落 + warning；未闭合粗体 → 原样保留
+    MarkdownDoc parsed = MarkdownParser.parse("| A | B |\n\n这是 **未闭合 粗体\n");
     assertThat(parsed.warnings()).isNotEmpty();
     assertThat(parsed.warnings().get(0)).contains("分隔行");
-    assertThat(parsed.blocks()).hasSize(3);
-    var last = (MarkdownDoc.Para) parsed.blocks().get(2);
+    assertThat(parsed.blocks()).hasSize(2);
+    var last = (MarkdownDoc.Para) parsed.blocks().get(1);
     assertThat(last.spans().get(0).text()).contains("**");
+  }
+
+  @Test
+  void separatorlessMultiRowPipeBlockStillParsesAsTable() {
+    // LLM 常漏写 |---|：两行以上管道块按表格解析（首行为表头），不再倒进段落
+    MarkdownDoc parsed = MarkdownParser.parse("| **任务** | 状态 |\n| 联调 | 完成 |\n");
+    assertThat(parsed.warnings()).anyMatch(w -> w.contains("分隔行"));
+    var table = (MarkdownDoc.Table) parsed.blocks().get(0);
+    assertThat(table.header()).containsExactly("任务", "状态");
+    assertThat(table.rows()).hasSize(1);
   }
 
   @Test
@@ -168,6 +178,10 @@ class CompilerPipelineTest {
         MarkdownParser.parse("| a\\|b | c |\n|---|---|\n| only-one-cell |\n| x | y | extra |\n");
     var table = (MarkdownDoc.Table) parsed.blocks().get(0);
     assertThat(table.header()).containsExactly("a|b", "c");
+    // 单元格内的行内标记剥掉：LLM 常给表头写 **加粗**，字面星号是文本污染
+    MarkdownDoc boldCell = MarkdownParser.parse("| **任务** | `状态` |\n|---|---|\n| 联调 | 完成 |\n");
+    var boldTable = (MarkdownDoc.Table) boldCell.blocks().get(0);
+    assertThat(boldTable.header()).containsExactly("任务", "状态");
     // 行列数不齐：补空/截断，且有 warning
     assertThat(parsed.warnings()).hasSize(2);
     assertThat(table.rows().get(0)).containsExactly("only-one-cell", "");

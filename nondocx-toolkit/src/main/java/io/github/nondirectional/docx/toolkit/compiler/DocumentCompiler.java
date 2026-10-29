@@ -89,7 +89,7 @@ public final class DocumentCompiler {
       } else if (block instanceof Para) {
         compilePara(document, (Para) block, p);
       } else if (block instanceof MarkdownDoc.Table) {
-        compileTable(document, (MarkdownDoc.Table) block, p);
+        compileTableInto(document, (MarkdownDoc.Table) block, p);
         tables++;
       } else if (block instanceof ListItem) {
         compileListItem(document, (ListItem) block, p);
@@ -102,7 +102,11 @@ public final class DocumentCompiler {
 
   private static void compileHeading(Document document, Heading h, StyleProfile p) {
     HeadingLevel level = HeadingLevel.values()[Math.min(Math.max(h.level() - 1, 0), 5)];
-    Paragraph paragraph = document.addParagraph().heading(level);
+    fillHeading(document.addParagraph().heading(level), h, p);
+  }
+
+  /** 把标题块内容填进<b>已存在</b>的段落（标题级别由调用方设置，见 {@link #headingLevelOf}）。 */
+  static void fillHeading(Paragraph paragraph, Heading h, StyleProfile p) {
     // 显式 {align=…} 优先；否则 H1 默认按 profile（中文报告一级标题常居中）。
     if (h.alignment() != null) {
       paragraph.alignment(h.alignment());
@@ -116,8 +120,17 @@ public final class DocumentCompiler {
     }
   }
 
+  /** 标题块的 IR 级别 → core HeadingLevel（供定位插入的调用方在段落上设置）。 */
+  static HeadingLevel headingLevelOf(Heading h) {
+    return HeadingLevel.values()[Math.min(Math.max(h.level() - 1, 0), 5)];
+  }
+
   private static void compilePara(Document document, Para para, StyleProfile p) {
-    Paragraph paragraph = document.addParagraph();
+    fillPara(document.addParagraph(), para, p);
+  }
+
+  /** 把段落块内容填进已存在的段落（PatchEngine 定位插入复用）。 */
+  static void fillPara(Paragraph paragraph, Para para, StyleProfile p) {
     if (para.alignment() != null) {
       paragraph.alignment(para.alignment());
     }
@@ -151,7 +164,11 @@ public final class DocumentCompiler {
   }
 
   private static void compileListItem(Document document, ListItem item, StyleProfile p) {
-    Paragraph paragraph = document.addParagraph().list(item.kind(), Math.min(item.level(), 8));
+    fillListItem(document.addParagraph().list(item.kind(), Math.min(item.level(), 8)), item, p);
+  }
+
+  /** 把列表项块内容填进已存在的段落（PatchEngine 定位插入复用；列表属性由调用方设置）。 */
+  static void fillListItem(Paragraph paragraph, ListItem item, StyleProfile p) {
     for (Span span : item.spans()) {
       Run run = paragraph.addRun(span.text());
       if (span.bold()) {
@@ -171,7 +188,8 @@ public final class DocumentCompiler {
     }
   }
 
-  private static void compileTable(Document document, MarkdownDoc.Table table, StyleProfile p) {
+  /** 在文档末尾编译一个表格块（定位插入不支持表格，见 PatchEngine preflight）。 */
+  static void compileTableInto(Document document, MarkdownDoc.Table table, StyleProfile p) {
     Table target = document.addTable();
     // 表格分页健壮性默认值：首行跨页重复（headerRow），数据行不跨页拆分（cantSplit）。
     Row header = target.addRow();
@@ -228,7 +246,7 @@ public final class DocumentCompiler {
    * <p>ascii 槽走公开 API {@link Run#font(String)}；eastAsia 槽 core 暂无公开入口，经 {@code raw()} 直写 {@code
    * w:rFonts/@w:eastAsia}（POI 泄漏仅存在于本私有方法内部， 不出现在公开签名）。任一槽为 {@code null} 时跳过该槽。
    */
-  private static void applyRunFonts(Run run, String latin, String eastAsia) {
+  static void applyRunFonts(Run run, String latin, String eastAsia) {
     if (latin != null) {
       run.font(latin);
     }

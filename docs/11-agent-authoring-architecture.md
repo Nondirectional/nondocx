@@ -279,6 +279,7 @@ CJK 的 `eastAsia`/`latin` 字体槽、首行缩进、行距这些 Word 坑，�
 ### P2：编辑与模板
 
 - `edit_document` patch 引擎，接 tracked changes / comments。
+  （patch 引擎已落地并 A/B（§6.4）：6 op、原子、dry-run；修订/批注 op 是下一批。）
 - `fill_template`：占位符、重复表格行、条件段。
 - `render_preview`：LibreOffice headless → PDF/PNG。
 - 把 `QualityCheckTools` 升级成编译器的 post-condition，而不是事后可选检查。
@@ -460,6 +461,58 @@ mvn -q -pl nondocx-examples -Dexec.mainClass=...eval.EvalMain exec:java \
 # full 面
 mvn -q -pl nondocx-examples -Dexec.mainClass=...eval.EvalMain exec:java \
   -Dexec.args="--surface full --group create --timeout-seconds 240 --max-iterations 24"
+```
+
+
+### 6.4 edit_document patch 引擎 A/B（任务 P2，2026-10-30）
+
+P2 第一块落地：`PatchEngine` + `edit_document`（compiler 面第 4 个工具，5→6 入口；能力清单
+65→66）。6 种 op（insert / replace_text / delete / set_style / table.set_cell /
+table.add_row），锚点 = `read_document` 短 ID，插入块复用 Markdown 解析器；**先 preflight
+全部 op 再统一写入，任一失败零改动**；支持 dry_run 与 expected_generation。
+
+baseline 组（10 条编辑任务）在 compiler 面的终版结果（`qwen3.8-27b`，温度 0）：
+
+| 指标 | full 面（58 工具） | compiler 面（6 工具） |
+|---|---|---|
+| 通过率 | 9/10 | **8/10**（缺口见下） |
+| 平均调用 | 6.2 | 9.6 |
+| 通过任务平均调用 | ~6 | 8.0 |
+| runId | `20261029-174952-467` | `20261030-001221-487` |
+
+**读法（诚实口径）**：
+
+- compiler 面的 2 条失败全是**预告的 op 集缺口**：`tracked-replace`（修订创作 op 未做）、
+  `footer-page-number`（页脚 op 未做）。在 8 条可做任务上 compiler 面 **8/8**；
+  full 面的 9/10 里多出的那条正是修订——修订 op 属 P2 后续，不是 patch 架构问题。
+- **简单编辑的调用数显著下降**：追加一段 3 次、精确替换 4 次、批量替换所有 TODO
+  4 次（一次 edit_document 批量 ops，full 面要搜索+逐段改）、建表 5 次、改单元格 6 次。
+- **平均调用反而略高**的原因：review/validate 固定开销（每任务 +2~3）+ 两个失效模式——
+  ①`insert-centered-title` 的波动（11~23 次）：模型把 read_document 里的 `{align=center}`
+  记号误当正文、被 set_style 拒绝后重建循环（已加错误提示指引 + prompt 说明，仍偶发）；
+  ②失败任务的重试循环拉高均值（21/11 次）。这是提示词/交互问题，不是架构问题。
+
+**过程中修的三个真 bug（都被 trace 抓到）**：
+
+1. **表格缺分隔行**：LLM 常漏写 `|---|`，原降级策略把带管道符的原文倒进段落产生脏文本；
+   现改为 ≥2 行管道块仍按表格解析（首行为表头，记 warning）。
+2. **单元格字面星号**：`| **任务** |` 的标记被原样保留；现解析时剥标记，且
+   `table.set_cell` 的 text 支持行内标记（`**任务**` → 文本「任务」+ 加粗 run）。
+3. **字体检查口径**：评测 check 读 ascii 槽，而 split 双槽的正确读法是 eastAsia 槽
+   （对 full 面四槽同写也成立）；修正后 body-font/heading-font 两个任务在 compiler 面
+   首次 set_style 就通过。
+
+**结论**：patch 架构的两条结构性收益兑现——**一次调用表达批量编辑**（replace-all 4 次）
+与**目标容器成为 op 声明的一部分**（短 ID 锚点，无「合法但错误」的索引空间）。调用数
+持平（8.0 vs ~6）主要败在固定开销与提示词层面，值得在 P2 后续（修订/批注 op、demo 接入
+compiler 面）继续压。
+
+复现：
+
+```bash
+mvn -q -pl nondocx-core,nondocx-toolkit install -DskipTests
+mvn -q -pl nondocx-examples -Dexec.mainClass=...eval.EvalMain exec:java \
+  -Dexec.args="--surface compiler --group baseline"
 ```
 
 ---
