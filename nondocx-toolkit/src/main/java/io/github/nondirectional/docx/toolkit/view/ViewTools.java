@@ -233,8 +233,10 @@ public final class ViewTools extends ToolkitToolContext {
   @ToolDef(
       name = "view_element",
       description =
-          "按 canonical ref 获取单个元素的结构化详情（段落/表格/run）。"
-              + "ref 来自 view_outline/view_text/view_annotated 的返回值。支持 paragraph/table/run 三种元素。")
+          "按 canonical ref 获取单个元素的结构化详情（段落/表格/run/页眉页脚 part）。"
+              + "段落/表格/run ref 来自 view_outline/view_text/view_annotated；"
+              + "页眉/页脚 ref 来自 read_header_footer/read_header_footer_ref。"
+              + "段落与 run 详情会带 location，便于确认目标容器。")
   @ToolCapability(operation = CapabilityOperation.READ, element = "element")
   public String viewElement(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -254,7 +256,10 @@ public final class ViewTools extends ToolkitToolContext {
       return ToolResultRenderer.render(result);
     } catch (RefResolutionException e) {
       ToolResult<Void> result =
-          ToolResult.fail(e.code().toToolResultCode(), e.getMessage(), "使用 view_outline 获取有效 ref");
+          ToolResult.fail(
+              e.code().toToolResultCode(),
+              e.getMessage(),
+              "正文章节用 view_outline；页眉/页脚用 read_header_footer 获取 ref");
       return ToolResultRenderer.render(result);
     } catch (IllegalArgumentException e) {
       ToolResult<Void> result =

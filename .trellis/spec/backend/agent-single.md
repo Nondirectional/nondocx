@@ -156,3 +156,46 @@ tools.registerSubAgent("review_intent", "...")
 ## Gotcha: AgentEvent.Complete 是唯一的循环结束钩子
 
 nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainCallback` 只有单次 LLM/工具调用粒度回调，无循环结束事件。唯一能拿到"agent 循环结束"信号的是 `run(msg, Consumer<AgentEvent>)` 流式重载里的 `AgentEvent.Complete`。`maxIterations` 耗尽（默认 `graceTurns=3`）也会发 `Complete`，因此 flush 天然覆盖超时路径。**非流式 `run(msg)` 重载不发 Complete**——demo 必须用流式重载。
+
+## Convention: Agent 评测基线（headless）
+
+`nondocx-examples/.../examples/eval/` 是当前工具面的 headless 评测基线，不是生产代码：
+
+- 10 条任务，seed 由 `Docx.create()` 构造，check 只读最终 docx；
+- 工具面与 demo 对齐（`current_document` + view/body/table/header/tracker + 只读 `review_intent`），
+  但**不加载 6 条 Skill**，以隔离工具面本身；
+- 保存仍由应用层强制（`EvalRunner` 在 `Agent.run` 返回后调用 `save_docx`），不暴露给模型；
+- `EvalTasksTest#everyTaskFailsAtLeastOneCheckOnUnmodifiedSeed` 是防恒真 check 的硬约束：
+  每条任务在未修改 seed 上必须至少失败一次；
+- 运行：`mvn -q -pl nondocx-examples -Dexec.mainClass=...EvalMain exec:java`；
+  产物在 `target/eval/<runId>/`。
+
+**已知限制**：当前 `chain 0.11.0` 的 VLLM streaming provider 未返回 usage，报告 token 记为 0；
+这是 provider 限制，不是评测回归。升级 provider 后自动恢复。
+
+**2026-10-29 v1 结果**：8/10 通过，平均 6.8 次工具调用；2 条失败均为已知能力缺口
+（正文行距无工具、页脚只读）。同日修复正文行距工具 + header/footer 只读 ref 解析后，
+`body-font-line-spacing` 复跑通过；页脚 PAGE 域写入仍为缺口。
+详见任务 `10-29-agent-eval-baseline/baseline-summary.md`。
+
+## Convention: ref 的容器边界（读/写分离）
+
+`ElementResolver` 有两个段落解析入口，**不得混用**：
+
+- `resolve(ParagraphRef)`：只扫正文 `document.paragraphs()`，是写工具的唯一边界。
+- `resolveAny(ParagraphRef)`：扫正文 + 表格单元格 + 页眉 + 页脚，**只允许只读路径**
+  （`view_element` / `read_paragraph`）使用。
+
+`read_run` 的 `ref` 路径可解析页眉/页脚/表格 run（只读）；`paragraph_index + run_index`
+仍只解释为正文。写工具（`replace_run_text` / `update_run_style` /
+`update_paragraph_alignment` / `update_paragraph_spacing`）遇到页眉/页脚/表格 ref 时
+必须返回明确「仅支持正文」错误，不能静默按正文索引写入。
+
+**为什么**：页脚 ref 若被写工具当成正文，会出现「工具返回成功、实际改了正文」的静默
+错目标。2026-10-29 的页脚评测复跑观察到：页脚 ref 被拒绝后，模型退回
+`replace_run_text(paragraph_index=0)`，把正文改成「第 页」；评测的「正文不被误改」
+check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，后续需要显式 `scope`/容器
+校验或 IR patch。
+
+`view_element` 的 paragraph 详情输出 `location`（如 `页脚 section=0 variant=default 段落 0`）
+和 `lineSpacing`（>0 时），供复审确认目标容器与行距。

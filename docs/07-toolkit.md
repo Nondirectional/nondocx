@@ -96,9 +96,10 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 
 | 工具 | 作用 | 批量 |
 |---|---|---|
-| `read_paragraph` | 读段落（索引或 `ParagraphRef`） | ✅ `paragraph_indexes` 数组 |
+| `read_paragraph` | 读段落（索引或 `ParagraphRef`；ref 可指向页眉/页脚） | ✅ `paragraph_indexes` 数组 |
 | `update_paragraph_alignment` | 改段落对齐（`ParagraphRef` 或旧索引） | ✅ `edits` 数组 |
-| `read_run` | 读 run（`RunRef` 或旧索引） | ✅ `runs` 数组 |
+| `update_paragraph_spacing` | 批量改正文段落行距（`ParagraphRef` 或索引） | ✅ `edits` 数组 |
+| `read_run` | 读 run（`RunRef` 或旧索引；`RunRef` 可指向页眉/页脚） | ✅ `runs` 数组 |
 | `replace_run_text` | 改 run 文本（`RunRef` 或旧索引） | ✅ `edits` 数组 |
 | `update_run_style` | 改 run 样式（`RunRef` 或旧索引） | ✅ `edits` 数组 |
 | `insert_paragraph` | 按 body 顺序插入段（开头/中间/末尾） | ✅ `paragraphs` 对象数组 |
@@ -121,9 +122,14 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 
 | 工具 | 作用 |
 |---|---|
-| `read_header_footer` | 按旧 section/paragraph 索引读页眉/页脚，并返回 part/paragraph ref |
-| `read_header_footer_ref` | 按 `HeaderFooterRef` 读整个页眉/页脚及内部段落 ref |
+| `read_header_footer` | 按 section/paragraph 索引读页眉/页脚，返回 part ref、paragraph ref 与每个 run 的 run ref |
+| `read_header_footer_ref` | 按 `HeaderFooterRef` 读整个页眉/页脚及内部段落/run ref |
 | `read_toc` | 读首个目录的条目 |
+
+> 页眉/页脚 ref 现在可被 `view_element`（段落/run/part）与 `read_run`（run）解析，
+> 返回结果带 `location`（如 `页脚 section=0 variant=default 段落 0`）。
+> 写工具仍只接受正文 ref；对页脚段落/run 调用会返回明确的「仅支持正文」错误，
+> 不会按正文索引静默修改。页脚 PAGE 域写入仍不在范围内。
 
 ### TrackedChangeQueryTools（修订查询 + 处理）
 

@@ -2,6 +2,8 @@ package io.github.nondirectional.docx.toolkit.view;
 
 import io.github.nondirectional.docx.core.api.BodyElement;
 import io.github.nondirectional.docx.core.api.Document;
+import io.github.nondirectional.docx.core.api.header.Footer;
+import io.github.nondirectional.docx.core.api.header.Header;
 import io.github.nondirectional.docx.core.api.table.Table;
 import io.github.nondirectional.docx.core.api.text.Paragraph;
 import io.github.nondirectional.docx.core.api.text.Run;
@@ -12,7 +14,9 @@ import io.github.nondirectional.docx.toolkit.ref.ElementKind;
 import io.github.nondirectional.docx.toolkit.ref.ElementRef;
 import io.github.nondirectional.docx.toolkit.ref.ElementRefs;
 import io.github.nondirectional.docx.toolkit.ref.ElementResolver;
+import io.github.nondirectional.docx.toolkit.ref.HeaderFooterRef;
 import io.github.nondirectional.docx.toolkit.ref.ParagraphRef;
+import io.github.nondirectional.docx.toolkit.ref.RefResolutionException;
 import io.github.nondirectional.docx.toolkit.ref.ReferenceContext;
 import io.github.nondirectional.docx.toolkit.ref.RunRef;
 import io.github.nondirectional.docx.toolkit.ref.TableRef;
@@ -327,7 +331,8 @@ public final class DocumentViewService {
   /**
    * 单元素详情视图：按 canonical ref 获取一个元素的结构化详情。
    *
-   * <p>第一版支持 paragraph/table/run；其余类型返回 kind + ref + 空 properties。ref 解析失败时抛 {@link
+   * <p>支持 paragraph/table/run/header_footer；段落与 run 详情带 location，页眉/页脚 part 返回文本与段落数。其余类型返回 kind +
+   * ref + 空 properties。ref 解析失败时抛 {@link
    * io.github.nondirectional.docx.toolkit.ref.RefResolutionException}，由调用方（ViewTools）捕获转为
    * ToolResult。
    */
@@ -339,8 +344,13 @@ public final class DocumentViewService {
     switch (ref.kind()) {
       case PARAGRAPH:
         {
-          Paragraph p = resolver.resolve((ParagraphRef) ref);
+          Paragraph p = resolver.resolveAny((ParagraphRef) ref);
           properties.put("text", p.text());
+          properties.put("location", resolver.describe(p));
+          double lineSpacing = p.lineSpacing();
+          if (lineSpacing > 0) {
+            properties.put("lineSpacing", lineSpacing);
+          }
           Integer hl = p.heading() == null ? null : p.heading().ordinal() + 1;
           if (hl != null) {
             properties.put("headingLevel", hl);
@@ -359,11 +369,28 @@ public final class DocumentViewService {
         {
           Run r = resolver.resolve((RunRef) ref);
           properties.put("text", r.text());
+          properties.put("location", resolver.describe(r));
           properties.put("bold", r.isBold());
           properties.put("italic", r.isItalic());
           putIfNotNull(properties, "font", r.font());
           putIfNotNull(properties, "fontSize", r.fontSize());
           putIfNotNull(properties, "color", r.color());
+          break;
+        }
+      case HEADER_FOOTER:
+        {
+          HeaderFooterRef hf = (HeaderFooterRef) ref;
+          try {
+            Header header = resolver.resolveHeader(hf);
+            properties.put("part", "header");
+            properties.put("text", header.text());
+            properties.put("paragraphCount", header.paragraphs().size());
+          } catch (RefResolutionException ignored) {
+            Footer footer = resolver.resolveFooter(hf);
+            properties.put("part", "footer");
+            properties.put("text", footer.text());
+            properties.put("paragraphCount", footer.paragraphs().size());
+          }
           break;
         }
       default:
