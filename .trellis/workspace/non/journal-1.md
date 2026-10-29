@@ -1584,3 +1584,38 @@ A/B 实测（qwen3.8-27b，create 组 5 条）：compiler 面 5 工具 5/5 通�
 ### Next Steps
 
 - P2：edit_document patch 引擎 / fill_template / render_preview；compiler 面接入 demo 待用户决定
+
+
+## Session 39: demo 模型配置修复 + edit_document patch 引擎（P2）+ 评测 A/B
+<!-- trellis-session: v=2 fp=0ef718b8a196c487 -->
+
+**Date**: 2026-10-30
+**Task**: demo 模型配置修复 + edit_document patch 引擎（P2）+ 评测 A/B
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+A/B：baseline 组 compiler 面 8/10（2 条=预告缺口：修订/页脚 op），可做任务 8/8；批量替换 4 次调用。三个真 bug 由 trace 抓出修复。POI setFontFamily 四槽同写的实测修正延续到字体 check 口径（读 eastAsia 槽对两面都成立）
+
+### Main Changes
+
+- 3：demo 新增 LlmConfig（NONDOCX_LLM_BASE_URL/NONDOCX_LLM_MODEL + 启动 GET /models 校验，禁用原因透传日志/状态API/前端）。1：PatchEngine 六 op 原子 patch + edit_document 工具（清单 65→66，compiler 面 5→6）；块编译下沉 DocumentCompiler；trace 驱动修表格分隔行/单元格标记/字体 check eastAsia 口径
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `780f3a2` | fix(demo): 模型配置改环境变量 + 启动校验，根治写死 qwen3-14b 的 404 |
+| `421de01` | feat(toolkit): edit_document patch 引擎——compiler 面补齐编辑能力（P2） |
+
+### Testing
+
+- [OK] toolkit 224 + examples 19 + demo 40 全绿；原子性/dry-run/各 op 行为有 PatchEngineTest 12 条锁死；LlmConfigTest 本地 HttpServer 锁三种校验结果
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- P2 续：修订/批注/页脚 op；demo 是否切 compiler 面等用户拍板
