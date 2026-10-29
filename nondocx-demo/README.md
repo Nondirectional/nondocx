@@ -90,13 +90,17 @@ curl http://localhost:9090/healthcheck   # 期望返回 true
 
 ### 2. 配置 Agent(可选,但推荐)
 
-Agent 用阿里云灵积(DashScope)的 qwen 模型。设置 API key:
+Agent 走 OpenAI 兼容端点(默认内网 vLLM)。三个环境变量:
 
 ```bash
-export DASHSCOPE_API_KEY=sk-xxxxx
+export DASHSCOPE_API_KEY=sk-xxxxx            # 启用 Agent 的开关(缺失则禁用,预览不受影响)
+export NONDOCX_LLM_BASE_URL=http://10.100.10.21:40002/v1  # 可选,默认即此
+export NONDOCX_LLM_MODEL=qwen3.8-27b          # 可选,默认即此
 ```
 
-> 没有 key 也能启动 —— OnlyOffice 预览照常,只是对话框不能用(会显示提示条)。
+> 启动时会调一次 `GET /models` 校验端点确实提供该模型:模型不存在或端点不可达时
+> Agent 被禁用,启动日志与对话框会给出**可用模型清单**和该改哪个变量——不会留到
+> 第一次对话才 404。
 
 ### 3. 启动后端
 
@@ -166,9 +170,10 @@ OnlyOffice 首启要在内存里生成全套字体/主题,峰值很高。若 Doc
 **8GB+**(官方推荐);② compose 已配 `restart: unless-stopped`,首启被杀会自动重试,
 第二次起时缓存已落盘,通常能成功。
 
-### 对话框提示「未配置 DASHSCOPE_API_KEY」
+### 对话框提示「Agent 不可用」
 
-设置环境变量后重启后端(见上「2. 配置 Agent」)。
+提示里带具体原因:未配置 `DASHSCOPE_API_KEY` 就补 key;「端点不提供模型 X」就用
+`NONDOCX_LLM_MODEL` 换成清单里的模型(或用 `NONDOCX_LLM_BASE_URL` 换端点),重启后端。
 
 ### Agent 改完文档但 OnlyOffice 没刷新
 

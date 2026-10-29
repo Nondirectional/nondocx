@@ -796,6 +796,9 @@ fetch('/api/status')
   .then((r) => r.json())
   .then((data) => {
     if (!data.agentEnabled) {
+      const reason = data.agentDisabledReason || '未配置 DASHSCOPE_API_KEY';
+      const span = document.getElementById('agent-disabled-reason');
+      if (span) span.textContent = reason;
       document.getElementById('api-key-banner').hidden = false;
     }
   })

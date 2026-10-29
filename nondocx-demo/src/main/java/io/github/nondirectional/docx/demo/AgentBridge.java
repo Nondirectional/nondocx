@@ -85,6 +85,15 @@ final class AgentBridge {
       Set.of("current_document", "describe_capabilities", "get_subagent_result", "steer_subagent");
 
   private final boolean enabled;
+
+  /**
+   * Agent 被禁用的原因（{@code enabled=true} 时为 {@code null}）。
+   *
+   * <p>两种禁用路径：未配置 {@code DASHSCOPE_API_KEY}，或启动校验发现端点不提供配置的模型 （{@link
+   * LlmConfig#validateModelAvailable()}）。原因会进启动日志与对话错误帧，让用户 能直接看出该配哪个环境变量。
+   */
+  private final String disabledReason;
+
   private final DocxToolkit toolkit;
   private final LLM llm;
   private final Path currentDocPath;
@@ -116,6 +125,7 @@ final class AgentBridge {
   AgentBridge(String apiKey, String currentDocPath) {
     this.currentDocPath = Path.of(currentDocPath);
     if (apiKey == null || apiKey.isBlank()) {
+      disabledReason = "未配置 DASHSCOPE_API_KEY";
       enabled = false;
       toolkit = null;
       llm = null;
@@ -125,11 +135,29 @@ final class AgentBridge {
       documentTools = null;
       return;
     }
+    // 启动期校验：端点必须真的提供配置的模型，否则此刻禁用并给出可操作的原因，
+    // 不留到第一次对话才 404（曾因写死 qwen3-14b 踩坑，见 docs/11 P0-1）。
+    LlmConfig llmConfig = new LlmConfig(apiKey);
+    String problem = llmConfig.validateModelAvailable();
+    if (problem != null) {
+      log.error("Agent 已禁用：{}", problem);
+      disabledReason = problem;
+      enabled = false;
+      toolkit = null;
+      llm = null;
+      agent = null;
+      memory = null;
+      skillRegistry = null;
+      documentTools = null;
+      return;
+    }
+    disabledReason = null;
     enabled = true;
     llm =
-        new VLLM("http://10.100.10.21:40002/v1", "qwen3-14b")
+        new VLLM(llmConfig.baseUrl(), llmConfig.apiKey(), llmConfig.model())
             .maxCompletionTokens(65536)
             .thinkingBudget(512);
+    log.info("Agent LLM: {} @ {}", llmConfig.model(), llmConfig.baseUrl());
     toolkit = new DocxToolkit();
     openCurrentDocument();
     memory =
@@ -215,6 +243,11 @@ final class AgentBridge {
     return enabled;
   }
 
+  /** Agent 被禁用的原因；启用时为 {@code null}。供启动日志与前端状态展示。 */
+  String disabledReason() {
+    return disabledReason;
+  }
+
   void clearMemory() {
     if (!enabled) return;
     memory.clear();
@@ -224,7 +257,7 @@ final class AgentBridge {
 
   void runStream(String message, Context ctx, DocSession session) {
     if (!enabled) {
-      emit(ctx, frame("error", "message", "未配置 DASHSCOPE_API_KEY，无法对话。"));
+      emit(ctx, frame("error", "message", "Agent 不可用：" + disabledReason + "。"));
       emit(ctx, frame("done"));
       return;
     }

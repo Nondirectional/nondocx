@@ -254,9 +254,10 @@ CJK 的 `eastAsia`/`latin` 字体槽、首行缩进、行距这些 Word 坑，�
 
 ### P0：先止血（1~3 天）
 
-1. **修模型配置**：环境变量 + 启动校验，确认端点真的提供该模型。
-   - 当前 `AgentBridge` 写死 `qwen3-14b`，但端点可能只提供 `qwen3.8-27b`；
-     请求不存在的模型会直接 404。
+1. **修模型配置**：环境变量 + 启动校验，确认端点真的提供该模型。✅ 已修（2026-10-29）：
+   demo 增 `LlmConfig`（`NONDOCX_LLM_BASE_URL`/`NONDOCX_LLM_MODEL` 环境变量，默认
+   `qwen3.8-27b`），启动时 `GET /models` 校验，模型不存在即禁用 Agent 并在日志/对话框
+   给出可用模型清单——不再留到第一次对话才 404。
 2. **修/删 Skill**：所有工具名对齐真实 registry；加 CI 检查，Skill 提到的工具名必须存在。
 3. **裁剪 demo 工具面**：主 Agent 只暴露 `view_*`、`read_*`、`search_text`、
    `insert_paragraph`、`replace_run_text`、`update_run_style`、`create_table`、

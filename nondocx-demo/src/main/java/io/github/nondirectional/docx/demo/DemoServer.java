@@ -88,7 +88,11 @@ public final class DemoServer {
     log.info("  浏览器:        http://localhost:{}", PORT);
     log.info("  当前文档:      {}", session.currentFile().toAbsolutePath());
     log.info("  OnlyOffice key: {}", session.currentKey());
-    log.info("  Agent:         {}", agentBridge.enabled() ? "可用" : "未配置 DASHSCOPE_API_KEY,对话禁用");
+    if (agentBridge.enabled()) {
+      log.info("  Agent:         可用");
+    } else {
+      log.warn("  Agent:         不可用——{}", agentBridge.disabledReason());
+    }
     log.info("========================================");
 
     // 4) 路由
@@ -111,7 +115,11 @@ public final class DemoServer {
     app.get(
         "/api/status",
         ctx -> {
-          ctx.json(java.util.Map.of("agentEnabled", agentBridge.enabled()));
+          // Map.of 不允许 null 值，disabledReason 用 HashMap 放（启用时为 null）
+          java.util.Map<String, Object> status = new java.util.HashMap<>();
+          status.put("agentEnabled", agentBridge.enabled());
+          status.put("agentDisabledReason", agentBridge.disabledReason());
+          ctx.json(status);
         });
 
     // 托管当前 docx 字节 —— OnlyOffice Server 按 document.url 回头拉这个
