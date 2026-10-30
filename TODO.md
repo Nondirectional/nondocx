@@ -1,47 +1,380 @@
-# TODO
+# TODO —— nondocx 想法收件箱
 
-> 账本：活跃待办（当下该做的）+ 休眠项（有意搁置，「出现真实需求再补」）+ 明确不做（决定已闭环，防止旧案重提）。
-> 每条注明搁置原因、唤醒条件与出处；完成后从本文件划掉并照常走 journal。
+> 轻量想法池：讨论只沉淀到**设计层**（背景 / 目标 / 方案要点 / 待定问题），不细化到实施。
+> 有空时挑一条，把它的「启动 Prompt」丢给 AI 即可**无人值守**开工：执行期间无需在线，
+> AI 自主决策推进到完成，全部自主决策点会在最终汇报中列出供事后审阅。
+> 「明确不做」的决定不进本文件——见 docs/11 §7 与 §6.12（full 面缺口不补、不包 MCP、
+> 不恢复 SubAgent 层、不改 live text() 语义）。
 
-## 活跃待办
+## 使用方式
 
-- [ ] **14B vs 27B 对比**——P3 路线图最后一项（docs/11 §5 P3）。**卡在外部条件**：本地只部署了
-  qwen3.8-27b，等 14B 模型到位后同口径复跑 `--surface compiler --group baseline`（24 任务），
-  区分「接口问题 vs 模型能力」。
-- [ ] **full 面跑 `tracked-replace-format`**——新任务（baseline 24）只在 compiler 面验证过。
-  随下次 full 面复跑观察模型的 workaround 路径（推测：先 `update_run_style` 加粗源 run →
-  `replace_run_tracked` 继承 rPr；ins run 本身不可寻址）。full 面 58 工具 vs compiler 8 的
-  A/B 对照里它是目前唯一没有 full 面数据的任务。
+- **存想法**：有 IDEA 时和 AI 聊到设计层，AI 按下方模板在「待办」最上方追加条目（编号递增）
+- **取想法**：对 AI 说「从 TODO 拿 #N 开始做」，AI 以该条目的启动 Prompt 为需求种子，走正常 Trellis 任务流程，**无人值守执行**——待定问题与未覆盖的设计分叉由 AI 依据项目惯例自主拍板并记入任务文档，不阻塞提问
+- **状态流转**：💡 待启动 → 📋 已立项（附任务路径）→ ✅ 已完成 / 🗑 已放弃——后两者**整条从 TODO.md 删除，不留归档区**（完整记录在 git 历史与 `.trellis/tasks/archive/`，需要时回查）
+- **被外部条件卡住的条目**（等模型 / 等 key）在「状态」里注明，不算已立项
 
-## 休眠项（有意搁置，出现真实需求再补）
+## 条目模板
 
-- [ ] **页眉写 op**——两面都没有（compiler 无 op；full 面页眉只读）。spec
-  `agent-single.md` 已知边界。先例：页脚 PAGE 域（docs/11 §6.5）当年也是等真实需求出现
-  才补的 `footer.set_page_number`。**唤醒条件**：出现真实的页眉编辑需求（eval 任务或用户请求）。
-- [ ] **`Comments.reply` 上 compiler 面**——core 有 API，compiler 面只暴露了 `comment.add`
-  整段批注；回复批注暂无入口。**唤醒条件**：出现「回复批注」类真实需求，届时按
-  §6.7 的「写读同批落地」原则一并补读侧观测。
-- [ ] **rPrChange：格式变更本身算一条修订**——「给既有文字加粗并留下修订痕迹」的严格形态。
-  full 面已有 `mark_style_change_tracked`；compiler 面明确不做（`10-30-tracked-inline-format`
-  Out of Scope——行内格式的 ins 版已覆盖「新插入内容带格式」，对既有文字的格式修订是另一种
-  语义）。**唤醒条件**：明确的「以修订方式改变既有文字格式」需求。
-- [ ] **unbold / 下划线 / 颜色 行内标记**——`parseInline` 只支持 `**粗**`/`*斜*`/`` `代码` ``；
-  取消加粗无法用正标记表达（需要 `**` 之外的语法或显式布尔）。§6.11 Out of Scope。
-  **唤醒条件**：eval/用户出现「去掉加粗」类请求且现路径（set_style bold=false 整段）不够用。
-- [ ] **chain 0.11.0 vLLM streaming 不返回 usage**——eval 报告 token 恒为 0（spec
-  `agent-single.md` 已知限制）。**唤醒条件**：chain 升级 provider 后自动恢复，无需改代码；
-  恢复后首个 runId 在 docs/11 记一笔即可。
-- [ ] **demo 端到端 LLM 联调**——本地无 `DASHSCOPE_API_KEY`，demo 的 LLM 轮次未跑过真模型；
-  工具面/提示词/保存链路已由 47 个 demo 测试验证。**唤醒条件**：拿到 key 后跑一轮
-  `/api/chat` 冒烟（建表 + 修订 + 模板填充各一条），重点看 SSE `edit_outcome` 帧与
-  `doc_changed` 时序。
+<!--
+新条目复制以下模板，插到「待办」最上方，编号 +1，填好后删除本注释区外的说明文字。
 
-## 明确不做（决定已闭环，勿重开）
+## #NNN · 标题（YYYY-MM-DD）
 
-- **不给 full 面补页脚/批注/列表/段落删除/真空单元格/模板/run 拆分工具**——8 个静态缺口
-  全部由 compiler 面内建能力覆盖，A/B 数据已闭环（docs/11 §6.12：14/23 vs 23/23，
-  失败 100% 是缺口而非模型）。
-- **不把 61 个工具原样包成 MCP / 不恢复 SubAgent 委派层**——docs/11 §7 与 spec
-  `agent-single.md` 的结构性决定。
-- **不改 live `text()` 语义去「包含」ins 文本**——会破坏 tracked 手术路径的 runs/text
-  映射校验；live/reopen 差异已写进 javadoc 与 docs/07，按口径断言即可。
+- 状态：💡 待启动
+- 项目：core / toolkit / examples / demo / docs / 跨模块（eval）
+- 背景：想解决什么问题、为什么想做
+- 目标：做成什么样（验收层面，1~3 条）
+- 设计要点：讨论收敛出的方案——模块划分、数据流、关键取舍；不到代码级
+- 待定问题：还没想清楚的点（执行时由 AI 无人值守自主拍板，逐条写明倾向性推荐即可，不留给执行时问人）
+- 启动 Prompt：
+  ```
+  # <标题>
+
+  ## 背景
+  <背景>
+
+  ## 目标
+  1. <目标 1>
+  2. <目标 2>
+
+  ## 已讨论的设计方案
+  - <设计要点 1>
+  - <设计要点 2>
+
+  ## 待定问题（无人值守：按各项推荐自主拍板）
+  1. <待定问题 1>（推荐：<倾向>）
+  2. <待定问题 2>（推荐：<倾向>）
+
+  ## 执行要求（无人值守）
+  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
+  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
+  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
+  - 质量门禁：`mvn -q spotless:apply` 后全量 `mvn test` 全绿（core/toolkit/examples/demo）；涉及 eval 的必须先 install core+toolkit 再复跑 `--surface compiler --group baseline` 全量（当前 24 任务基线 24/24@4.21，runId 20261030-152310-495），提交信息附 runId 与逐任务数据，失败诚实报告。
+  - 文档：docs/03/07/11 对应章节 + `.trellis/spec/backend` 同步；中文提交、scope 前缀；完成（实现 + 测试 + 提交 + 归档）后记 journal 并输出最终汇报，集中列出全部自主决策点。
+  ```
+-->
+
+## 待办
+
+## #008 · full 面复跑：补 tracked-replace-format 的对照数据（2026-10-30）
+
+- 状态：💡 待启动
+- 项目：examples（eval）
+- 背景：baseline 24 条里 tracked-replace-format 只在 compiler 面验证过（4 次，首个 op 即正确）。它是目前唯一没有 full 面数据的任务；full 面有 tracked 工具但 ins run 不可寻址，理论上存在「先 `update_run_style` 加粗源 run → `replace_run_tracked` 继承 rPr」的 workaround 链，值得拿数据验证。上一轮 full 面口径见 docs/11 §6.12（runId `20261030-125616-728`：14/23，8 失败全是静态缺口）。
+- 目标：
+  1. `--surface full --group baseline` 全量复跑（24 任务），与 compiler 24/24@4.21 对照。
+  2. tracked-replace-format 的 trace 逐条归因：workaround 成立还是新缺口；成立则记入 docs/11，不成立则按 §6.12 先例评估是否 flag `capabilityGap`。
+- 设计要点：口径与 §6.12 完全一致（同模型同温度、无 Skill、24 轮上限）；本轮新增的 3 条任务（bold-existing-phrase 已 flag、line-spacing-all 可过、tracked-replace-format 待观察）逐条给失败归因表。
+- 待定问题（无人值守：按各项推荐自主拍板）：
+  1. 若 tracked-replace-format 失败，是否 flag capabilityGap（推荐：trace 确认是静态缺口才 flag，锁测试同步；否则保持不 flag 并记录行为归因）。
+  2. 报告落点（推荐：docs/11 新增 §6.14，§6.12 表格不回改、只引用对照）。
+- 启动 Prompt：
+  ```
+  # full 面复跑：补 tracked-replace-format 的对照数据
+
+  ## 背景
+  baseline 24 条里 tracked-replace-format 只在 compiler 面验证过（4 次）。full 面有 tracked
+  工具但 ins run 不可寻址，理论上存在「先 update_run_style 加粗源 run → replace_run_tracked
+  继承 rPr」的 workaround 链。上一轮 full 面口径见 docs/11 §6.12（runId 20261030-125616-728）。
+
+  ## 目标
+  1. --surface full --group baseline 全量复跑（24 任务），与 compiler 24/24@4.21 对照。
+  2. tracked-replace-format 逐条 trace 归因：workaround 成立记入 docs/11；不成立则按 §6.12
+     先例评估 flag capabilityGap（锁测试同步）。
+
+  ## 已讨论的设计方案
+  - 口径与 §6.12 一致：同模型同温度、无 Skill、默认 24 轮上限、check 防退化口径不变。
+  - 逐失败归因表（静态缺口 vs 行为），与 §6.12 的 8 缺口清单对照更新。
+
+  ## 待定问题（无人值守：按各项推荐自主拍板）
+  1. 失败时是否 flag capabilityGap（推荐：trace 确认静态缺口才 flag）。
+  2. 报告落点（推荐：docs/11 §6.14，不回改 §6.12）。
+
+  ## 执行要求（无人值守）
+  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
+  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
+  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
+  - 质量门禁：eval 前必须 `mvn -q spotless:apply` + install core/toolkit（toolkit 从 ~/.m2 解析）；若改了 EvalTasks（flag/check），`mvn test` 全绿 + EvalTasksTest 锁定同步；提交信息附 full 与 compiler 双 runId 与逐任务数据，失败诚实报告。
+  - 文档：docs/11 §6.14 + spec agent-single 结果块同步；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
+  ```
+
+## #007 · 14B vs 27B 对比：P3 收官（2026-10-30）
+
+- 状态：💡 待启动（**卡外部条件**：本地仅 qwen3.8-27b，等 14B 模型部署）
+- 项目：examples（eval）
+- 背景：docs/11 §5 P3 最后一项——「在 14B 和 27B 上各跑一遍，确认是接口问题还是模型能力问题」。compiler 面 24/24@4.21 已证明 27B 下接口收敛；14B 数据用于回答「更小模型是否也能驾驭 8 入口面」。
+- 目标：
+  1. 14B 就绪后同口径（temp 0、无 Skill、24 任务、compiler 面）复跑，与 27B 对照通过率/调用数/失败类型。
+  2. 结论写入 docs/11（接口 vs 模型能力的判据：失败集中在参数 schema/寻址 = 模型侧，集中在 op 语义/工具选择 = 接口侧）。
+- 设计要点：EvalConfig 的 baseUrl/model 经 CLI 传参即可，无需改代码；失败类型分布是主要证据（27B 全 none）。
+- 待定问题（无人值守：按各项推荐自主拍板）：
+  1. 是否同时跑 full 面对照（推荐：MVP 只跑 compiler 面，full 面对照视 14B 结果再定）。
+  2. 差距多大算「接口问题」（推荐：≥20/24 即认为接口对小模型仍成立，不给结论性数字门槛、按失败类型定性）。
+- 启动 Prompt：
+  ```
+  # 14B vs 27B 对比：P3 收官
+
+  ## 背景
+  docs/11 §5 P3 最后一项。compiler 面 24/24@4.21（27B）已证明接口收敛；14B 用于回答
+  「更小模型能否驾驭 8 入口面」。前提：本地已部署 14B（vLLM 端点已就绪）。
+
+  ## 目标
+  1. 同口径（temp 0、无 Skill、--surface compiler --group baseline 24 任务）跑 14B，
+     对照 27B 的通过率/平均调用/失败类型。
+  2. 结论写入 docs/11：接口问题 vs 模型能力问题（失败集中在参数 schema/寻址 = 模型侧；
+     集中在 op 语义/工具选择 = 接口侧）。
+
+  ## 已讨论的设计方案
+  - EvalConfig 的 baseUrl/model 走 CLI 传参，不改代码。
+  - 失败类型分布（27B 全 none）是主要证据；逐失败给 trace 归因。
+
+  ## 待定问题（无人值守：按各项推荐自主拍板）
+  1. 是否补 full 面对照（推荐：MVP 只跑 compiler 面）。
+  2. 「接口成立」的判据（推荐：定性按失败类型，不设数字门槛）。
+
+  ## 执行要求（无人值守）
+  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
+  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
+  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
+  - 质量门禁：eval 前 spotless:apply + install；不改 Java 代码则测试无需重跑，改了则全量 `mvn test` 全绿；提交信息附双模型 runId 与逐任务对照表，失败诚实报告（14B 失败不是任务失败，是数据）。
+  - 文档：docs/11 新小节 + spec agent-single 结果块；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
+  ```
+
+## #006 · 页眉写 op：header.set_text / 同族能力（2026-10-30）
+
+- 状态：💡 待启动（**休眠**：等真实需求——先例：页脚 PAGE 域当年也是等需求出现才补，§6.5）
+- 项目：core / toolkit
+- 背景：两面都没有页眉写能力（compiler 无 op；full 面 header 只读）。spec `agent-single.md` 已知边界。core 侧已有 `ensureHeader()` 创建入口（N5 的读写分离），缺的是工具面暴露。
+- 目标：
+  1. compiler 面新增页眉写 op（对齐 footer.set_page_number 的形态），支持文本与可选样式。
+  2. 写读同批落地：read_document 的页眉元数据行（对齐「<!-- 页脚: … -->」惯例）同步可见。
+- 设计要点：op 命名与语义对齐 footer 先例（不占段落锚点）；core 若需 Section/Header 写 API 则最小化新增；eval 任务（页眉写文本）+ full 面 flag 评估照 §6.12 流程。
+- 待定问题（无人值守：按各项推荐自主拍板）：
+  1. op 能力范围：纯文本 vs 支持行内标记（推荐：直接吃行内标记——内容语言统一原则，§6.11）。
+  2. 是否支持多 section 页眉（推荐：MVP 只写默认 section，odd/even/first 留待需求）。
+- 启动 Prompt：
+  ```
+  # 页眉写 op
+
+  ## 背景
+  两面都没有页眉写能力（compiler 无 op；full 面 header 只读）。core 已有 ensureHeader()
+  创建入口（N5 读写分离），缺工具面暴露。先例：footer.set_page_number（§6.5）。
+
+  ## 目标
+  1. compiler 面新增页眉写 op（对齐 footer.set_page_number 形态，不占段落锚点），
+     text 支持行内标记。
+  2. 写读同批落地：read_document 页眉元数据行（对齐「<!-- 页脚: … -->」惯例）。
+
+  ## 已讨论的设计方案
+  - PatchEngine 新 op + CompilerTools 描述 + 提示词；read_document 视图同步。
+  - eval 新任务（页眉写文本）；full 面按 §6.12 流程评估 capabilityGap flag。
+  - core 最小化新增（优先复用 ensureHeader + 既有 Paragraph API）。
+
+  ## 待定问题（无人值守：按各项推荐自主拍板）
+  1. 行内标记（推荐：支持，内容语言统一）。
+  2. 多 section（推荐：MVP 只写默认 section）。
+
+  ## 执行要求（无人值守）
+  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
+  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
+  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
+  - 质量门禁：spotless:apply 后全量 `mvn test` 全绿；eval 前 install core+toolkit 并复跑 compiler baseline 全量（新任务入组后更新 EvalTasksTest 计数锁），提交附 runId；写读同批必须有测试（只写不读会被复审误报，§6.6/§6.13 教训）。
+  - 文档：docs/03/07/11 + spec（op 集、已知边界更新）；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
+  ```
+
+## #005 · Comments.reply 上 compiler 面（2026-10-30）
+
+- 状态：💡 待启动（**休眠**：等「回复批注」真实需求）
+- 项目：core / toolkit
+- 背景：core 有 `Comments.reply` 能力，compiler 面只暴露了 `comment.add` 整段批注；回复既有批注无入口。
+- 目标：
+  1. compiler 面新增 comment.reply op（按批注 id/锚点回复）。
+  2. 读侧观测同步：read_document 批注元数据行展示回复关系（作者 + 层级）。
+- 设计要点：§6.7 原则——写读同批落地；批注 id 的可寻址性需确认（read 侧是否暴露批注 id）；LIFO 读序注意（§6.7 已记录）。
+- 待定问题（无人值守：按各项推荐自主拍板）：
+  1. 回复定位方式：批注 id vs 锚点段落（推荐：批注 id，需先在 read 侧暴露）。
+  2. 是否支持多级回复（推荐：MVP 一级回复，Word 语义本就扁平）。
+- 启动 Prompt：
+  ```
+  # Comments.reply 上 compiler 面
+
+  ## 背景
+  core 有 Comments.reply，compiler 面只有 comment.add 整段批注；回复既有批注无入口。
+
+  ## 目标
+  1. compiler 面新增 comment.reply op（按批注 id 回复）。
+  2. read_document 批注元数据行展示回复关系（作者 + 层级）。
+
+  ## 已讨论的设计方案
+  - §6.7 写读同批原则；read 侧先暴露批注 id（当前元数据行只有 作者/内容）。
+  - PatchEngine op + CompilerTools + 提示词 + eval 任务。
+
+  ## 待定问题（无人值守：按各项推荐自主拍板）
+  1. 定位方式（推荐：批注 id）。
+  2. 多级回复（推荐：MVP 一级）。
+
+  ## 执行要求（无人值守）
+  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
+  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
+  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
+  - 质量门禁：spotless:apply 后全量 `mvn test` 全绿；eval 前 install 并复跑 baseline 全量（新任务入组更新计数锁），提交附 runId；LIFO 读序断言注意（§6.7）。
+  - 文档：docs/03/07/11 + spec 同步；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
+  ```
+
+## #004 · rPrChange：对既有文字的格式变更算修订（2026-10-30）
+
+- 状态：💡 待启动（**休眠**：tracked-inline-format 任务明确 Out of Scope；行内格式的 ins 版已覆盖「新内容带格式」，本条是另一种语义）
+- 项目：core / toolkit
+- 背景：「给既有文字加粗并留下修订痕迹」的严格形态——格式变更本身是 rPrChange 修订节点，不是 ins。full 面已有 `mark_style_change_tracked`（bold/italic/color）；core 有 `Run.commitStyleAsTracked` 基建。
+- 目标：
+  1. compiler 面支持「以修订方式改变既有文字格式」（如 set_style 的 tracked 变体或 format_text 的 tracked 参数）。
+  2. 修订观测面同步：修订条目能表达「格式变更」类型（PropertyChangeDetails 已存在，核对 outline/detail 呈现）。
+- 设计要点：op 形态二选一（独立 tracked.format op vs set_style 加 tracked 布尔）；full 面先例可直接参考；eval 任务（以修订加粗既有词）。
+- 待定问题（无人值守：按各项推荐自主拍板）：
+  1. op 形态（推荐：独立 op，语义清晰、不与 set_style 的非修订路径耦合）。
+  2. 范围：bold/italic 起步 vs 含颜色/字体（推荐：bold/italic 起步，与 set_style 现有布尔对齐）。
+- 启动 Prompt：
+  ```
+  # rPrChange：对既有文字的格式变更算修订
+
+  ## 背景
+  「给既有文字加粗并留下修订痕迹」的严格形态：格式变更是 rPrChange 修订节点，不是 ins。
+  full 面有 mark_style_change_tracked，core 有 Run.commitStyleAsTracked 基建。
+
+  ## 目标
+  1. compiler 面支持「以修订方式改变既有文字格式」（bold/italic 起步）。
+  2. 修订观测面同步表达格式变更类型（PropertyChangeDetails 呈现核对）。
+
+  ## 已讨论的设计方案
+  - 参考 full 面 mark_style_change_tracked 与 core commitStyleAsTracked。
+  - eval 任务：以修订加粗既有词（对照 bold-existing-phrase 的非修订版）。
+
+  ## 待定问题（无人值守：按各项推荐自主拍板）
+  1. op 形态（推荐：独立 op）。
+  2. 格式范围（推荐：bold/italic 起步）。
+
+  ## 执行要求（无人值守）
+  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
+  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
+  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
+  - 质量门禁：spotless:apply 后全量 `mvn test` 全绿；eval 前 install 并复跑 baseline 全量（新任务入组更新计数锁），提交附 runId；修订观测面写读同批（§6.13 教训：复审查不到就误报）。
+  - 文档：docs/03/07/11 + spec 同步；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
+  ```
+
+## #003 · 行内标记扩展：取消加粗 / 下划线 / 颜色（2026-10-30）
+
+- 状态：💡 待启动（**休眠**：§6.11 Out of Scope；现路径 set_style bold=false 整段可用）
+- 项目：toolkit
+- 背景：`parseInline` 只支持 `**粗**`/`*斜*`/`` `代码` ``；「去掉某几个字的加粗」无法用正标记表达，需要额外语法或显式布尔。
+- 目标：
+  1. 行内标记语法支持否定形态（如 `<u>下划线</u>`、`~~删除线~~` 或显式 `**!X**`——具体语法执行时定）与下划线/颜色。
+  2. parseInline 与 PatchEngine/MarkdownParser 全链路一致，eval 探针任务同步。
+- 设计要点：语法选择要防与现有 `*`/`` ` `` 冲突；Markdown 子集「宽容降级」原则不变（未闭合原样保留）；eval check 防退化通过（§6.12 教训）。
+- 待定问题（无人值守：按各项推荐自主拍板）：
+  1. 语法形态（推荐：HTML 式标签 `<u>`/`<s>` 起步，否定加粗用显式布尔走 set_style 即可不进标记）。
+  2. 颜色表示（推荐：`<color:FF0000>文字</color>` 或不进标记、留 set_style 扩展——倾向后者）。
+- 启动 Prompt：
+  ```
+  # 行内标记扩展：取消加粗 / 下划线 / 颜色
+
+  ## 背景
+  parseInline 只支持 **粗**/*斜*/`代码`；「去掉某几个字的加粗」无法用正标记表达，
+  下划线/颜色没有行内入口。
+
+  ## 目标
+  1. 行内标记支持下划线等新形态（语法执行时定，防与现有 */` 冲突）。
+  2. 全链路一致（MarkdownParser/PatchEngine/tracked），eval 探针任务同步。
+
+  ## 已讨论的设计方案
+  - 未闭合标记原样保留（宽容降级不变）；check 防退化通过。
+  - 「取消加粗」倾向不进标记语言（set_style bold=false 已覆盖整段；子范围否定语法复杂度高收益低）。
+
+  ## 待定问题（无人值守：按各项推荐自主拍板）
+  1. 语法形态（推荐：HTML 式 <u>/<s> 起步）。
+  2. 颜色是否进标记（推荐：不进，留 set_style 扩展）。
+
+  ## 执行要求（无人值守）
+  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
+  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
+  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
+  - 质量门禁：spotless:apply 后全量 `mvn test` 全绿；eval 前 install 并复跑 baseline 全量（新任务入组更新计数锁），提交附 runId；run 拆分路径的 rPr 继承（eastAsia 槽）必须有 save+reopen 测试（§6.11 教训）。
+  - 文档：docs/07/11 + spec 同步；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
+  ```
+
+## #002 · demo 端到端 LLM 联调冒烟（2026-10-30）
+
+- 状态：💡 待启动（**卡外部条件**：本地无 DASHSCOPE_API_KEY）
+- 项目：demo
+- 背景：demo 的 LLM 轮次从未跑过真模型（47 个测试只验证了工具面/提示词/保存链路的 wiring）。等 key 到位后做一轮冒烟，重点不是功能回归而是 SSE 时序与真实模型下的收敛行为。
+- 目标：
+  1. 拿到 key 后跑 `/api/chat` 冒烟：建表、修订模式修改、模板填充各一条。
+  2. 重点核对 SSE `edit_outcome` 帧与 `doc_changed` 时序、dirty flush、cancelled 路径行为正常。
+- 设计要点：不改代码的纯验证任务（若冒烟暴露 wiring 问题则单独立项修复）；结论记 docs（demo README 的已知限制节更新）。
+- 待定问题（无人值守：按各项推荐自主拍板）：
+  1. 模型选哪个端点（推荐：与 eval 同款 qwen3.8-27b，口径一致）。
+  2. 冒烟范围（推荐：3 条 + 1 条取消路径）。
+- 启动 Prompt：
+  ```
+  # demo 端到端 LLM 联调冒烟
+
+  ## 背景
+  demo 的 LLM 轮次从未跑过真模型（47 个测试只验证 wiring）。前提：DASHSCOPE_API_KEY 已配置。
+
+  ## 目标
+  1. /api/chat 冒烟：建表、修订模式修改、模板填充各一条。
+  2. 核对 SSE edit_outcome 与 doc_changed 时序、dirty flush、cancelled 路径。
+
+  ## 已讨论的设计方案
+  - 纯验证任务，不改代码；暴露 wiring 问题则单独立项。
+  - 模型与 eval 同款（qwen3.8-27b 端点），口径一致。
+
+  ## 待定问题（无人值守：按各项推荐自主拍板）
+  1. 端点（推荐：与 eval 同款）。
+  2. 冒烟范围（推荐：3 条 + 1 条取消路径）。
+
+  ## 执行要求（无人值守）
+  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
+  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
+  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
+  - 质量门禁：不改 Java 代码则无需重跑测试；若为联调做最小配置改动，改动面内 `mvn -pl nondocx-demo test` 全绿；冒烟结果（成功/失败/时序观察）诚实记录。
+  - 文档：demo README 已知限制节更新；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
+  ```
+
+## #001 · chain provider 升级：token 用量恢复（2026-10-30）
+
+- 状态：💡 待启动（**卡外部条件**：等 nonchain 新版发布 vLLM streaming usage 支持）
+- 项目：examples（eval）
+- 背景：chain 0.11.0 的 VLLM streaming provider 不返回 usage，eval 报告 token 恒 0（成本观测缺位）。升级后自动恢复，无需改代码。
+- 目标：
+  1. 升级 nonchain 依赖版本，复跑一轮 baseline 确认 token 列有数且无其他回归。
+  2. docs/11 记一笔（首个含 token 数据的 runId）。
+- 设计要点：纯依赖升级 + 验证；若升级引入 API 破坏则最小适配。
+- 待定问题（无人值守：按各项推荐自主拍板）：
+  1. 是否顺带跑 full 面（推荐：不，compiler 面足够验证 token 恢复）。
+  2. 升级版本选择（推荐：首个含 vLLM usage 的正式版）。
+- 启动 Prompt：
+  ```
+  # chain provider 升级：token 用量恢复
+
+  ## 背景
+  chain 0.11.0 的 VLLM streaming 不返回 usage，eval 报告 token 恒 0。前提：nonchain 新版
+  已发布（含 vLLM streaming usage 支持）。
+
+  ## 目标
+  1. 升级依赖，复跑 compiler baseline 确认 token 列有数、无回归。
+  2. docs/11 记首个含 token 数据的 runId。
+
+  ## 已讨论的设计方案
+  - 纯依赖升级；API 破坏则最小适配；spec agent-single 已知限制节移除。
+
+  ## 待定问题（无人值守：按各项推荐自主拍板）
+  1. 是否跑 full 面（推荐：不）。
+  2. 版本选择（推荐：首个含 vLLM usage 的正式版）。
+
+  ## 执行要求（无人值守）
+  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
+  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
+  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
+  - 质量门禁：升级后全量 `mvn test` 全绿（依赖变更可能波及 demo/toolkit 的 chain 用点）；eval 前 install 并复跑 baseline，提交附 runId 与 token 列截图/数据。
+  - 文档：docs/11 + spec 已知限制更新；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
+  ```
