@@ -161,7 +161,9 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 
 `nondocx-examples/.../examples/eval/` 是当前工具面的 headless 评测基线，不是生产代码：
 
-- 10 条任务，seed 由 `Docx.create()` 构造，check 只读最终 docx；
+- baseline 22 条（12 初版 + 10 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
+  加行/多步组合/模板假值条件/同段双修订/多锚点行距），seed 由 `Docx.create()` 构造，
+  check 只读最终 docx；另有 create 组 5 条（工具面 A/B）；
 - 工具面与 demo 对齐（`current_document` + view/body/table/header/tracker + 只读 `review_intent`），
   但**不加载 6 条 Skill**，以隔离工具面本身；
 - 保存仍由应用层强制（`EvalRunner` 在 `Agent.run` 返回后调用 `save_docx`），不暴露给模型；
@@ -177,6 +179,11 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 （正文行距无工具、页脚只读）。同日修复正文行距工具 + header/footer 只读 ref 解析后，
 `body-font-line-spacing` 复跑通过；页脚 PAGE 域写入仍为缺口。
 详见任务 `10-29-agent-eval-baseline/baseline-summary.md`。
+
+**2026-10-30 compiler 面（8 工具）**：22/22，平均 4.68（runId `20261030-113314-518`）。
+P3 扩展 10 条首跑全过；歧义指代/范围限定各 4 次，同段双修订（独占拒绝→拆分）6 次。
+已知边界：compiler 面无「给既有文本加粗」op（replace-with-format 靠 delete+insert
+自愈，9 次）；页眉写无 op。**评测任务考察工具选择本身——prompt 不得提示用哪个工具。**
 
 ## Convention: ref 的容器边界（读/写分离）
 

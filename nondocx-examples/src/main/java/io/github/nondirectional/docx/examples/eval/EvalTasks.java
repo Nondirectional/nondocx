@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 第一版评测集的 11 条任务。
+ * 第一版评测集的 22 条任务（12 条初版 + 10 条 P3 扩展）。
  *
  * <p>每条任务都从代码构造 seed，断言只依赖最终 docx 的结构/文本/样式，不依赖模型自述。 任务选择的原则不是「覆盖全部能力」，而是「能区分模型问题、接口问题、能力缺失」：
  *
@@ -28,6 +28,8 @@ import java.util.Map;
  *   <li>10：页脚页码，检查只读能力缺口。
  *   <li>11：批注创作，检查 comment.add 与批注只读观测（锚定段/作者/正文不动）。
  *   <li>12：模板填充，检查 fill_template（值/条件块/表格模板行）。
+ *   <li>13~22（P3 扩展）：列表/段落删除/歧义指代（按内容特征定位）/重复文本范围限定/ 带格式替换/表格加行/多步组合批/模板假值条件与空列表/同段双修订（同锚点独占）/
+ *       全文行距多锚点——覆盖 docs/11 P3 的「歧义指代、重复文本」缺口。
  * </ul>
  */
 public final class EvalTasks {
@@ -37,7 +39,7 @@ public final class EvalTasks {
 
   private EvalTasks() {}
 
-  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 12 条任务。 */
+  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 22 条任务。 */
   public static List<EvalTask> all() {
     return TASKS;
   }
@@ -478,6 +480,311 @@ public final class EvalTasks {
                       EvalAssert.equal("5", table.rows().get(2).cells().get(1).text(), "明细 2 人日");
                     }))));
 
+    // ==================== P3 扩展（第 13~22 条）：列表/删除/歧义指代/范围限定/格式/组合 ====================
+
+    tasks.add(
+        new EvalTask(
+            "insert-list",
+            "文末插入列表",
+            "在文档末尾追加一个无序列表，包含三项：「模块开发」「接口联调」「文档编写」。",
+            doc -> {
+              doc.addParagraph("项目背景");
+              doc.addParagraph("以下为待办事项。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "末尾出现三项列表",
+                    doc -> {
+                      java.util.List<String> items = trailingListItems(doc);
+                      EvalAssert.isTrue(items.size() >= 3, "期望末尾至少 3 个无序列表项，实际 " + items.size());
+                      String joined = String.join(",", items);
+                      EvalAssert.contains(joined, "模块开发", "列表项");
+                      EvalAssert.contains(joined, "接口联调", "列表项");
+                      EvalAssert.contains(joined, "文档编写", "列表项");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "原段落未动",
+                    doc -> {
+                      EvalAssert.equal("项目背景", requireParagraph(doc, 0, "背景段").text(), "第 0 段");
+                      EvalAssert.equal("以下为待办事项。", requireParagraph(doc, 1, "引导段").text(), "第 1 段");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "delete-paragraph",
+            "删除指定段落",
+            "删除备注段（以「备注：」开头的那段），其余内容保持不变。",
+            doc -> {
+              doc.addParagraph("项目概述。");
+              doc.addParagraph("备注：此段为草稿说明，稍后删除。");
+              doc.addParagraph("进度正常。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "备注段已删", doc -> EvalAssert.notContains(EvalAssert.bodyText(doc), "备注", "正文")),
+                EvalTask.NamedCheck.of(
+                    "其余段落原样",
+                    doc -> {
+                      EvalAssert.isTrue(
+                          doc.paragraphs().size() == 2, "期望剩 2 段，实际 " + doc.paragraphs().size());
+                      EvalAssert.equal("项目概述。", requireParagraph(doc, 0, "概述段").text(), "第 0 段");
+                      EvalAssert.equal("进度正常。", requireParagraph(doc, 1, "进度段").text(), "第 1 段");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "ambiguous-target",
+            "按内容特征定位段落",
+            "在提到「超支」的那一段末尾追加一句：「已上报管理层。」。其他段落不要动。",
+            doc -> {
+              doc.addParagraph("本季度预算执行情况良好。");
+              doc.addParagraph("市场费用超支 12%，已提交书面说明。");
+              doc.addParagraph("预算调整申请已受理。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "目标段已追加",
+                    doc -> {
+                      Paragraph target = null;
+                      for (Paragraph p : doc.paragraphs()) {
+                        if (p.text().contains("超支")) {
+                          target = p;
+                        }
+                      }
+                      EvalAssert.isTrue(target != null, "超支段不应被删除");
+                      EvalAssert.contains(target.text(), "已上报管理层", "超支段");
+                      EvalAssert.isTrue(target.text().trim().endsWith("已上报管理层。"), "追加句应在段末");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "其他段未被误改",
+                    doc -> {
+                      EvalAssert.equal(
+                          "本季度预算执行情况良好。", requireParagraph(doc, 0, "首段").text(), "第 0 段");
+                      EvalAssert.equal(
+                          "预算调整申请已受理。", requireParagraph(doc, 2, "末段").text(), "第 2 段");
+                      EvalAssert.notContains(requireParagraph(doc, 0, "首段").text(), "已上报管理层", "首段");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "scoped-replace",
+            "只改指定段的重复词",
+            "三段里都有「待定」。只把第二段（方案二）里的「待定」改成「已确认」，" + "第一段和第三段保持「待定」不变。",
+            doc -> {
+              doc.addParagraph("方案一：待定。");
+              doc.addParagraph("方案二：待定。");
+              doc.addParagraph("方案三：待定。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "第二段已改",
+                    doc -> {
+                      String text = requireParagraph(doc, 1, "方案二段").text();
+                      EvalAssert.contains(text, "已确认", "第 1 段");
+                      EvalAssert.notContains(text, "待定", "第 1 段");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "一三段未被误改",
+                    doc -> {
+                      for (int i : new int[] {0, 2}) {
+                        String text = requireParagraph(doc, i, "方案段 " + i).text();
+                        EvalAssert.contains(text, "待定", "第 " + i + " 段");
+                        EvalAssert.notContains(text, "已确认", "第 " + i + " 段");
+                      }
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "replace-with-format",
+            "整段替换为加粗文本",
+            "把最后一段替换为加粗的「结论：通过」。",
+            doc -> {
+              doc.addParagraph("分析过程与数据核验略。");
+              doc.addParagraph("结论待定");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "末段内容正确",
+                    doc -> {
+                      Paragraph last = requireParagraph(doc, doc.paragraphs().size() - 1, "末段");
+                      EvalAssert.equal("结论：通过", last.text().trim(), "末段文本");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "加粗已应用",
+                    doc -> {
+                      Paragraph last = requireParagraph(doc, doc.paragraphs().size() - 1, "末段");
+                      EvalAssert.assertBold(last, true, "末段");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "段落数不变（替换而非追加）",
+                    doc ->
+                        EvalAssert.isTrue(
+                            doc.paragraphs().size() == 2,
+                            "期望 2 段，实际 " + doc.paragraphs().size())))));
+
+    tasks.add(
+        new EvalTask(
+            "table-add-row",
+            "表格末尾加一行",
+            "在表格末尾追加一行数据：「编译器 / 进行中」。表格其他内容不变。",
+            doc -> {
+              doc.addParagraph("进展如下：");
+              Table t = doc.addTable();
+              t.row(r -> r.cell("模块").cell("状态"));
+              t.row(r -> r.cell("解析器").cell("完成"));
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "新行已追加",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "进展表");
+                      EvalAssert.isTrue(
+                          table.rows().size() == 3, "期望 3 行，实际 " + table.rows().size());
+                      EvalAssert.equal("编译器", table.rows().get(2).cells().get(0).text(), "新行模块");
+                      EvalAssert.equal("进行中", table.rows().get(2).cells().get(1).text(), "新行状态");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "原有行不变",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "进展表");
+                      EvalAssert.equal("模块", table.rows().get(0).cells().get(0).text(), "表头");
+                      EvalAssert.equal("解析器", table.rows().get(1).cells().get(0).text(), "第 1 行模块");
+                      EvalAssert.equal("完成", table.rows().get(1).cells().get(1).text(), "第 1 行状态");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "multi-step-combo",
+            "一次完成三处修改",
+            "对文档做三处修改：①标题改为居中；②给正文段加一条批注（作者「审查员」，"
+                + "内容提到「核实」）；③文档末尾插入一个 2 列表格（表头：事项、结论，"
+                + "数据行：评审、通过）。",
+            doc -> {
+              doc.addParagraph("项目进展").heading(HeadingLevel.H1);
+              doc.addParagraph("各项工作推进顺利。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "标题已居中",
+                    doc ->
+                        EvalAssert.equal(
+                            Alignment.CENTER, requireParagraph(doc, 0, "标题段").alignment(), "标题对齐")),
+                EvalTask.NamedCheck.of(
+                    "批注已加",
+                    doc -> {
+                      Paragraph body = requireParagraph(doc, 1, "正文段");
+                      EvalAssert.isTrue(!body.comments().isEmpty(), "期望正文段有批注");
+                      EvalAssert.equal("审查员", body.comments().get(0).author(), "批注作者");
+                      EvalAssert.contains(body.comments().get(0).text(), "核实", "批注内容");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "表格已插入",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "评审表");
+                      EvalAssert.equal("事项", table.rows().get(0).cells().get(0).text(), "表头 1");
+                      EvalAssert.equal("结论", table.rows().get(0).cells().get(1).text(), "表头 2");
+                      EvalAssert.equal("评审", table.rows().get(1).cells().get(0).text(), "数据 1");
+                      EvalAssert.equal("通过", table.rows().get(1).cells().get(1).text(), "数据 2");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "fill-template-conditional-false",
+            "模板填充（假值条件与空列表）",
+            "当前文档是模板。用以下数据填充：name=「数据中台项目」，draft=false，" + "confidential=true，approvers 为空列表（[]）。",
+            doc -> {
+              doc.addParagraph("项目：{{name}}");
+              doc.addParagraph("{{#draft}}");
+              doc.addParagraph("草稿状态段落。");
+              doc.addParagraph("{{/draft}}");
+              doc.addParagraph("{{#confidential}}");
+              doc.addParagraph("本文档保密，仅限项目组。");
+              doc.addParagraph("{{/confidential}}");
+              Table t = doc.addTable();
+              t.row(r -> r.cell("事项").cell("负责人"));
+              t.row(r -> r.cell("{{#approvers}}{{person}}").cell("已审"));
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "占位符已清零", doc -> EvalAssert.notContains(EvalAssert.bodyText(doc), "{{", "正文")),
+                EvalTask.NamedCheck.of(
+                    "假值块已删、真值块保留",
+                    doc -> {
+                      EvalAssert.notContains(EvalAssert.bodyText(doc), "草稿状态段落", "正文");
+                      EvalAssert.notContains(EvalAssert.bodyText(doc), "draft", "正文");
+                      EvalAssert.contains(EvalAssert.bodyText(doc), "本文档保密", "正文");
+                      EvalAssert.contains(EvalAssert.bodyText(doc), "数据中台项目", "正文");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "空列表模板行已删",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "审批表");
+                      EvalAssert.isTrue(
+                          table.rows().size() == 1, "期望只剩表头 1 行，实际 " + table.rows().size());
+                      EvalAssert.equal("事项", table.rows().get(0).cells().get(0).text(), "表头");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "tracked-insert-delete",
+            "修订模式插入并删除",
+            "以修订模式完成两处修改，作者都填「审查员」：①删除段落开头的「草稿：」前缀；" + "②在同一段末尾追加「（已复核。）」。",
+            doc -> doc.addParagraph("草稿：本文档为初版说明。"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "存在删除修订",
+                    doc -> {
+                      boolean found = false;
+                      for (TrackedChange change : doc.trackedChanges().list()) {
+                        if (change.type() == TrackedChangeType.DEL
+                            && "审查员".equals(change.author())) {
+                          found = true;
+                        }
+                      }
+                      EvalAssert.isTrue(found, "期望存在作者=审查员的删除修订");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "存在插入修订",
+                    doc -> {
+                      boolean found = false;
+                      for (TrackedChange change : doc.trackedChanges().list()) {
+                        if (change.type() == TrackedChangeType.INS
+                            && "审查员".equals(change.author())) {
+                          found = true;
+                        }
+                      }
+                      EvalAssert.isTrue(found, "期望存在作者=审查员的插入修订");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "正文可见文本正确",
+                    doc -> {
+                      // tracked del 后「草稿：」从 text() 消失；ins 内容对 text() 不可见
+                      EvalAssert.notContains(EvalAssert.bodyText(doc), "草稿", "正文");
+                      EvalAssert.contains(EvalAssert.bodyText(doc), "本文档为初版说明。", "正文");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "line-spacing-all",
+            "全文行距统一",
+            "把全文段落的行距统一改为 2 倍。",
+            doc -> {
+              doc.addParagraph("第一段：默认行距。");
+              doc.addParagraph("第二段：默认行距。");
+              doc.addParagraph("第三段：默认行距。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "全部段落 2 倍行距",
+                    doc -> {
+                      for (int i = 0; i < doc.paragraphs().size(); i++) {
+                        Paragraph p = requireParagraph(doc, i, "第 " + i + " 段");
+                        EvalAssert.closeTo(2.0, p.lineSpacing(), 0.01, "第 " + i + " 段行距");
+                      }
+                    }),
+                EvalTask.NamedCheck.of(
+                    "正文未被误改", doc -> EvalAssert.contains(EvalAssert.bodyText(doc), "第一段", "正文")))));
+
     return List.copyOf(tasks);
   }
 
@@ -745,6 +1052,21 @@ public final class EvalTasks {
       }
     }
     return result;
+  }
+
+  /** 从末尾向前收集连续的无序列表项文本（遇到非列表段即停），供 insert-list 类 check。 */
+  private static java.util.List<String> trailingListItems(Document doc) {
+    java.util.List<String> items = new ArrayList<>();
+    List<Paragraph> paras = doc.paragraphs();
+    for (int i = paras.size() - 1; i >= 0; i--) {
+      Paragraph p = paras.get(i);
+      if (p.listKind() == io.github.nondirectional.docx.core.api.style.ListKind.BULLET) {
+        items.add(0, p.text());
+      } else {
+        break;
+      }
+    }
+    return items;
   }
 
   private static String lastNonBlankText(Document doc) {

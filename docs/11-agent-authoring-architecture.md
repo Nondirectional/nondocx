@@ -288,7 +288,8 @@ CJK 的 `eastAsia`/`latin` 字体槽、首行缩进、行距这些 Word 坑，�
 ### P3：评测与多模型
 
 - 20~30 条任务，覆盖：新建、改写、全文格式、表格、页眉页脚、修订、批注、
-  模板填充、歧义指代、重复文本。
+  模板填充、歧义指代、重复文本。**（已完成第一步：baseline 12→22，见 §6.9；14B 对比
+  延后——本地仅 27B。）**
 - 指标：任务成功率、工具调用数、无效调用率、token、延迟、渲染缺陷率。
 - 用 trace journal 做回放；失败分类：规划 / 寻址 / 工具选择 / 参数 schema /
   能力缺失 / 渲染 / 模型。
@@ -664,6 +665,39 @@ tr；经返回行的写入落进不在文档树里的对象，内存读正确、
 `copyRowTo` 改用**影子行技法**（手动 `insertNewTr` 填充树内元素 → `addRow` 同步缓存 →
 `removeTr` 删影子行），配 save+reopen 回归测试锁死——纯内存断言测不出这类「内存 vs XML」
 分裂，教训已写进 spec。
+
+### 6.9 P3 第一步：baseline 12→22（2026-10-30）
+
+补齐 P3 要求的「歧义指代、重复文本」及组合类缺口，新增 10 条（seed/check 全部确定性、
+防恒真由 `EvalTasksTest` 全组强制）：
+
+| id | 考点 |
+|---|---|
+| insert-list | Markdown 列表块创作（3 次调用收敛，全组最少之一） |
+| delete-paragraph | 按内容描述定位并删除段落 |
+| ambiguous-target | **歧义指代**：三段中两段含「预算」，按「超支」定位唯一目标段（4 次） |
+| scoped-replace | **重复文本 + 范围限定**：三段都有「待定」，只改第二段（4 次） |
+| replace-with-format | 带格式替换：末段换成加粗文本——`replace_text` 不吃 Markdown，模型需自我纠错 |
+| table-add-row | 表格加行（4 次） |
+| multi-step-combo | 一次 edit_document 批内三件事：居中+批注+文末插表（5 次） |
+| fill-template-false | 模板假值条件块删除、真值块保留、空列表删行（5 次） |
+| tracked-insert-delete | 同段 tracked.insert+delete——同锚点独占拒绝后按提示拆两次调用（6 次） |
+| line-spacing-all | 多锚点 set_style 一批表达全文行距（4 次） |
+
+结果（runId `20261030-113314-518`，compiler 面 8 工具，27B）：**22/22，平均 4.68**。
+12 条回归任务零退化；10 条新任务**首跑全过**。两个值得记录的行为：
+
+- **replace-with-format 9 次**（全组最高）：模型先 `replace_text` 填了字面 `**结论：通过**`
+  （replace_text 是纯文本替换，不吃 Markdown——正确行为），复核发现后试
+  `set_style style=bold`（不存在，明确拒绝），最终 delete+insert `**…**` 收敛。暴露的
+  真实缺口：compiler 面**没有「给既有文本加粗」的 op**（full 面有 run 级样式工具），
+  模型靠 delete+insert 自愈。是否补 `set_style.bold` 类 op 由后续评测数据决定。
+- **tracked-insert-delete 6 次**：第一批两个 tracked op 共享锚点被独占规则整体拒绝
+  （错误消息明确提示「拆成两次 edit_document」），模型一次拆分即通过——契约可教学性
+  得到验证。
+
+14B/27B 双模型对比延后（本地仅 27B）；页眉写不进 baseline（compiler 面无页眉 op，
+属已知能力边界，与 §6.4 时页脚缺口同型——出现真实需求再补）。
 
 ---
 
