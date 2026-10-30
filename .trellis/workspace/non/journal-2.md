@@ -27,3 +27,27 @@ full 面全量复跑 runId 20261030-220341-436：14/24@9.88（compiler 对照 24
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session 52: move 对 accept 后 live view 崩溃修复（POI 段落缓存按需重建）
+<!-- trellis-session: v=2 fp=2dcb9a499b338fe9 -->
+
+**Date**: 2026-10-30
+**Task**: move-pair-accept-live-view-crash（TODO #009，无人值守）
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+修 TODO #009：live 会话 tracked 手术后任何读抛 XmlValueDisconnectedException。调研探针实证根因在 move 创作的 moveXml 断连 POI XWPFParagraph 固化缓存（非 accept）；修法为 POI 同包桥接 XWPFParagraphCacheBridge「按需重建」（检测到断连才照 buildRunsInOrderFromXml 全分支重建，无反射），TrackedChangeNodes 五处手术点接线。按需门槛保住 §6.13 live/reopen 语义差异（TrackedAuthoringTest live 断言零改动）。check 阶段实证修正 design 前提（addDeletion 同 moveXml 断连，补接线）并连带修复 replace_run_tracked 依赖陈旧缓存索引的回归（DocxToolkitBatchTest 抓出，重构为快照解析→执行）。apply_tracked_changes 失败行补成对修订说明（计数/PARTIAL_FAILURE/异常零变化）。新增 TrackedMovePairLiveReadTest（首个正面锁定 live 崩溃）+ TrackedMovePairApplyTest（TODO #009 复现步骤）。全量 707 tests green + spotless clean。spec poi-bridge.md :510 须知升级 + 新增 N25；TODO #009 删除；docs/11 §6.14 补注记。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e59a2ec` | fix(core,toolkit): move/accept 后 live 读崩溃根治——POI 段落缓存按需重建 |
+| `bb13079` | chore(task): archive 10-30-move-pair-accept-live-view-crash |
+
+### Status
+
+[OK] **Completed**
