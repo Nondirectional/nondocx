@@ -1721,3 +1721,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - 复审盲区（低频）：表格单元格内容进 view_element、修订查询进 review 面、页脚进 stats；或转向批注 op / 模板填充
+
+
+## Session 43: 复审盲区补齐：表格矩阵/修订明细/页脚文本，10/10 @4.2 次
+<!-- trellis-session: v=2 fp=1f016253de262089 -->
+
+**Date**: 2026-10-30
+**Task**: 复审盲区补齐：表格矩阵/修订明细/页脚文本，10/10 @4.2 次
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- view_element TABLE 详情含 cellTexts 矩阵预览 + CELL/REVISION 空实现补全；RevisionSummary/Overview 增加 countByAuthor 与 recent 明细（canonical ref 可直通 view_element）；StatsView 增加 footerText 预览；只富化既有工具输出，full 58 / compiler 6 基线不动
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8938f3c` | feat(toolkit): 补齐复审盲区——表格矩阵/修订明细/页脚文本进 view 层 |
+
+### Testing
+
+- [OK] 三任务复审从误报转为达成+具体证据；全组 10/10 平均 4.20（4.40→4.20；tracked-replace 6→4、footer 4→3、table-cell 6→5）；core 350/toolkit 237/examples 19/demo 47 全绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 批注创作 op（core 已有 addComment）；fill_template/render_preview（P2 收尾）；或 full 面对齐新观测面后复跑对照
