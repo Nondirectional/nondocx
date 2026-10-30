@@ -161,8 +161,9 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 
 `nondocx-examples/.../examples/eval/` 是当前工具面的 headless 评测基线，不是生产代码：
 
-- baseline 24 条（12 初版 + 11 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
-  加行/多步组合/模板假值条件/同段双修订/多锚点行距/既有词加粗/修订带格式替换），seed 由
+- baseline 25 条（12 初版 + 11 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
+  加行/多步组合/模板假值条件/同段双修订/多锚点行距/既有词加粗/修订带格式替换 + 1 条
+  页眉写文本），seed 由
   `Docx.create()` 构造，check 只读最终 docx；另有 create 组 5 条（工具面 A/B）；
 - 工具面与 demo 对齐（`current_document` + view/body/table/header/tracker + 只读 `review_intent`），
   但**不加载 6 条 Skill**，以隔离工具面本身；
@@ -174,9 +175,9 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
   （「其余未误加粗」找不到非目标 run 可检）。修法是严格子集断言（存在目标词以外的
   文字 ⇒ 必须存在非粗体 run）。写跨面任务的 check 时问一句：**能力不够的面会用什么
   退化解满足这条断言？**
-- full 面静态缺口任务 flag `capabilityGap=true`（9 条，`EvalTasksTest#
+- full 面静态缺口任务 flag `capabilityGap=true`（10 条，`EvalTasksTest#
   marksKnownCapabilityGapTasks` 锁定）：页脚写/批注/列表/段落删除/真空单元格表格行/
-  模板填充×2/run 拆分。flag 只影响报告分类列，compiler 面全过时 inert；
+  模板填充×2/run 拆分/页眉写。flag 只影响报告分类列，compiler 面全过时 inert；
 - 运行：`mvn -q -pl nondocx-examples -Dexec.mainClass=...EvalMain exec:java`；
   产物在 `target/eval/<runId>/`。
 
@@ -197,8 +198,9 @@ tracked-replace-format 首个 op 即正确，复审引用修订条目的 bold �
 **2026-10-30 full 面对齐复跑**：14/23，平均 11.83（runId `20261030-125616-728`，
 bold check 加严口径）——8 个失败全部是静态能力缺口（页脚写/批注/列表/段落删除/
 真空单元格/模板/run 拆分），零「任务可做但做砸」；4 任务撞 24 轮上限。原十任务
-9/10、平均 7.0（612 时 6.2）：观测面富化不改变 full 面 baseline。已知边界：页眉
-写无 op（两面）。
+9/10、平均 7.0（612 时 6.2）：观测面富化不改变 full 面 baseline。已知边界（2026-10-31
+更新）：页眉写 compiler 面已补 `header.set_text`（本条记录时为「两面皆无」）；full 面
+写工具 ref 仍只解析正文，页眉写仍为 full 面缺口。
 **2026-10-30 full 面 24 任务口径**：14/24，平均 9.88（runId `20261030-220341-436`）——
 9 条缺口 flag 任务如期失败（通过集与 728 完全一致，零回归）；tracked-replace-format
 是全链首个「可过而未过」：模型走「target_text 外科 del + 段尾 bold ins」（ins 无位置
@@ -207,6 +209,13 @@ bold check 加严口径）——8 个失败全部是静态能力缺口（页脚�
 由 toolkit `TrackedReplaceFormatWorkaroundTest` 实证可过全部 check——行为失败，不 flag。
 另踩实：move 对按 id accept 后 live view 抛 XmlValueDisconnectedException（落盘完好，
 TODO #009）。**评测任务考察工具选择本身——prompt 不得提示用哪个工具。**
+**2026-10-31 页眉写 op 后**：25/25，平均 4.28（runId `20261031-021426-557` @80aa220，
+compiler 面 8 工具）——header-write-text 首个 op 一步命中（行内标记直入 text）；
+review_intent 复审一次「未达成」误报后模型经 read_document 页眉元数据行自证收尾、
+零重复写入（写读同批读侧观测把复审误报闭环，docs/11 §6.15）。full 面对照
+（runId `20261031-021922-108`）：11/25 受模型服务 502 干扰（8 任务 calls=0 未调通），
+通过集与 §6.14 完全兼容、零能力回归；header-write-text 干净归因 check_failed 撞
+24 轮（页眉写物理不可达），capabilityGap flag 成立（第 10 条 gap 任务）。
 
 ## Convention: ref 的容器边界（读/写分离）
 
@@ -303,6 +312,21 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 - **read_document 的页脚元数据行**（P2 续）：`MarkdownView` 在正文后输出
   `<!-- 页脚: … -->`（存在且非空才输出）——页码写入后模型能读到核对；注释形态保
   round-trip（`CompilerPipelineTest#markdownViewShowsFooterAsMetadataAndKeepsRoundTrip`）。
+- **header.set_text 页眉写 op**（v4，2026-10-31）：与 `footer.set_page_number` 同型——
+  dispatch 不认领锚点、plan 签名无 anchor/snapshot、`changed` 报 `"header"` 字面量，
+  **不占段落锚点**、可与正文 op 同批。`text` 必填非空（trim 后空白即 preflight 拒绝，
+  零写入），行内标记复用 `MarkdownParser.parseInline` 全标记集 + `applySpanFormat`
+  （逐 span `addRun`，内容语言与正文统一）。**追加语义**：`ensureHeader().addParagraph()`
+  向默认 section 页眉追加一段，重复调用追加新段、不替换既有内容（替换语义留 future）；
+  core 零新增（N5：写侧 `ensureHeader` 创建入口既有，`addParagraph` 返回普通 `Paragraph`）。
+  已知边界：只写默认 section（多 section/变体留 future），无页码占位符（页码进页眉留
+  future）。
+- **read_document 的页眉元数据行**（v4，2026-10-31）：与页脚行同族惯例——
+  `<!-- 页眉: … -->` 输出在**页脚行之前**（与页面物理顺序一致），存在且非空才输出、
+  多行转 `" / "`、截断时不输出；读侧走 `doc.header()` 只读**绝不创建**（N5 读写分离，
+  读视图不得触碰创建路径）；round-trip 由
+  `CompilerPipelineTest#markdownViewShowsHeaderAsMetadataAndKeepsRoundTrip` 锁定。
+  写读同批落地（§6.6/§6.13 教训：只有写侧 op 没有读侧观测，复审会误报「未达成」）。
 - **comment.add 与批注观测**（v3，2026-10-30）：`comment.add`（`anchor+text+author` 必传）
   委托 core `Paragraph.addComment` 整段范围批注。批注**不改段落文本**，不参与同锚点
   改文本独占（`claimAnchor` 只管 tracked.\*/`replace_text`）——可与 `replace_text` 同批

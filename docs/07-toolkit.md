@@ -131,7 +131,8 @@ this.table = new TableTools(session.sharedSessions(), session.sharedSeq());
 > 页眉/页脚 ref 现在可被 `view_element`（段落/run/part）与 `read_run`（run）解析，
 > 返回结果带 `location`（如 `页脚 section=0 variant=default 段落 0`）。
 > 写工具仍只接受正文 ref；对页脚段落/run 调用会返回明确的「仅支持正文」错误，
-> 不会按正文索引静默修改。页脚 PAGE 域写入仍不在范围内。
+> 不会按正文索引静默修改。本面（full）页眉/页脚写入不在范围内——页眉/页脚写入由
+> compiler 面的 `header.set_text`/`footer.set_page_number` op 提供。
 
 ### TrackedChangeQueryTools（修订查询 + 处理）
 
@@ -216,9 +217,9 @@ check_quality({
 | 工具 | 作用 |
 |---|---|
 | `create_document` | Markdown 子集 + 样式 profile 一次性编译整份 docx，**替换** doc_id 会话文档（句柄不变、generation+1） |
-| `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页脚以 `<!-- 页脚: … -->` 元数据行呈现，与写侧同构（round-trip） |
+| `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页眉/页脚以 `<!-- 页眉: … -->`/`<!-- 页脚: … -->` 元数据行呈现，与写侧同构（round-trip） |
 | `validate_document` | 复用 10 项质量检查，输出带 `v1/v2` 编号的问题清单 |
-| `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number/comment.add），短 ID 锚点，支持 dry_run |
+| `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number/header.set_text/comment.add），短 ID 锚点，支持 dry_run |
 | `fill_template` | mustache 子集数据填充：`{{key}}` 值替换（跨 run 命中）、`{{#key}}…{{/key}}` 条件块、表格模板行按列表复制（保留格式） |
 | `render_preview` | LibreOffice headless 渲染 PDF/PNG（只读；soffice 路径经 `NONDOCX_SOFFICE` 配置，png 为首页） |
 
@@ -248,7 +249,7 @@ create_document({
 })
 ```
 
-**edit_document 的 op 集**（v2，锚点 = `read_document` 的短 ID）：
+**edit_document 的 op 集**（v4，锚点 = `read_document` 的短 ID）：
 
 ```json
 {"op":"insert","anchor":"p3","position":"after","block":"# 小节 {align=center}\n\n正文。"}
@@ -264,6 +265,7 @@ create_document({
 {"op":"tracked.insert","anchor":"p1","text":"补充说明。","author":"审查员"}
 {"op":"tracked.delete","anchor":"p1","find":"过期内容","author":"审查员"}
 {"op":"footer.set_page_number"}                          // format 默认「第 {page} 页」
+{"op":"header.set_text","text":"**机密** 内部文档"}       // 页眉写文本（行内标记）
 {"op":"comment.add","anchor":"p1","text":"金额需复核","author":"审查员"}
 ```
 
@@ -293,6 +295,12 @@ del 文本（delText）**永不**进入 `text()`；ins 文本在 **live 对象**
 占位符（PAGE/NUMPAGES 域）。域带**缓存结果** "1"（五 run 形态：begin/instr/separate/result/end）
 ——POI/文本抽取器能读到「第 1 页」，Word/WPS 打开时按当前文档重算。同锚点独占规则不适用于
 页脚 op（它不占段落锚点）。
+
+**header.set_text（页眉写文本）**：页眉**追加**一个文本段落（不触碰正文），`text` 必填非空，
+支持行内标记（`**粗体**`/`*斜体*`/`` `代码` ``，与 replace_text 同一内容语言）。写默认
+section 的默认页眉（core `ensureHeader`，不存在则创建）；重复调用追加新段、**不替换**
+既有页眉内容（替换语义留 future）。与页脚 op 同型：不占段落锚点、可与正文 op 同批。
+读侧 `read_document` 以 `<!-- 页眉: … -->` 元数据行呈现（页脚行之前，存在且非空才输出）。
 
 **comment.add（批注）**：给锚点段落加**整段范围**批注（core `Paragraph.addComment`），
 `text`/`author` 必传（`author` 是 Word 批注窗格显示的作者名）。批注不改段落文本，不受同锚点
