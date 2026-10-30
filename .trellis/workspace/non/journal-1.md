@@ -1857,3 +1857,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - 14B 对比(待模型);set_style 加粗 op 视数据决定;full 面对齐观测面复跑;QualityCheckTools 升级为编译器 post-condition(P2 遗留项)
+
+
+## Session 47: P2 全部收尾:质检升级为编译器 post-condition
+<!-- trellis-session: v=2 fp=e5cbcd6fbd3ff905 -->
+
+**Date**: 2026-10-30
+**Task**: P2 全部收尾:质检升级为编译器 post-condition
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- create/edit/fill 成功路径自动附 10 项质检(qualityIssues+摘要,非阻塞);toc 建议项过滤防噪音,提示词护栏防修复循环;validate_document 对写后校验冗余(全程 0 调用)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9dfd8ec` | chore(task): archive 10-30-quality-postcondition |
+
+### Testing
+
+- [OK] eval 20261030-121824-988:22/22,平均 4.41(4.68→);toolkit 269/examples/demo 全绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- set_style 加粗 op(replace-with-format 信号);full 面对齐观测面复跑;14B 对比(待模型)
