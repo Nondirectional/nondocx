@@ -284,3 +284,23 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 - **read_document 的批注元数据行**（v3）：`MarkdownView` 在被评段落行后输出整行
   `<!-- 批注 pN [作者]: 内容 -->`（每条一行）；round-trip 由「解析器跳过整行注释」保证
   （`CompilerPipelineTest#markdownViewShowsCommentAsMetadataAndKeepsRoundTrip`）。
+- **fill_template 的重写策略**（P2 收尾，2026-10-30）：跨 run 占位符按 `paragraph.text()`
+  合并命中后，重写用「首 run 承载全文、其余 run 清空」——**不要**删光重建单 run：重建要克隆
+  样式，而 `Run.font()` 写侧是四槽同写，会把西文字体名写进 eastAsia 槽污染中文。表格模板行
+  复制必须走 core `Table.copyRowTo`。缺 key 的占位符**保留原样 + warning**（模型可补数据
+  重试），不做 preflight 拒绝——宽容降级优于静默清空。
+- **POI 5.3 表行缓存的脱链陷阱**（P2 收尾，字节码验证）：`XWPFTable.addRow(row,pos)` 把传入
+  wrapper 塞进 `tableRows` 缓存，却把内容**复制**进自建的新 tr——传入脱链 copy 时，经返回行的
+  写入落进不在文档树里的对象，**内存读正确、落盘 XML 原样**（fill_template 首版 eval 踩中；
+  `getRows()` 无缓存重建路径）。`copyRowTo` 用**影子行技法**破局：手动 `insertNewTr` 得到树内
+  元素并填充 → 传包树内元素的 wrapper 给 `addRow`（缓存正确、XML 多出一行复制内容）→
+  `removeTr` 删掉影子行。测试必须 **save+reopen 断言**——纯内存断言测不出这类陷阱
+  （`TableTest#copyRowToReturnedRowWritesIntoDocumentTree` 锁死）。
+- **render_preview 只读且防环境坑**（P2 收尾）：渲染不改文档、不置 dirty（demo
+  `READONLY_TOOL_PREFIXES` 含 `render_`）。soffice 路径经 `NONDOCX_SOFFICE`（默认
+  `soffice`）；每次调用独立 `-env:UserInstallation` profile（LibreOffice 同 profile 单实例
+  锁，并发静默失败）；超时销毁进程。集成测试用 `assumeTrue(soffice 存在)`——无
+  LibreOffice 的 CI 跳过而不是红。
+- **compiler 面是 8 入口**（P2 收尾起）：current_document + create/read/validate/edit +
+  fill_template + render_preview + review_intent。eval（`EvalRunnerTest`）与 demo
+  （`SurfaceSwitchTest`）双锁死；full 面 58 不变（不 scan compiler，A/B 基线保持）。

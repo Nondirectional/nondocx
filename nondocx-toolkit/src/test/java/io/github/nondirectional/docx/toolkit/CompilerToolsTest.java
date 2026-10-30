@@ -205,6 +205,54 @@ class CompilerToolsTest {
     tk.session.closeDocx(docId);
   }
 
+  @Test
+  void fillTemplateFillsPlaceholdersInSessionDocument(@TempDir Path temp) throws Exception {
+    DocxToolkit tk = new DocxToolkit();
+    Path template = temp.resolve("template.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("甲方：{{party_a}}");
+      doc.addParagraph("{{#urgent}}");
+      doc.addParagraph("加急：{{deadline}}");
+      doc.addParagraph("{{/urgent}}");
+      doc.save(template);
+    }
+    String docId = ToolTestSupport.extractDocId(tk.session.openDocx(template.toString()));
+
+    java.util.Map<String, Object> data =
+        new java.util.LinkedHashMap<>(
+            java.util.Map.of("party_a", "甲公司", "urgent", true, "deadline", "周五"));
+    String raw = tk.compiler.fillTemplate(docId, data, null);
+    ToolResultParser.Snapshot parsed = ToolTestSupport.parse(raw);
+    assertThat(parsed).isNotNull();
+    assertThat(parsed.success()).isTrue();
+    JsonNode result = MAPPER.readTree(parsed.dataText());
+    assertThat(result.get("placeholdersFilled").asInt()).isEqualTo(2); // party_a + deadline
+    Document after = tk.session.getDocument(docId);
+    assertThat(after.paragraph(0).text()).isEqualTo("甲方：甲公司");
+    assertThat(after.paragraph(1).text()).isEqualTo("加急：周五"); // 标记行已删、内容保留
+
+    // 空 data 拒绝；不存在的 docId 拒绝
+    assertThat(ToolTestSupport.isFailure(tk.compiler.fillTemplate(docId, java.util.Map.of(), null)))
+        .isTrue();
+    assertThat(ToolTestSupport.isFailure(tk.compiler.fillTemplate("doc-99", data, null))).isTrue();
+    tk.session.closeDocx(docId);
+  }
+
+  @Test
+  void renderPreviewRejectsBadFormatWithoutTouchingDocument(@TempDir Path temp) throws Exception {
+    DocxToolkit tk = new DocxToolkit();
+    String docId = ToolTestSupport.extractDocId(tk.session.openDocx(seed(temp)));
+    Document before = tk.session.getDocument(docId);
+
+    String raw = tk.compiler.renderPreview(docId, "gif");
+    assertThat(ToolTestSupport.isFailure(raw)).isTrue();
+    assertThat(ToolTestSupport.parse(raw).message()).contains("渲染失败");
+    // 只读：文档句柄与内容不变
+    assertThat(tk.session.getDocument(docId)).isSameAs(before);
+    assertThat(tk.session.getDocument(docId).paragraph(0).text()).isEqualTo("旧内容");
+    tk.session.closeDocx(docId);
+  }
+
   private static String seed(Path temp) throws Exception {
     java.nio.file.Path file = temp.resolve("seed.docx");
     try (Document doc = Docx.create()) {

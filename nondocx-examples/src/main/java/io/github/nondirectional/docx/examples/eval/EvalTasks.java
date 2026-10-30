@@ -27,6 +27,7 @@ import java.util.Map;
  *   <li>8~9：修订与批量替换，检查语义工具选择。
  *   <li>10：页脚页码，检查只读能力缺口。
  *   <li>11：批注创作，检查 comment.add 与批注只读观测（锚定段/作者/正文不动）。
+ *   <li>12：模板填充，检查 fill_template（值/条件块/表格模板行）。
  * </ul>
  */
 public final class EvalTasks {
@@ -36,7 +37,7 @@ public final class EvalTasks {
 
   private EvalTasks() {}
 
-  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 11 条任务。 */
+  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 12 条任务。 */
   public static List<EvalTask> all() {
     return TASKS;
   }
@@ -432,6 +433,49 @@ public final class EvalTasks {
                       EvalAssert.equal(
                           "本季度预算为一百五十万元。", requireParagraph(doc, 1, "预算段").text(), "第 1 段");
                       EvalAssert.equal("执行计划", requireParagraph(doc, 2, "计划段").text(), "第 2 段");
+                    }))));
+
+    tasks.add(
+        new EvalTask(
+            "fill-template",
+            "填充模板占位符",
+            "当前文档是一份模板。请用以下数据填充：甲方=「北京启迪科技」，乙方=「华信咨询」，"
+                + "urgent=true、deadline=「2026-11-05」，明细为两条：「调研/3」「开发/5」。",
+            doc -> {
+              doc.addParagraph("甲方：{{party_a}}");
+              doc.addParagraph("乙方：{{party_b}}");
+              doc.addParagraph("{{#urgent}}");
+              doc.addParagraph("加急：请于 {{deadline}} 前交付。");
+              doc.addParagraph("{{/urgent}}");
+              Table t = doc.addTable();
+              t.row(r -> r.cell("事项").cell("人日"));
+              t.row(r -> r.cell("{{#items}}{{name}}").cell("{{qty}}"));
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "占位符已填", doc -> EvalAssert.notContains(EvalAssert.bodyText(doc), "{{", "正文")),
+                EvalTask.NamedCheck.of(
+                    "值正确",
+                    doc -> {
+                      EvalAssert.contains(
+                          requireParagraph(doc, 0, "甲方段").text(), "北京启迪科技", "第 0 段");
+                      EvalAssert.contains(requireParagraph(doc, 1, "乙方段").text(), "华信咨询", "第 1 段");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "条件块保留并填充",
+                    doc ->
+                        EvalAssert.contains(
+                            requireParagraph(doc, 2, "加急段").text(), "2026-11-05", "加急段")),
+                EvalTask.NamedCheck.of(
+                    "表格行已展开",
+                    doc -> {
+                      Table table = requireTable(doc, 0, "明细表");
+                      EvalAssert.isTrue(
+                          table.rows().size() >= 3, "期望表头+2 条明细，实际 " + table.rows().size() + " 行");
+                      EvalAssert.equal("调研", table.rows().get(1).cells().get(0).text(), "明细 1 事项");
+                      EvalAssert.equal("3", table.rows().get(1).cells().get(1).text(), "明细 1 人日");
+                      EvalAssert.equal("开发", table.rows().get(2).cells().get(0).text(), "明细 2 事项");
+                      EvalAssert.equal("5", table.rows().get(2).cells().get(1).text(), "明细 2 人日");
                     }))));
 
     return List.copyOf(tasks);

@@ -36,9 +36,9 @@ import org.slf4j.LoggerFactory;
  * AgentEvent.Complete}）时强制执行——见 {@link #onAgentComplete}。这从源头消灭了 "LLM 漏调 save / 谎报成功"导致的自述与磁盘真相鸿沟。
  *
  * <p><b>工具面（2026-10-30 起）</b>：默认 <b>compiler 面</b>（{@code current_document} + {@code
- * create/read/validate/edit_document} + 只读复审 SubAgent = 6 入口）——依据 eval A/B（docs/11
- * §6.3/§6.4/§6.5：新建 5/5、编辑 10/10，均优于 full 面）。{@code NONDOCX_AGENT_SURFACE=full} 回退原 58+
- * 入口细粒度面；system prompt 与 Skill 策略随面切换（full 面的 Skill 教的是 compiler 面不存在的工具，不能混用）。
+ * create/read/validate/edit/fill/render} 六个编译工具 + 只读复审 SubAgent = 8 入口）——依据 eval A/B（docs/11
+ * §6.3~§6.7：新建 5/5、编辑 11/11，均优于 full 面）。{@code NONDOCX_AGENT_SURFACE=full} 回退原 58+ 入口细粒度面；system
+ * prompt 与 Skill 策略随面切换（full 面的 Skill 教的是 compiler 面不存在的工具，不能混用）。
  *
  * <p><b>意图复审（2026-07-17 重构）</b>：质检目标从「客观版式规则自检」改为「复审用户本轮期望的修改是否达成」，由<b>只读复审 SubAgent</b> {@code
  * review_intent} 承担。该 SubAgent 仅持有 {@code view_*} 只读工具 + 复审指令，对比「本轮用户请求 vs
@@ -64,7 +64,7 @@ final class AgentBridge {
   /** 复审 SubAgent 工具名（DIRECT 模式下，SubAgent name 即暴露给主 Agent 的工具名）。 */
   static final String REVIEW_TOOL = "review_intent";
 
-  /** compiler 面名（默认）：current_document + 4 编译工具 + review_intent。 */
+  /** compiler 面名（默认）：current_document + 6 编译工具 + review_intent。 */
   static final String SURFACE_COMPILER = "compiler";
 
   /** full 面名：细粒度工具面（58+ 入口），NONDOCX_AGENT_SURFACE=full 时启用。 */
@@ -94,7 +94,16 @@ final class AgentBridge {
    * view_*}，不改文档，故归只读。
    */
   private static final Set<String> READONLY_TOOL_PREFIXES =
-      Set.of("view_", "read_", "get_", "list_", "search_", "check_", "validate_", "review_");
+      Set.of(
+          "view_",
+          "read_",
+          "get_",
+          "list_",
+          "search_",
+          "check_",
+          "validate_",
+          "review_",
+          "render_");
 
   private static final Set<String> READONLY_TOOL_EXACT =
       Set.of("current_document", "describe_capabilities", "get_subagent_result", "steer_subagent");
@@ -205,8 +214,8 @@ final class AgentBridge {
    * 构建主 Agent 的 {@link ToolRegistry}：按面装配写侧 + <b>只读复审 SubAgent</b> {@code review_intent}。
    *
    * <p><b>compiler 面（默认）</b>：{@code documentTools}（current_document）+ {@code
-   * toolkit.compiler}（create/read/validate/edit_document），主面 5 regular 工具 + 复审 SubAgent = 6 入口——与
-   * eval 的 compiler 面同构（docs/11 §6.3~§6.5 的 A/B 数据即此装配）。
+   * toolkit.compiler}（create/read/validate/edit_document + fill_template + render_preview），主面 7
+   * regular 工具 + 复审 SubAgent = 8 入口——与 eval 的 compiler 面同构（docs/11 §6.3~§6.7 的 A/B 数据即此装配）。
    *
    * <p><b>full 面</b>：现行细粒度装配（view/body/table/headerFooterToc/trackedChangeQuery/
    * trackedChangeAuthoring 六组 scan），供回退对比。
@@ -282,6 +291,9 @@ final class AgentBridge {
         + "（必传 author=修订作者，用户给了作者名就用它）；"
         + "用户要求在页脚插页码时用 footer.set_page_number op（format 如「第 {page} 页」）；"
         + "用户要求加批注/写意见时用 comment.add op（anchor+text 必传，author=批注作者，不改正文）。"
+        + "当前文档是模板（含 {{key}}/{{#key}} 占位符）且用户给出数据时，一次调用 fill_template 填充"
+        + "（缺 key 会保留原样并在 warnings 提示，补数据重试即可）。"
+        + "需要检查分页/排版等视觉效果时调用 render_preview（转 PDF，需要 LibreOffice）。"
         + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
         + "完成修改后调用 review_intent 复审用户期望的修改是否已经达成。若任一工具失败，停止并说明失败。"
         + "不要使用对话记忆或推断得来的旧 doc_id。";

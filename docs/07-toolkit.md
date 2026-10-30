@@ -219,6 +219,8 @@ check_quality({
 | `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页脚以 `<!-- 页脚: … -->` 元数据行呈现，与写侧同构（round-trip） |
 | `validate_document` | 复用 10 项质量检查，输出带 `v1/v2` 编号的问题清单 |
 | `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number/comment.add），短 ID 锚点，支持 dry_run |
+| `fill_template` | mustache 子集数据填充：`{{key}}` 值替换（跨 run 命中）、`{{#key}}…{{/key}}` 条件块、表格模板行按列表复制（保留格式） |
+| `render_preview` | LibreOffice headless 渲染 PDF/PNG（只读；soffice 路径经 `NONDOCX_SOFFICE` 配置，png 为首页） |
 
 **Markdown 子集**：`#`~`######` 标题（可带 `{align=center|left|right|both}` 行尾属性）、段落、
 `**粗体**`/`*斜体*`/`` `代码` ``、`- `/`1. ` 列表（缩进 2 空格一级）、`|…|` 表格
@@ -282,6 +284,19 @@ create_document({
 改文本独占约束（可与 `replace_text` 同批作用于同段）。读侧三处可见：`read_document` 的
 `<!-- 批注 pN [作者]: 内容 -->` 元数据行、view 层段落详情 `comments` 数组（core
 `Paragraph.comments()` 映射）与 outline 批注概览。
+
+**fill_template（模板填充）**：模板 = 当前文档，语法是 mustache 子集（不嵌套）——`{{key}}`
+值替换；`{{#key}}…{{/key}}` **整段标记**为条件块（falsy = false/缺失/空列表/空白串时删块，
+标记行恒删）；表格里任一单元格含 `{{#key}}` 的行是**模板行**，`data[key]` 为列表时按元素复制
+（core `Table.copyRowTo` XML 深拷贝——底纹/边框/行属性保留），行内 `{{field}}` 先取元素字段、
+回退外层，标量元素用 `{{.}}`。**跨 run 占位符**按 `text()` 合并命中，重写用「首 run 承载全文」
+（保留首 run 字体槽，规避 `Run.font()` 四槽同写污染 eastAsia）。缺 key 的占位符**保留原样** +
+warning（补数据重试即可，不静默清空）。
+
+**render_preview（渲染预览）**：当前文档 → LibreOffice headless → PDF 或 PNG（首页）。只读
+（不改文档、不置 dirty），产物落临时目录。soffice 路径经环境变量 `NONDOCX_SOFFICE`（默认
+`soffice`）；每次调用用独立 user profile 规避 LibreOffice 实例锁；超时 60s。结构检查看不见的
+视觉缺陷（分页/溢出/表格断行）靠它。
 
 **位置约定**：本组在 `DocxToolkit.scanAll` 里（能力清单第 9 组，EXPERIMENTAL 级），但
 **默认不进 demo/eval 的 full 工具面**——是否成为默认面由评测数据决定（见 doc 11 §P1/P2）。

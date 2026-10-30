@@ -247,6 +247,9 @@ public final class CapabilityCollector {
     if (List.class.isAssignableFrom(javaType)) {
       return ParamType.OBJECT_ARRAY;
     }
+    if (Map.class.isAssignableFrom(javaType)) {
+      return ParamType.OBJECT;
+    }
     return ParamType.STRING;
   }
 

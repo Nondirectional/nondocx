@@ -140,6 +140,7 @@ Document fresh = Docx.create();
 |---|---|
 | `rows()` / `row(int i)` 👁 | 行视图 |
 | `addRow()` ✏️🔄 | 追加空行 |
+| `copyRowTo(int src, int target)` ✏️🔄 | 定位插入源行深拷贝（保留底纹/边框/行属性；fill_template 重复行基建） |
 | `removeRow(int i)` ✏️ | 删行 |
 | `row(Consumer<Row> config)` ✏️🔄 | 声明式追加行（builder 风格） |
 

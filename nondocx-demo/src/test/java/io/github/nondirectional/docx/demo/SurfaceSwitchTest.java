@@ -13,15 +13,15 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 /**
- * 工具面切换（2026-10-30）的核心契约：demo 默认 <b>compiler 面</b>（6 入口），{@code NONDOCX_AGENT_SURFACE=full}
+ * 工具面切换（2026-10-30）的核心契约：demo 默认 <b>compiler 面</b>（8 入口），{@code NONDOCX_AGENT_SURFACE=full}
  * 回退原细粒度面。
  *
  * <p>锁定三件事：
  *
  * <ol>
- *   <li><b>compiler 面恰为 6 入口</b>：current_document + create/read/validate/edit_document（5 regular）+
- *       review_intent SubAgent——与 eval 的 compiler 面同构（docs/11 §6.3~§6.5 的 A/B 数据即此装配），不得混入 full
- *       面写工具。
+ *   <li><b>compiler 面恰为 8 入口</b>：current_document + create/read/validate/edit_document +
+ *       fill_template + render_preview（7 regular）+ review_intent SubAgent——与 eval 的 compiler 面同构
+ *       （docs/11 §6.3~§6.7 的 A/B 数据即此装配），不得混入 full 面写工具。
  *   <li><b>full 面不回归</b>：细粒度工具原样保留，回退路径可用。
  *   <li><b>面配套随面切换</b>：system prompt 与 Skill 策略（full 面 Skill 教的是 compiler 面没有的 工具，注入即误导）。
  * </ol>
@@ -43,17 +43,19 @@ class SurfaceSwitchTest {
   }
 
   @Test
-  void compilerSurfaceExposesExactlySixEntries() {
+  void compilerSurfaceExposesExactlyEightEntries() {
     ToolRegistry registry = registry(AgentBridge.SURFACE_COMPILER);
     assertEquals(
         List.of(
             "create_document",
             "current_document",
             "edit_document",
+            "fill_template",
             "read_document",
+            "render_preview",
             "validate_document"),
         regularNames(registry).stream().sorted().collect(Collectors.toList()),
-        "compiler 面主工具应为 current_document + 4 编译工具");
+        "compiler 面主工具应为 current_document + 6 编译工具");
     assertEquals(List.of(AgentBridge.REVIEW_TOOL), registry.subAgentNames());
   }
 
@@ -94,9 +96,11 @@ class SurfaceSwitchTest {
     assertTrue(AgentBridge.isReadonly("validate_document"), "validate_document 应只读");
     assertTrue(AgentBridge.isReadonly("read_document"), "read_document 应只读");
     assertTrue(AgentBridge.isReadonly("current_document"), "current_document 应只读");
-    // 写工具走安全默认（未知即写）——create/edit_document 必须置 dirty
+    assertTrue(AgentBridge.isReadonly("render_preview"), "render_preview 应只读（只落产物文件，不改文档）");
+    // 写工具走安全默认（未知即写）——create/edit/fill 必须置 dirty
     assertFalse(AgentBridge.isReadonly("edit_document"), "edit_document 应视为写");
     assertFalse(AgentBridge.isReadonly("create_document"), "create_document 应视为写");
+    assertFalse(AgentBridge.isReadonly("fill_template"), "fill_template 应视为写");
   }
 
   @Test

@@ -80,6 +80,9 @@ public final class EvalRunner {
           + "（必传 author=修订作者，如用户给了作者名就用它）；"
           + "用户要求在页脚插页码时用 footer.set_page_number op（format 如「第 {page} 页」）；"
           + "用户要求加批注/写意见时用 comment.add op（anchor+text 必传，author=批注作者，不改正文）。"
+          + "当前文档是模板（含 {{key}}/{{#key}} 占位符）且用户给出数据时，一次调用 fill_template 填充"
+          + "（缺 key 会保留原样并在 warnings 提示，补数据重试即可）。"
+          + "需要检查分页/排版等视觉效果时调用 render_preview（转 PDF，需要 LibreOffice）。"
           + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
           + "完成后调用 review_intent 复审用户期望的修改是否已经达成。若任一工具失败，停止并说明失败。";
 

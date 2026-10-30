@@ -226,4 +226,80 @@ class TableTest {
         .isInstanceOf(IndexOutOfBoundsException.class)
         .hasMessageContaining("列索引 9");
   }
+
+  // ---------- copyRowTo：定位深拷贝（fill_template 的重复行基建） ----------
+
+  @Test
+  void copyRowToInsertsDeepCopyAtPositionAndPreservesSource() {
+    Document doc = Docx.create();
+    try {
+      Table table = buildGridTable(doc);
+      // 拷贝第 0 行（A1/B1/C1）插到位置 1：新行在源行之后、原第 1 行之前
+      Row copied = table.copyRowTo(0, 1);
+      assertThat(table.rows()).hasSize(3);
+      assertThat(copied.cell(0).text()).isEqualTo("A1");
+      assertThat(table.row(0).cell(0).text()).isEqualTo("A1");
+      assertThat(table.row(1).cell(0).text()).isEqualTo("A1");
+      assertThat(table.row(2).cell(0).text()).isEqualTo("A2");
+      // 改拷贝行不影响源行（深拷贝）
+      copied.cell(0).text("改");
+      assertThat(table.row(0).cell(0).text()).isEqualTo("A1");
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void copyRowToSupportsAppendPositionAndKeepsCantSplit(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("copy.docx");
+    Document doc = Docx.create();
+    try {
+      Table table = buildGridTable(doc);
+      table.row(1).cantSplit(true);
+      // targetIndex == size：末尾追加
+      Row appended = table.copyRowTo(1, table.rows().size());
+      assertThat(table.rows()).hasSize(3);
+      // 行属性随 XML 深拷贝保留
+      assertThat(appended.cantSplit()).isTrue();
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document reopened = Docx.open(file)) {
+      // POI 行缓存同步正确：reopen 后行数与文本稳定
+      Table table = reopened.tables().get(0);
+      assertThat(table.rows()).hasSize(3);
+      assertThat(table.row(2).cell(0).text()).isEqualTo("A2");
+      assertThat(table.row(2).cantSplit()).isTrue();
+    }
+  }
+
+  @Test
+  void copyRowToRejectsOutOfBounds() {
+    Table table = buildGridTable(Docx.create());
+    assertThatThrownBy(() -> table.copyRowTo(9, 0)).isInstanceOf(IndexOutOfBoundsException.class);
+    assertThatThrownBy(() -> table.copyRowTo(0, 9)).isInstanceOf(IndexOutOfBoundsException.class);
+    assertThatThrownBy(() -> table.copyRowTo(-1, 0)).isInstanceOf(IndexOutOfBoundsException.class);
+  }
+
+  /**
+   * 经返回值写入必须真正落进文档树：POI 的 addRow(row,pos) 把内容拷进自建 CTRow、不复用传入 wrapper——若 copyRowTo 返回传入
+   * wrapper，写入会落在脱链对象上（内存读正确、落盘原样）。 fill_template 首版 eval 踩中，本用例锁死修复。
+   */
+  @Test
+  void copyRowToReturnedRowWritesIntoDocumentTree(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("persist.docx");
+    Document doc = Docx.create();
+    try {
+      Table table = buildGridTable(doc);
+      Row copied = table.copyRowTo(0, 1);
+      copied.cell(0).text("经返回值改写");
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document reopened = Docx.open(file)) {
+      assertThat(reopened.tables().get(0).row(1).cell(0).text()).isEqualTo("经返回值改写");
+    }
+  }
 }

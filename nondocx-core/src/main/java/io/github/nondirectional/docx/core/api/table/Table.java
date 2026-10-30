@@ -108,6 +108,51 @@ public final class Table implements BodyElement {
   }
 
   /**
+   * 把 {@code sourceIndex} 行深拷贝一份并插入到 {@code targetIndex} 位置，返回新行的活跃包装器。
+   *
+   * <p>与 {@link #addRow()}（末尾追加空行）互补的<b>定位拷贝</b>：XML 级深拷贝保留源行的全部
+   * 属性——单元格底纹/边框/宽度、行属性（cantSplit/headerRow）、段落与 run 的直接格式。 模板填充（fill_template
+   * 的重复表格行）靠它保证「复制出的行与模板行视觉一致」， {@code addRow()+addCell()} 重建会丢这些属性。
+   *
+   * <p><b>POI 的坑。</b> 直接改 {@code CTTbl} 的 tr 数组会绕过 {@code XWPFTable} 的行缓存（与 tracked changes 绕过 run
+   * 缓存同族陷阱），必须走 {@code XWPFTable.addRow(XWPFTableRow, pos)} 让 POI 同步缓存与 XML。
+   *
+   * @param sourceIndex 要拷贝的源行索引（从 0 开始）
+   * @param targetIndex 新行插入位置（0~行数；等于行数即末尾追加）
+   * @return 新插入行的活跃包装器
+   * @throws IndexOutOfBoundsException 如果任一索引越界
+   */
+  public Row copyRowTo(int sourceIndex, int targetIndex) {
+    int size = delegate.getRows().size();
+    if (sourceIndex < 0 || sourceIndex >= size) {
+      throw new IndexOutOfBoundsException("源行索引 " + sourceIndex + " 超出范围（表格有 " + size + " 行）");
+    }
+    if (targetIndex < 0 || targetIndex > size) {
+      throw new IndexOutOfBoundsException("目标位置 " + targetIndex + " 超出范围（可在 0~" + size + " 插入）");
+    }
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRow sourceCopy =
+        (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRow)
+            delegate.getRow(sourceIndex).getCtRow().copy();
+    // 影子行技法（POI 5.3 addRow(row,pos) 字节码倒推）：POI 把传入 wrapper 塞进行缓存、却把内容
+    // <b>复制</b>进自建的新 tr——直接传脱链 copy 会让返回行的后续写入落进不在文档树里的对象
+    // （内存读正确、落盘原样，fill_template 首版 eval 栽过）。正确姿势：先手动 insertNewTr 得到
+    // <b>树内</b>元素并填充，让 POI 缓存的 wrapper 包这个树内元素，再删掉 addRow 复制出的影子行
+    // ——树与缓存最终指向同一个对象，经返回值的写入必然落盘。
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTbl ctTbl = delegate.getCTTbl();
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRow treeRow =
+        ctTbl.insertNewTr(targetIndex);
+    treeRow.set(sourceCopy);
+    XWPFTableRow wrapper = new XWPFTableRow(treeRow, delegate);
+    if (!delegate.addRow(wrapper, targetIndex)) {
+      // 回滚手动插入的行（addRow 失败时它已后移一位），保持表格原样
+      ctTbl.removeTr(targetIndex + 1);
+      throw new IllegalStateException("在位置 " + targetIndex + " 插入行拷贝失败（不应发生）");
+    }
+    ctTbl.removeTr(targetIndex);
+    return new Row(delegate.getRow(targetIndex));
+  }
+
+  /**
    * 追加一个新行，应用给定的配置器，并返回此表格以支持链式调用。
    *
    * <p>这是 {@link #addRow()} 的构造便捷方法：它追加一行并将 活跃的 {@link Row} 交给配置器，因此调用者可以直接填充其单元格（例如 {@code

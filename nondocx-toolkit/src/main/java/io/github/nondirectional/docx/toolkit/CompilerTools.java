@@ -14,10 +14,14 @@ import io.github.nondirectional.docx.toolkit.compiler.MarkdownDoc;
 import io.github.nondirectional.docx.toolkit.compiler.MarkdownParser;
 import io.github.nondirectional.docx.toolkit.compiler.MarkdownView;
 import io.github.nondirectional.docx.toolkit.compiler.PatchEngine;
+import io.github.nondirectional.docx.toolkit.compiler.RenderPreview;
 import io.github.nondirectional.docx.toolkit.compiler.StyleProfile;
+import io.github.nondirectional.docx.toolkit.compiler.TemplateFiller;
 import io.github.nondirectional.docx.toolkit.result.ToolResult;
 import io.github.nondirectional.docx.toolkit.result.ToolResultCode;
 import io.github.nondirectional.docx.toolkit.result.ToolResultRenderer;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -359,6 +363,127 @@ public final class CompilerTools extends ToolkitToolContext {
           ToolResult.fail(
               ToolResultCode.INVALID_ARGUMENT,
               "patch 执行异常（文档可能被部分修改，建议 read_document 核对）: " + rootMessage(e)));
+    }
+  }
+
+  /**
+   * 用数据填充当前文档的模板占位符（mustache 子集，原地修改）。
+   *
+   * @param docId 文档句柄（模板 = 当前文档）
+   * @param data 键值数据：值替换 String/Number/Boolean；列表驱动表格模板行与条件块
+   * @param expectedGeneration 调用方持有的 generation（不匹配则拒绝）
+   * @return 填充计数与警告
+   */
+  @ToolDef(
+      name = "fill_template",
+      description =
+          "把数据填进当前文档的模板占位符（模板就是当前文档）。语法：{{key}} 值替换（Word 拆 run 也能命中）；"
+              + "{{#key}}…{{/key}} 整段标记为条件块（key 为 false/缺失/空列表时删除块内段落）；"
+              + "表格里任一单元格含 {{#key}} 的行是模板行，data[key] 为列表时按元素复制（行内 {{field}} "
+              + "取元素字段，标量元素用 {{.}}，复制行保留模板行格式）。缺 key 的占位符保留原样并在 "
+              + "warnings 里提示。用户给出「模板 + 数据」时用它，比逐段 edit 更稳。")
+  @ToolCapability(
+      operation = CapabilityOperation.UPDATE,
+      element = "document",
+      level = CapabilityLevel.EXPERIMENTAL)
+  public String fillTemplate(
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(
+              name = "data",
+              description =
+                  "键值数据对象，如 {\"party_a\":\"甲公司\",\"urgent\":true,\"items\":[{\"name\":\"甲\",\"qty\":2}]}")
+          @ParamCapability(type = ParamType.OBJECT)
+          Map<String, Object> data,
+      @ToolParam(
+              name = "expected_generation",
+              description = "调用方持有的 session generation，与当前不符则拒绝写入",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      long current = generations.getOrDefault(docId, 1L);
+      return renderGenerationMismatch(
+          expectedGeneration == null ? current : expectedGeneration, current);
+    }
+    if (data == null || data.isEmpty()) {
+      return renderInvalidArgument("data 不能为空（至少给一个占位符的值）");
+    }
+    try {
+      TemplateFiller.FillResult result = TemplateFiller.fill(doc, data);
+      Map<String, Object> out = new LinkedHashMap<>();
+      out.put("docId", docId);
+      out.put("generation", generations.getOrDefault(docId, 1L));
+      out.put("placeholdersFilled", result.placeholdersFilled());
+      out.put("rowsExpanded", result.rowsExpanded());
+      out.put("paragraphsDropped", result.paragraphsDropped());
+      out.put("warnings", result.warnings());
+      String message =
+          "已填充 "
+              + result.placeholdersFilled()
+              + " 个占位符，复制 "
+              + result.rowsExpanded()
+              + " 行，删除 "
+              + result.paragraphsDropped()
+              + " 段"
+              + (result.warnings().isEmpty()
+                  ? ""
+                  : "，警告 " + result.warnings().size() + " 条（缺数据的占位符保留原样）");
+      return ToolResultRenderer.render(ToolResult.ok(out, message));
+    } catch (RuntimeException e) {
+      return ToolResultRenderer.render(
+          ToolResult.fail(
+              ToolResultCode.INVALID_ARGUMENT,
+              "模板填充异常（文档可能被部分修改，建议 read_document 核对）: " + rootMessage(e)));
+    }
+  }
+
+  /**
+   * 渲染预览：当前文档转 PDF/PNG（LibreOffice headless，只读——不修改文档）。
+   *
+   * @param docId 文档句柄
+   * @param format {@code pdf} 或 {@code png}（png 为首页；默认 pdf）
+   * @return 产物路径/格式/大小
+   */
+  @ToolDef(
+      name = "render_preview",
+      description =
+          "把当前文档渲染成 PDF 或 PNG 供视觉检查（不修改文档）。需要 LibreOffice（soffice），"
+              + "路径可用环境变量 NONDOCX_SOFFICE 指定。format=png 只输出首页。"
+              + "检查分页/溢出/表格断行等视觉问题时用它。")
+  @ToolCapability(
+      operation = CapabilityOperation.READ,
+      element = "document",
+      level = CapabilityLevel.EXPERIMENTAL)
+  public String renderPreview(
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(name = "format", description = "渲染格式：pdf（默认）/ png（首页）", required = false)
+          @ParamCapability(type = ParamType.STRING)
+          String format) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return renderDocNotFound(docId);
+    }
+    String soffice =
+        System.getenv("NONDOCX_SOFFICE") == null ? "soffice" : System.getenv("NONDOCX_SOFFICE");
+    Path workDir = Paths.get(System.getProperty("java.io.tmpdir"), "nondocx-render");
+    try {
+      RenderPreview.RenderResult result = RenderPreview.render(doc, format, workDir, soffice, 60);
+      Map<String, Object> data = new LinkedHashMap<>();
+      data.put("docId", docId);
+      data.put("file", result.file().toString());
+      data.put("format", result.format());
+      data.put("bytes", result.bytes());
+      String message = "已渲染 " + result.format().toUpperCase() + ": " + result.file();
+      return ToolResultRenderer.render(ToolResult.ok(data, message));
+    } catch (RenderPreview.RenderException e) {
+      return ToolResultRenderer.render(
+          ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "渲染失败: " + e.getMessage()));
     }
   }
 }

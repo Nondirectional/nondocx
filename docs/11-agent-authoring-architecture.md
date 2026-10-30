@@ -637,6 +637,34 @@ tracked-replace 6→4（复审首次给出「del: 一百万元 / ins: 两百万�
 `comment.add`（p1，「请核实该预算金额的数据来源。」）→ review 达成，4 次调用；复审给出
 具体证据（引用批注原文与作者），未出现 §6.6 式盲区循环——观测面先行一步到位的收益。
 
+### 6.8 模板填充与渲染预览：P2 收尾（2026-10-30）
+
+P2 路线图最后两块落地，compiler 面 6→8 入口（full 面 58 不动，A/B 基线保持）：
+
+- **fill_template**（模板 = 当前文档，mustache 子集）：`{{key}}` 值替换——**跨 run 占位符**
+  按 `text()` 合并命中（Word 拆 run 是常态），重写用「首 run 承载全文、其余清空」而不是删光
+  重建：重建需克隆样式，而 `Run.font()` 写侧四槽同写会把西文字体名灌进 eastAsia 槽污染中文；
+  `{{#key}}…{{/key}}` 条件块（falsy 删块、标记行恒删）；表格模板行按列表复制——core 新增
+  `Table.copyRowTo`（XML 深拷贝经 POI `addRow(row,pos)` 同步行缓存，底纹/边框/行属性保留；
+  直接改 CTTbl 绕缓存是与 tracked changes 同族的陷阱）。缺 key 保留原样 + warning——模型可
+  补数据重试，宽容优于静默清空。
+- **render_preview**：文档 → soffice headless → PDF/PNG（首页），只读不置 dirty。工程坑：
+  LibreOffice 同 profile 单实例锁（每次调用独立 `-env:UserInstallation` 规避）；无 soffice
+  的环境返回明确错误而非挂死。**不进 eval**——eval check 只读文档状态、够不到文件系统副
+  作用，覆盖走 `assumeTrue(soffice)` 集成测试。
+- eval baseline 增至 12 条（`fill-template`：占位符清零/值正确/条件块/表格行展开四类 check）。
+
+结果（runId `20261030-104446-951`，compiler 面 8 工具）：**12/12，平均 4.50**——11 条回归
+任务零退化（面 6→8 未引入工具选择混乱），`fill-template` 首次修复后 5 次调用通过
+（current_document → read_document → fill_template → read_document → review 达成，
+复审引用「调研/3、开发/5」具体证据）。值得一提的插曲：首版 eval 11/12，fill-template 的
+check 失败但工具报告成功、复审也「达成」——trace + 落盘 XML 验尸发现 **POI 5.3
+`XWPFTable.addRow(row,pos)` 的脱链陷阱**（字节码验证：传入 wrapper 进缓存、内容却复制进自建
+tr；经返回行的写入落进不在文档树里的对象，内存读正确、落盘原样）。修复 = core
+`copyRowTo` 改用**影子行技法**（手动 `insertNewTr` 填充树内元素 → `addRow` 同步缓存 →
+`removeTr` 删影子行），配 save+reopen 回归测试锁死——纯内存断言测不出这类「内存 vs XML」
+分裂，教训已写进 spec。
+
 ---
 
 ## 7. 明确不做什么
