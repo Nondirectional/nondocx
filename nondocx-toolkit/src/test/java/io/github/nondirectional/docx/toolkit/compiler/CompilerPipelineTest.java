@@ -241,6 +241,27 @@ class CompilerPipelineTest {
   }
 
   @Test
+  void markdownViewShowsHeaderAsMetadataAndKeepsRoundTrip() {
+    MarkdownDoc parsed = MarkdownParser.parse("正文一段。");
+    Document doc = DocumentCompiler.compile(parsed, StyleProfile.builtin("plain")).document();
+    try {
+      // 页眉不存在/为空：视图不出现页眉行（读侧 header() 只读，不创建 part）
+      assertThat(MarkdownView.render(doc, 0).markdown()).doesNotContain("页眉");
+      // 页眉有内容：以元数据注释行呈现，在页脚行之前（与页面物理顺序一致）；round-trip 时被解析器剥掉
+      doc.ensureHeader().addParagraph().addRun("内部文档");
+      doc.ensureFooter().addParagraph().addRun("第 1 页");
+      String markdown = MarkdownView.render(doc, 0).markdown();
+      assertThat(markdown).contains("<!-- 页眉: 内部文档 -->").contains("<!-- 页脚: 第 1 页 -->");
+      assertThat(markdown.indexOf("<!-- 页眉: ")).isLessThan(markdown.indexOf("<!-- 页脚: "));
+      MarkdownDoc reparsed = MarkdownParser.parse(markdown);
+      assertThat(reparsed.blocks()).hasSize(1);
+      assertThat(reparsed.warnings()).isEmpty();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
   void markdownViewShowsCommentAsMetadataAndKeepsRoundTrip() {
     MarkdownDoc parsed = MarkdownParser.parse("第一段。\n\n第二段。");
     Document doc = DocumentCompiler.compile(parsed, StyleProfile.builtin("plain")).document();

@@ -17,8 +17,8 @@ import io.github.nondirectional.docx.core.api.text.Run;
  * <p>与 {@code DocumentViewService} 的分工：视图服务输出结构化 DTO（stats/outline/…）， 本类输出<b>可 round-trip 的
  * Markdown</b>——模型读到什么，就能照着写什么给 {@code create_document}。两者共享「只读、不改文档」的边界。
  *
- * <p>已知取舍（v1）：超链接/图片折叠为其文本；表格单元格输出纯文本；正文之外的容器只有页脚以元数据注释行进视图 （{@code <!-- 页脚: …
- * -->}，v2——页码写入后供模型核对），页眉/表格内段落不在本视图内。批注以整行元数据注释紧跟被评段落（{@code <!-- 批注 pN [作者]: 内容
+ * <p>已知取舍（v1）：超链接/图片折叠为其文本；表格单元格输出纯文本；正文之外的容器只有页眉/页脚以元数据注释行进视图 （{@code <!-- 页眉: … -->}/{@code <!--
+ * 页脚: … -->}，页眉行在页脚行之前——与页面物理顺序一致；写入后供模型核对），表格内段落不在本视图内。批注以整行元数据注释紧跟被评段落（{@code <!-- 批注 pN [作者]: 内容
  * -->}，v3——comment.add 落地后模型可直接读到核对）。
  */
 public final class MarkdownView {
@@ -79,6 +79,16 @@ public final class MarkdownView {
       }
       if (sb.length() > limit) {
         return truncate(sb, limit, paragraphSeq, tableSeq);
+      }
+    }
+    // 页眉元数据行：在页脚行之前输出（与页面物理顺序一致，页眉在上）——header.set_text 写入后
+    // 模型能读到页眉文本核对。读侧用 header() 只读入口（null=不存在，绝不因读视图创建页眉 part）；
+    // 注释形态，round-trip 时被解析器当元数据剥掉，不产生脏块。格式与页脚行同族。
+    io.github.nondirectional.docx.core.api.header.Header header = doc.header();
+    if (header != null) {
+      String headerText = header.text();
+      if (headerText != null && !headerText.isBlank()) {
+        sb.append("<!-- 页眉: ").append(headerText.trim().replace("\n", " / ")).append(" -->\n");
       }
     }
     // 页脚元数据（v2）：正文外容器里只有页脚进视图——页码写入后模型能读到「第 1 页」核对；

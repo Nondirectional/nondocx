@@ -2,6 +2,7 @@ package io.github.nondirectional.docx.examples.eval;
 
 import io.github.nondirectional.docx.core.api.Document;
 import io.github.nondirectional.docx.core.api.header.Footer;
+import io.github.nondirectional.docx.core.api.header.Header;
 import io.github.nondirectional.docx.core.api.style.Alignment;
 import io.github.nondirectional.docx.core.api.style.HeadingLevel;
 import io.github.nondirectional.docx.core.api.table.Cell;
@@ -18,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 第一版评测集的 22 条任务（12 条初版 + 10 条 P3 扩展）。
+ * 评测集 baseline 组的 25 条任务（初版 12 条 + P3 系列扩展与探针；计数锁在 {@code EvalTasksTest}）。
  *
  * <p>每条任务都从代码构造 seed，断言只依赖最终 docx 的结构/文本/样式，不依赖模型自述。 任务选择的原则不是「覆盖全部能力」，而是「能区分模型问题、接口问题、能力缺失」：
  *
@@ -32,6 +33,7 @@ import java.util.Map;
  *   <li>12：模板填充，检查 fill_template（值/条件块/表格模板行）。
  *   <li>13~22（P3 扩展）：列表/段落删除/歧义指代（按内容特征定位）/重复文本范围限定/ 带格式替换/表格加行/多步组合批/模板假值条件与空列表/同段双修订（同锚点独占）/
  *       全文行距多锚点——覆盖 docs/11 P3 的「歧义指代、重复文本」缺口。
+ *   <li>23~25：既有词加粗/修订带格式替换（行内标记链路探针）与页眉写文本（header.set_text 写读同批 + 防退化加粗 run 断言）。
  * </ul>
  */
 public final class EvalTasks {
@@ -41,7 +43,7 @@ public final class EvalTasks {
 
   private EvalTasks() {}
 
-  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 22 条任务。 */
+  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 25 条任务。 */
   public static List<EvalTask> all() {
     return TASKS;
   }
@@ -915,6 +917,58 @@ public final class EvalTasks {
                       EvalAssert.equal(
                           "结论：通过。", requireParagraph(doc, 0, "结论段").text(), "第 0 段可见文本");
                     }))));
+
+    tasks.add(
+        new EvalTask(
+            "header-write-text",
+            "页眉写入文本",
+            "在页眉写入一行文本：「项目季度报告——内部资料」，其中「内部资料」加粗显示。",
+            // seed 无页眉：「页眉存在」check 在 seed 上失败（防恒真）
+            doc -> doc.addParagraph("正文"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "页眉存在", doc -> EvalAssert.isTrue(doc.header() != null, "期望存在页眉")),
+                EvalTask.NamedCheck.of(
+                    "正文不被误改",
+                    doc -> EvalAssert.equal("正文", requireParagraph(doc, 0, "正文").text(), "第 0 段")),
+                EvalTask.NamedCheck.of(
+                    "页眉含文本且指定词加粗",
+                    doc -> {
+                      Header header = doc.header();
+                      EvalAssert.isTrue(header != null, "期望存在页眉");
+                      String text = header == null ? "" : header.text();
+                      EvalAssert.contains(text, "项目季度报告", "页眉文本");
+                      EvalAssert.contains(text, "内部资料", "页眉文本");
+                      // 行内标记必须被解析——字面星号 = 没吃到内容语言
+                      EvalAssert.notContains(text, "*", "页眉文本");
+                      if (header == null) {
+                        return;
+                      }
+                      boolean boldHit = false;
+                      for (Paragraph p : header.paragraphs()) {
+                        for (Run run : p.runs()) {
+                          if (run.text().contains("内部资料")) {
+                            boldHit = true;
+                            EvalAssert.isTrue(run.isBold(), "含「内部资料」的 run「" + run.text() + "」应为粗体");
+                          }
+                        }
+                      }
+                      EvalAssert.isTrue(boldHit, "未找到含「内部资料」的 run（页眉文本「" + text + "」）");
+                      // 严格子集：页眉还有目标词以外的文字 ⇒ 必须存在非粗体 run——
+                      // 整行唯一 run 全加粗不算「只加粗指定词」（bold-existing-phrase 同型防退化）
+                      boolean anyPlain = false;
+                      for (Paragraph p : header.paragraphs()) {
+                        for (Run run : p.runs()) {
+                          if (!run.text().isBlank() && !run.isBold()) {
+                            anyPlain = true;
+                            break;
+                          }
+                        }
+                      }
+                      EvalAssert.isTrue(anyPlain, "页眉非空 run 全部加粗——目标词以外的文字也被加粗");
+                    })),
+            // full 面已知缺口：写工具 ref 只解析正文（页眉物理不可达），与 footer-page-number 同型
+            true));
 
     return List.copyOf(tasks);
   }

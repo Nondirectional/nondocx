@@ -83,6 +83,7 @@ public final class EvalRunner {
           + "tracked.insert/tracked.replace 的 text 同样写行内标记，如以修订把「待定」换成加粗的"
           + "「通过」就是 text=**通过**）；"
           + "用户要求在页脚插页码时用 footer.set_page_number op（format 如「第 {page} 页」）；"
+          + "用户要求在页眉写文本时用 header.set_text op（text 支持行内标记）；"
           + "用户要求加批注/写意见时用 comment.add op（anchor+text 必传，author=批注作者，不改正文）。"
           + "当前文档是模板（含 {{key}}/{{#key}} 占位符）且用户给出数据时，一次调用 fill_template 填充"
           + "（缺 key 会保留原样并在 warnings 提示，补数据重试即可）。"

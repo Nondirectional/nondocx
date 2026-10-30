@@ -263,6 +263,35 @@ class CompilerToolsTest {
   }
 
   @Test
+  void editDocumentSupportsHeaderOpWithReadBackMetadataLine(@TempDir Path temp) throws Exception {
+    DocxToolkit tk = new DocxToolkit();
+    String docId = ToolTestSupport.extractDocId(tk.session.openDocx(seed(temp)));
+
+    // seed 无页眉：读视图无页眉元数据行
+    String before = tk.compiler.readDocument(docId, null);
+    assertThat(ToolTestSupport.parse(before).dataText()).doesNotContain("<!-- 页眉:");
+
+    // 页眉写文本一次表达；text 支持行内标记（**机密** → 加粗 run），正文不受影响
+    java.util.Map<String, Object> header =
+        new java.util.LinkedHashMap<>(
+            java.util.Map.of("op", "header.set_text", "text", "**机密** 内部文档"));
+    String raw = tk.compiler.editDocument(docId, List.of(header), null, null, null);
+    ToolResultParser.Snapshot parsed = ToolTestSupport.parse(raw);
+    assertThat(parsed).isNotNull();
+    assertThat(parsed.success()).isTrue();
+
+    Document after = tk.session.getDocument(docId);
+    assertThat(after.header()).isNotNull();
+    assertThat(after.header().paragraph(0).run(0).isBold()).isTrue();
+    assertThat(after.paragraph(0).text()).isEqualTo("旧内容");
+
+    // read_document 的 Markdown 视图带页眉元数据行（写读同批落地）
+    String readBack = tk.compiler.readDocument(docId, null);
+    assertThat(ToolTestSupport.parse(readBack).dataText()).contains("<!-- 页眉: 机密 内部文档 -->");
+    tk.session.closeDocx(docId);
+  }
+
+  @Test
   void fillTemplateFillsPlaceholdersInSessionDocument(@TempDir Path temp) throws Exception {
     DocxToolkit tk = new DocxToolkit();
     Path template = temp.resolve("template.docx");

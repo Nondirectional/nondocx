@@ -876,6 +876,68 @@ class PatchEngineTest {
     }
   }
 
+  // ==================== header.set_text op（v4） ====================
+
+  @Test
+  void headerSetTextAppendsParagraphWithInlineBoldRun() {
+    Document doc = sample();
+    try {
+      int paragraphsBefore = doc.paragraphs().size();
+      PatchResult result =
+          PatchEngine.apply(
+              doc, ops(op("op", "header.set_text", "text", "**机密** 内部文档")), REPORT_CN, false);
+      assertThat(result.changed()).containsExactly("header");
+      // 正文完全不动（写入目标在正文之外，不占段落锚点）
+      assertThat(doc.paragraphs()).hasSize(paragraphsBefore);
+      assertThat(doc.paragraph(0).text()).isEqualTo("第一段");
+      // 页眉文本 = 剥标记后的拼接内容（Header.text() 多段落以换行拼接，此处用 contains）
+      assertThat(doc.header().text()).contains("机密 内部文档").doesNotContain("**");
+      // **粗体** 落 run：首 run 加粗，其余 run 非粗体
+      assertThat(doc.header().paragraph(0).run(0).isBold()).isTrue();
+      assertThat(doc.header().paragraph(0).run(0).text()).isEqualTo("机密");
+      assertThat(doc.header().paragraph(0).run(1).isBold()).isFalse();
+      assertThat(doc.header().paragraph(0).run(1).text()).isEqualTo(" 内部文档");
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void headerSetTextValidationAppendSemanticsAndBatchCoexistence() {
+    Document doc = sample();
+    try {
+      // text 缺失 / 空白 → preflight 拒绝且零写入（seed 无页眉，拒绝后仍无页眉）
+      assertThatThrownBy(
+              () -> PatchEngine.apply(doc, ops(op("op", "header.set_text")), REPORT_CN, false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("text");
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc, ops(op("op", "header.set_text", "text", "   ")), REPORT_CN, false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("空白");
+      assertThat(doc.header()).isNull();
+      assertThat(doc.paragraphs()).hasSize(2);
+      // 追加语义：两次调用页眉追加两段（不替换既有段）
+      PatchEngine.apply(doc, ops(op("op", "header.set_text", "text", "第一行")), REPORT_CN, false);
+      // 页眉 op 可与正文 op 同批（不占锚点，replace_text 不受影响）
+      PatchEngine.apply(
+          doc,
+          ops(
+              op("op", "header.set_text", "text", "第二行"),
+              op("op", "replace_text", "anchor", "p0", "find", "第一段", "text", "改写")),
+          REPORT_CN,
+          false);
+      assertThat(doc.header().paragraphs()).hasSize(2);
+      assertThat(doc.header().paragraph(0).text()).isEqualTo("第一行");
+      assertThat(doc.header().paragraph(1).text()).isEqualTo("第二行");
+      assertThat(doc.paragraph(0).text()).isEqualTo("改写");
+    } finally {
+      doc.close();
+    }
+  }
+
   // ==================== comment.add op（v3） ====================
 
   @Test

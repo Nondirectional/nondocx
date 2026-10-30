@@ -26,7 +26,7 @@ import java.util.Set;
  * <p><b>原子性。</b> 先 preflight 全部 op：锚点存在、参数合法、{@code find} 在段落文本中、 行列在界内、表格块只允许插到文档末尾、被本 patch 前序 op
  * 删除的锚点不得再引用。任一 失败抛 {@link PatchException}，<b>零写入</b>。执行期不存在可预期失败分支；POI 意外异常 直接上抛（由工具层报告「可能部分应用」）。
  *
- * <p><b>op 集（v2，11 种）：</b>
+ * <p><b>op 集（v4，12 种）：</b>
  *
  * <ul>
  *   <li>{@code insert}——Markdown 块插入 {@code before}/{@code after} 锚点或文档 {@code start}/{code
@@ -45,6 +45,8 @@ import java.util.Set;
  *       紧随其后（core {@code replaceTrackedRange}）；
  *   <li>{@code footer.set_page_number}——页脚追加页码段落，{@code format} 支持 {@code {page}}/{@code {pages}}
  *       占位符（PAGE/NUMPAGES 域，带缓存结果 "1"，非渲染读者也能读到数字）；
+ *   <li>{@code header.set_text}——页眉追加一段文本，{@code text} 必填非空、支持行内标记（{@code **粗**}/{@code *斜*}/{@code
+ *       `代码`}，与 replace_text 同一内容语言）；追加语义（重复调用追加新段，不替换既有页眉），不占段落锚点；
  *   <li>{@code comment.add}——给锚点段落加整段范围批注（core {@code Paragraph.addComment}），{@code author}
  *       必传。不改段落文本，不受同锚点改文本独占约束。
  * </ul>
@@ -197,6 +199,8 @@ public final class PatchEngine {
         return planTrackedFindOp(index, op, anchor, snapshot, false);
       case "footer.set_page_number":
         return planFooterPageNumber(index, op);
+      case "header.set_text":
+        return planHeaderSetText(index, op);
       case "comment.add":
         return planCommentAdd(index, op, anchor, snapshot);
       default:
@@ -207,7 +211,7 @@ public final class PatchEngine {
                 + kind
                 + "（可用: insert/replace_text/delete/set_style/table.set_cell/table.add_row/"
                 + "tracked.insert/tracked.delete/tracked.replace/footer.set_page_number/"
-                + "comment.add）");
+                + "header.set_text/comment.add）");
     }
   }
 
@@ -872,6 +876,37 @@ public final class PatchEngine {
     if (!literal.isEmpty()) {
       paragraph.addRun(literal);
     }
+  }
+
+  /**
+   * header.set_text：向默认 section 页眉<b>追加</b>一段文本（不触碰正文段落，与 footer.set_page_number 同型，不占段落锚点）。 {@code
+   * text} 必填非空、按行内标记解析（与 replace_text 同一内容语言）：多 span 逐 run 写入并套粗/斜/代码字体。
+   * 追加语义——重复调用追加新段，不替换既有页眉内容（core 无 Header 替换 API，替换留 future）。
+   */
+  private static PlannedOp planHeaderSetText(int index, Map<String, Object> op) {
+    String text = str(op, "text", index);
+    if (text.trim().isEmpty()) {
+      throw new PatchException("op[" + index + "] text 不能为空白（要写进页眉的文本）");
+    }
+    text = text.trim();
+    // text 按行内标记解析（Markdown 是本编译器的统一内容语言，与 replace_text/tracked.* 一致）
+    List<MarkdownDoc.Span> spans = MarkdownParser.parseInline(text);
+    return new PlannedOp("header.set_text \"" + text + "\"") {
+      @Override
+      void execute(
+          Document doc,
+          Snapshot snap,
+          List<String> changed,
+          List<String> warningsOut,
+          StyleProfile profile) {
+        // ensureHeader 幂等创建（写路径，N5），addParagraph 返回普通 Paragraph——行内写入与正文同 API
+        Paragraph paragraph = doc.ensureHeader().addParagraph();
+        for (MarkdownDoc.Span span : spans) {
+          applySpanFormat(paragraph.addRun(span.text()), span, profile);
+        }
+        changed.add("header");
+      }
+    };
   }
 
   /** 在段落活文本里从右到左枚举 find 的全部命中（半开区间），供 tracked op 依次应用。 */

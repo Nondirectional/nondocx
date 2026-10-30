@@ -264,6 +264,7 @@ public final class CompilerTools extends ToolkitToolContext {
               + "insert/replace 的 text 同样支持 **粗体**/*斜体*/`代码` 行内标记，"
               + "修订可被 Word 审阅 accept/reject）、"
               + "footer.set_page_number（页脚页码，format 含 {page}/{pages} 占位符，默认「第 {page} 页」，不占 anchor）、"
+              + "header.set_text（页眉写文本，text 必填、支持 **粗体**/*斜体*/`代码` 行内标记，向页眉追加一段，不占 anchor）、"
               + "comment.add（批注，anchor+text+author 必传，给整段加范围批注，不改正文）。"
               + "先校验全部 op 再写入：任一 op 非法则整体拒绝、零改动。"
               + "每个段落锚点一批里至多一个改文本 op（tracked.*/replace_text），要改多处请拆两次调用。"
@@ -284,7 +285,8 @@ public final class CompilerTools extends ToolkitToolContext {
                       + "\"row\":1,\"col\":2,\"text\":\"完成\"}, {\"op\":\"tracked.replace\","
                       + "\"anchor\":\"p1\",\"find\":\"一百万元\",\"text\":\"两百万元\",\"author\":\"审查员\"}, "
                       + "{\"op\":\"comment.add\",\"anchor\":\"p1\",\"text\":\"金额需复核\","
-                      + "\"author\":\"审查员\"}, {\"op\":\"footer.set_page_number\"}]")
+                      + "\"author\":\"审查员\"}, {\"op\":\"footer.set_page_number\"}, "
+                      + "{\"op\":\"header.set_text\",\"text\":\"**机密** 内部文档\"}]")
           @NestedParamCapability(path = "ops.op", type = ParamType.STRING)
           @NestedParamCapability(path = "ops.anchor", type = ParamType.STRING)
           @NestedParamCapability(path = "ops.position", type = ParamType.STRING)
