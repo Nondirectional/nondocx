@@ -88,8 +88,10 @@ Document fresh = Docx.create();
 | 方法 | 教程位置 |
 |---|---|
 | `addInsertion(author, text)` ✏️🔄 | [05/04](./05-tracked-changes/04-authoring.md) |
+| `addInsertion(author, texts)` ✏️🔄 | 多 run 变体：一条 `<w:ins>` 内每段文本一个 run（读侧仍一条 INS），返回全部 run 可逐个设样式 |
 | `addDeletion(author, targetRun)` ✏️🔄 | 同上 |
 | `moveRunsFrom(author, sourceParagraph, runs)` ✏️ | 同上 |
+| `deleteTrackedRange(author, start, end)` / `replaceTrackedRange(author, start, end, text)` / `replaceTrackedRange(author, start, end, texts)` ✏️🔄 | 范围删除 / 范围替换（ins 紧随最后一个 del，样式取范围内首个 run）；多段文本变体每个 run 继承源 rPr |
 
 ### 批注（comments）创作
 

@@ -31,6 +31,9 @@ public final class RevisionSummary {
    * @param type 修订类型名小写（insert/delete/…）
    * @param author 修订作者
    * @param snippet 文本类修订的内容片段；其他家族为家族描述
+   * @param bold 修订内任一 run 带粗体——带格式修订的证据（2026-10-30 tracked-replace 复审因看不到 ins run 的 bold
+   *     把已正确的加粗修订误报「未加粗」，与作者字段同族的观测面缺口）
+   * @param italic 修订内任一 run 带斜体
    */
   public static final class Entry {
 
@@ -38,12 +41,17 @@ public final class RevisionSummary {
     private final String type;
     private final String author;
     private final String snippet;
+    private final boolean bold;
+    private final boolean italic;
 
-    public Entry(String ref, String type, String author, String snippet) {
+    public Entry(
+        String ref, String type, String author, String snippet, boolean bold, boolean italic) {
       this.ref = Objects.requireNonNull(ref, "ref 不能为空");
       this.type = Objects.requireNonNull(type, "type 不能为空");
       this.author = Objects.requireNonNull(author, "author 不能为空");
       this.snippet = Objects.requireNonNull(snippet, "snippet 不能为空");
+      this.bold = bold;
+      this.italic = italic;
     }
 
     public String ref() {
@@ -62,6 +70,14 @@ public final class RevisionSummary {
       return snippet;
     }
 
+    public boolean bold() {
+      return bold;
+    }
+
+    public boolean italic() {
+      return italic;
+    }
+
     @Override
     public boolean equals(Object o) {
       if (this == o) return true;
@@ -70,12 +86,14 @@ public final class RevisionSummary {
       return ref.equals(that.ref)
           && type.equals(that.type)
           && author.equals(that.author)
-          && snippet.equals(that.snippet);
+          && snippet.equals(that.snippet)
+          && bold == that.bold
+          && italic == that.italic;
     }
 
     @Override
     public int hashCode() {
-      return Objects.hash(ref, type, author, snippet);
+      return Objects.hash(ref, type, author, snippet, bold, italic);
     }
   }
 

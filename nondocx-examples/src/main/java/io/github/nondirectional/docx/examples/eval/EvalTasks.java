@@ -9,6 +9,7 @@ import io.github.nondirectional.docx.core.api.table.Row;
 import io.github.nondirectional.docx.core.api.table.Table;
 import io.github.nondirectional.docx.core.api.text.Paragraph;
 import io.github.nondirectional.docx.core.api.text.Run;
+import io.github.nondirectional.docx.core.api.track.TextChangeDetails;
 import io.github.nondirectional.docx.core.api.track.TrackedChange;
 import io.github.nondirectional.docx.core.api.track.TrackedChangeType;
 import java.util.ArrayList;
@@ -852,6 +853,68 @@ public final class EvalTasks {
                             requireParagraph(doc, 1, "第二段").text().trim(), "第二段文本"))),
             // full 面已知缺口：无 run 拆分能力，只能整 run 加粗（严格子集 check 必然失败）
             true));
+
+    tasks.add(
+        new EvalTask(
+            "tracked-replace-format",
+            "修订模式带格式替换",
+            "以修订模式把「待定」替换为加粗的「通过」，修订作者填「审查员」。",
+            doc -> doc.addParagraph("结论：待定。"),
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "存在删除修订",
+                    doc -> {
+                      boolean found = false;
+                      for (TrackedChange change : doc.trackedChanges().list()) {
+                        if (change.type() == TrackedChangeType.DEL
+                            && "审查员".equals(change.author())) {
+                          found = true;
+                        }
+                      }
+                      EvalAssert.isTrue(found, "期望存在作者=审查员的删除修订");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "插入修订文本正确",
+                    doc -> {
+                      TrackedChange ins = null;
+                      for (TrackedChange change : doc.trackedChanges().list()) {
+                        if (change.type() == TrackedChangeType.INS
+                            && "审查员".equals(change.author())) {
+                          ins = change;
+                        }
+                      }
+                      EvalAssert.isTrue(ins != null, "期望存在作者=审查员的插入修订");
+                      String text = ((TextChangeDetails) ins.details()).text();
+                      EvalAssert.contains(text, "通过", "插入修订文本");
+                      // 行内标记必须被解析——字面星号 = 没吃到内容语言
+                      EvalAssert.notContains(text, "*", "插入修订文本");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "插入修订已加粗",
+                    doc -> {
+                      TrackedChange ins = null;
+                      for (TrackedChange change : doc.trackedChanges().list()) {
+                        if (change.type() == TrackedChangeType.INS) {
+                          ins = change;
+                        }
+                      }
+                      EvalAssert.isTrue(ins != null, "期望存在插入修订");
+                      // ins 内 run 不被 paragraph.runs() 暴露，经 raw() 断言非空 run 全部加粗
+                      var runs = ins.raw().getRList();
+                      EvalAssert.isTrue(runs.size() > 0, "插入修订内应有 run");
+                      for (var run : runs) {
+                        boolean bold = run.isSetRPr() && run.getRPr().sizeOfBArray() > 0;
+                        EvalAssert.isTrue(bold, "插入修订的 run 应为粗体（文本: " + run + "）");
+                      }
+                    }),
+                EvalTask.NamedCheck.of(
+                    "正文未被非修订修改",
+                    doc -> {
+                      // eval 读 save+reopen 后文档：del 文本永不进 text()，ins 文本在 reopen 后
+                      // 进入 text()（live/reopen 语义差异，TrackedAuthoringTest 锁定）
+                      EvalAssert.equal(
+                          "结论：通过。", requireParagraph(doc, 0, "结论段").text(), "第 0 段可见文本");
+                    }))));
 
     return List.copyOf(tasks);
   }

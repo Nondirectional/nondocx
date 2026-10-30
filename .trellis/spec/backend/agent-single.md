@@ -161,8 +161,8 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 
 `nondocx-examples/.../examples/eval/` 是当前工具面的 headless 评测基线，不是生产代码：
 
-- baseline 23 条（12 初版 + 10 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
-  加行/多步组合/模板假值条件/同段双修订/多锚点行距 + 1 条既有词加粗），seed 由
+- baseline 24 条（12 初版 + 11 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
+  加行/多步组合/模板假值条件/同段双修订/多锚点行距/既有词加粗/修订带格式替换），seed 由
   `Docx.create()` 构造，check 只读最终 docx；另有 create 组 5 条（工具面 A/B）；
 - 工具面与 demo 对齐（`current_document` + view/body/table/header/tracker + 只读 `review_intent`），
   但**不加载 6 条 Skill**，以隔离工具面本身；
@@ -192,6 +192,8 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 P3 扩展 10 条首跑全过；歧义指代/范围限定各 4 次，同段双修订（独占拒绝→拆分）6 次。
 **2026-10-30 行内格式补齐后**：23/23，平均 4.26（runId `20261030-124819-241`）；
 replace-with-format 9→4 次（`text=**…**` 一步命中），`validate_document` 全程 0 调用。
+**2026-10-30 tracked 行内格式后（终版）**：24/24，平均 4.21（runId `20261030-152310-495`）；
+tracked-replace-format 首个 op 即正确，复审引用修订条目的 bold 证据判「达成」。
 **2026-10-30 full 面对齐复跑**：14/23，平均 11.83（runId `20261030-125616-728`，
 bold check 加严口径）——8 个失败全部是静态能力缺口（页脚写/批注/列表/段落删除/
 真空单元格/模板/run 拆分），零「任务可做但做砸」；4 任务撞 24 轮上限。原十任务
@@ -328,6 +330,18 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   槽会丢中文）。`copyRun` 比 `copyRowTo` 稳：走 POI 自己的 `insertNewRun`（元素与包装同源
   创建登记，无缓存错配面），再 `getCTR().set(copy)` 填内容；save+reopen 测试照样锁死。纯
   文本路径（无标记）行为与历史版本一致，有测试锁定。
+- **tracked 行内格式与修订观测**（P3，2026-10-30）：`tracked.insert`/`tracked.replace` 的
+  `text` 同样解析行内标记（内容语言统一，无字面路径残留）。多 span 走 core 多 run 变体
+  （`addInsertion(author, texts)` / `replaceTrackedRange(..., texts)`）：**一条 `<w:ins>`
+  内每段一个 run**（读侧聚合一条 INS），样式经返回 run 句柄设置。三个坑：①
+  `unwrapRunsAndRemove` 的「child.moveXml + toNextSibling」循环在首个 moveXml 后游标
+  失效——多 run ins 的后续 run 随 wrapper 被删（accept 丢文本），修法是 run 引用快照 +
+  逐 run 独立 cursor；② **`text()` 的 live/reopen 语义不同**：del 文本永不进 `text()`，
+  ins 文本 live 不可见（iruns 构造于段落创建，手术新增 ins 不入列）、save+reopen 后进入
+  （iruns 重建自 XML）——eval 断言按 reopen 口径，agent 会话内 read_document 是 live 口径；
+  ③ **修订内 run 不被 `runs()` 暴露（N14）→ 修订条目必须自带字符格式证据**：
+  outline `recent[]` 与 REVISION 详情恒带 `bold`/`italic`（经 `raw()` 聚合，false 也是
+  证据）——复审查不到修订格式就会把已正确的带格式修订误报「未达成」（§6.6 同族教训）。
 - **render_preview 只读且防环境坑**（P2 收尾）：渲染不改文档、不置 dirty（demo
   `READONLY_TOOL_PREFIXES` 含 `render_`）。soffice 路径经 `NONDOCX_SOFFICE`（默认
   `soffice`）；每次调用独立 `-env:UserInstallation` profile（LibreOffice 同 profile 单实例

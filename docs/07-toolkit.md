@@ -260,6 +260,7 @@ create_document({
 {"op":"table.set_cell","anchor":"t0","row":1,"col":2,"text":"完成"}
 {"op":"table.add_row","anchor":"t0","cells":["a","b"]}
 {"op":"tracked.replace","anchor":"p1","find":"一百万元","text":"两百万元","author":"审查员"}
+{"op":"tracked.replace","anchor":"p1","find":"待定","text":"**通过**","author":"审查员"}  // 修订也吃行内标记
 {"op":"tracked.insert","anchor":"p1","text":"补充说明。","author":"审查员"}
 {"op":"tracked.delete","anchor":"p1","find":"过期内容","author":"审查员"}
 {"op":"footer.set_page_number"}                          // format 默认「第 {page} 页」
@@ -278,9 +279,15 @@ create_document({
 
 **tracked.\*（修订模式）**：产出 Word 可审阅的 ins/del 修订（`author` 必传）。`tracked.replace`
 是**最小 diff**——只 del「find」范围、ins 紧随其后（core `Paragraph.replaceTrackedRange`），
-不是整段重建。`find` 多处命中全部替换。已知语义边界：tracked del 后被删文本从 `text()`
-消失、ins 文本对 POI 读侧不可见（`w:ins` 内 run 不被 `XWPFParagraph.getRuns()` 暴露）——读
-修订用 `trackedChanges()`，`read_document` 的正文视图同样不含 ins 内容。
+不是整段重建。`find` 多处命中全部替换。`tracked.insert`/`tracked.replace` 的 `text`
+支持行内标记（`**粗**`/`*斜*`/`` `代码` ``，与 replace_text 同一内容语言）：多 span 生成
+**同一 `<w:ins>` 内的多 run**（读侧仍一条 INS、文本拼接），每个 run 继承被替换范围首
+run 的 rPr 再按 span 叠加格式。已知语义边界（**live/reopen 不同**，2026-10-30 实证修正）：
+del 文本（delText）**永不**进入 `text()`；ins 文本在 **live 对象**（agent 会话内的
+`read_document`）不可见，但 **save+reopen 后**会进入 `text()`（POI `getText()` 按 iruns
+走，reopen 时 iruns 重建自 XML）——eval 读落盘文档按 reopen 口径。两种状态下 `runs()`
+均不暴露 ins 内 run（run 级工具够不着，样式只能经创作 op 内部完成）——读修订用
+`trackedChanges()`。
 
 **footer.set_page_number**：页脚**追加**页码段落（不触碰正文），`format` 支持 `{page}`/`{pages}`
 占位符（PAGE/NUMPAGES 域）。域带**缓存结果** "1"（五 run 形态：begin/instr/separate/result/end）

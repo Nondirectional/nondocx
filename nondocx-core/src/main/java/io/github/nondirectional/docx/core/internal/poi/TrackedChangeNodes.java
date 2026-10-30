@@ -226,17 +226,22 @@ public final class TrackedChangeNodes {
   private static void unwrapRunsAndRemove(CTRunTrackChange wrapper) {
     XmlCursor anchor = wrapper.newCursor();
     try {
-      XmlCursor child = wrapper.newCursor();
-      try {
-        if (child.toFirstChild()) {
-          do {
-            if ("r".equals(child.getName().getLocalPart())) {
-              child.moveXml(anchor);
-            }
-          } while (child.toNextSibling());
+      // 逐 run 独立 cursor 迁移。原实现的「child.moveXml + toNextSibling」循环在首个 moveXml 后
+      // 游标失效(toNextSibling 提前结束),多 run ins 的后续 run 会留在 wrapper 内随 removeXml
+      // 一起被删——单 run 时代码路径从未暴露该 bug(2026-10-30 多 run ins 测试踩实)。
+      // 先快照 run 引用再逐个迁移(getRArray 是活视图,边迁边读会漂移);迁移后顺序由
+      // TrackedAuthoringTest/PatchEngineTest 的 accept 断言锁定。
+      java.util.List<CTR> runs = new java.util.ArrayList<>(wrapper.sizeOfRArray());
+      for (int i = 0; i < wrapper.sizeOfRArray(); i++) {
+        runs.add(wrapper.getRArray(i));
+      }
+      for (CTR run : runs) {
+        XmlCursor rc = run.newCursor();
+        try {
+          rc.moveXml(anchor);
+        } finally {
+          rc.dispose();
         }
-      } finally {
-        child.dispose();
       }
       anchor.removeXml();
     } finally {
@@ -293,8 +298,25 @@ public final class TrackedChangeNodes {
       String author,
       java.util.Calendar date,
       java.math.BigInteger revisionId) {
+    return addInsertion(paragraph, java.util.List.of(text), author, date, revisionId);
+  }
+
+  /**
+   * 在段落末尾创建一条 tracked insertion(插入)修订,内含<b>每段文本一个 run</b>(共 N 个)。
+   *
+   * <p>与单文本版同一 OOXML 形态,只是 {@code <w:ins>} 内有多个 {@code <w:r>}——读侧 {@code collect} 按 ins 节点聚合文本,仍是一条
+   * INS 修订;样式按 run 独立(为带格式插入 服务:粗体段/普通段各自持 {@code rPr})。
+   *
+   * @param texts 每个元素一个 run 的文本(不能为 {@code null};列表非空且元素均非 {@code null})
+   */
+  public static CTRunTrackChange addInsertion(
+      org.apache.poi.xwpf.usermodel.XWPFParagraph paragraph,
+      java.util.List<String> texts,
+      String author,
+      java.util.Calendar date,
+      java.math.BigInteger revisionId) {
     java.util.Objects.requireNonNull(paragraph, "paragraph");
-    java.util.Objects.requireNonNull(text, "text");
+    requireTexts(texts);
     java.util.Objects.requireNonNull(author, "author");
     java.util.Objects.requireNonNull(date, "date");
     java.util.Objects.requireNonNull(revisionId, "revisionId");
@@ -303,10 +325,23 @@ public final class TrackedChangeNodes {
     ins.setId(revisionId);
     ins.setAuthor(author);
     ins.setDate(date);
-    CTR r = ins.addNewR();
-    CTText t = r.addNewT();
-    t.setStringValue(text);
+    for (String text : texts) {
+      CTR r = ins.addNewR();
+      CTText t = r.addNewT();
+      t.setStringValue(text);
+    }
     return ins;
+  }
+
+  /** 多 run 文本段的公共校验:列表非空、元素非 null(空串由上层 API 语义决定,这里不拦)。 */
+  private static void requireTexts(java.util.List<String> texts) {
+    java.util.Objects.requireNonNull(texts, "texts");
+    if (texts.isEmpty()) {
+      throw new IllegalArgumentException("texts 不能为空列表");
+    }
+    for (String text : texts) {
+      java.util.Objects.requireNonNull(text, "texts 元素");
+    }
   }
 
   /**
@@ -529,9 +564,26 @@ public final class TrackedChangeNodes {
       String author,
       java.util.Calendar date,
       java.math.BigInteger revisionId) {
+    return addInsertionAfter(
+        paragraph, anchor, styleSource, java.util.List.of(text), author, date, revisionId);
+  }
+
+  /**
+   * {@link #addInsertionAfter(CTP, XmlObject, CTRPr, String, String, Calendar, BigInteger)} 的多 run
+   * 版:一条 {@code <w:ins>} 内每段文本一个 run(共 N 个),<b>每个</b> run 都复制 {@code styleSource} 的完整 {@code
+   * rPr}(与单文本版同语义);调用方随后可对个别 run 叠加粗/斜等格式。
+   */
+  public static CTRunTrackChange addInsertionAfter(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP paragraph,
+      XmlObject anchor,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr styleSource,
+      java.util.List<String> texts,
+      String author,
+      java.util.Calendar date,
+      java.math.BigInteger revisionId) {
     java.util.Objects.requireNonNull(paragraph, "paragraph");
     java.util.Objects.requireNonNull(anchor, "anchor");
-    java.util.Objects.requireNonNull(text, "text");
+    requireTexts(texts);
     java.util.Objects.requireNonNull(author, "author");
     java.util.Objects.requireNonNull(date, "date");
     java.util.Objects.requireNonNull(revisionId, "revisionId");
@@ -539,11 +591,13 @@ public final class TrackedChangeNodes {
     ins.setId(revisionId);
     ins.setAuthor(author);
     ins.setDate(date);
-    CTR r = ins.addNewR();
-    if (styleSource != null) {
-      r.setRPr((org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr) styleSource.copy());
+    for (String text : texts) {
+      CTR r = ins.addNewR();
+      if (styleSource != null) {
+        r.setRPr((org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr) styleSource.copy());
+      }
+      setTextValue(r.addNewT(), text);
     }
-    setTextValue(r.addNewT(), text);
     XmlCursor anchorCur = anchor.newCursor();
     XmlCursor insCur = ins.newCursor();
     try {

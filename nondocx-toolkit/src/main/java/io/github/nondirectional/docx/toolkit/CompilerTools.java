@@ -261,6 +261,7 @@ public final class CompilerTools extends ToolkitToolContext {
               + "bold/italic 是整段字符格式）、"
               + "table.set_cell（anchor+row+col+text）、table.add_row（anchor+cells）、"
               + "tracked.insert/tracked.delete/tracked.replace（修订模式，anchor+find/text+author 必传，"
+              + "insert/replace 的 text 同样支持 **粗体**/*斜体*/`代码` 行内标记，"
               + "修订可被 Word 审阅 accept/reject）、"
               + "footer.set_page_number（页脚页码，format 含 {page}/{pages} 占位符，默认「第 {page} 页」，不占 anchor）、"
               + "comment.add（批注，anchor+text+author 必传，给整段加范围批注，不改正文）。"

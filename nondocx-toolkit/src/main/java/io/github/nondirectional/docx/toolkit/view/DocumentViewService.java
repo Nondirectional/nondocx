@@ -153,7 +153,10 @@ public final class DocumentViewService {
             totalCount);
     List<RevisionEntry> recent =
         rev.recent().stream()
-            .map(e -> new RevisionEntry(e.ref(), e.type(), e.author(), e.snippet()))
+            .map(
+                e ->
+                    new RevisionEntry(
+                        e.ref(), e.type(), e.author(), e.snippet(), e.bold(), e.italic()))
             .collect(java.util.stream.Collectors.toList());
     ElementResolver commentResolver =
         referenceContext.resolver(new DocumentRef(docId, generation), doc);
@@ -525,6 +528,22 @@ public final class DocumentViewService {
             properties.put(
                 "text",
                 ((io.github.nondirectional.docx.core.api.track.TextChangeDetails) details).text());
+            // 带格式修订的证据：修订内 run 不被 paragraph.runs() 暴露（N14），
+            // run 级视图够不着——复审核对「以修订加粗/倾斜」只能看这里（恒出现）
+            boolean bold = false;
+            boolean italic = false;
+            try {
+              for (var ctr : change.raw().getRList()) {
+                if (ctr.getRPr() != null) {
+                  bold |= ctr.getRPr().sizeOfBArray() > 0;
+                  italic |= ctr.getRPr().sizeOfIArray() > 0;
+                }
+              }
+            } catch (RuntimeException ignored) {
+              // 读不到 run 的修订按无格式上报
+            }
+            properties.put("bold", bold);
+            properties.put("italic", italic);
           }
           break;
         }

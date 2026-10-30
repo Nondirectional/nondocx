@@ -40,8 +40,9 @@ import java.util.Set;
  *   <li>{@code table.set_cell}——改单元格文本；
  *   <li>{@code table.add_row}——末尾加一行（可带初始文本）；
  *   <li>{@code tracked.insert} / {@code tracked.delete} / {@code tracked.replace}——修订模式 （tracked
- *       changes）写作：ins / del / del+ins 配对，{@code author} 必传。替换是最小 diff——只 del「find」范围、ins 紧随其后（core
- *       {@code replaceTrackedRange}）；
+ *       changes）写作：ins / del / del+ins 配对，{@code author} 必传，{@code text} 支持 {@code **粗**}/{@code
+ *       *斜*}/{@code `代码`} 行内标记（多 span 为同一 ins 内多 run，各持 rPr）。替换是最小 diff——只 del「find」范围、ins
+ *       紧随其后（core {@code replaceTrackedRange}）；
  *   <li>{@code footer.set_page_number}——页脚追加页码段落，{@code format} 支持 {@code {page}}/{@code {pages}}
  *       占位符（PAGE/NUMPAGES 域，带缓存结果 "1"，非渲染读者也能读到数字）；
  *   <li>{@code comment.add}——给锚点段落加整段范围批注（core {@code Paragraph.addComment}），{@code author}
@@ -416,6 +417,19 @@ public final class PatchEngine {
     }
   }
 
+  /**
+   * spans → 有序文本段列表（供 tracked 多 run API），与传入 spans <b>索引一一对应</b>—— 调用方以相同下标把 {@link
+   * #applySpanFormat} 成对应用到返回的 run 上。parseInline 契约不产生空 span（空入参在 {@code str()}
+   * 已被拒），故不做过滤；若未来解析器变化出现空段，core 多 run API 的空串校验会把它暴露为执行期错误。
+   */
+  private static List<String> spanTexts(List<MarkdownDoc.Span> spans) {
+    List<String> texts = new ArrayList<>(spans.size());
+    for (MarkdownDoc.Span span : spans) {
+      texts.add(span.text());
+    }
+    return texts;
+  }
+
   /** 清空段落全部内联元素（含超链接等），供整段重建。 */
   private static void removeAllInline(Paragraph paragraph) {
     while (paragraph.inlineElements().size() > 0) {
@@ -481,11 +495,18 @@ public final class PatchEngine {
               + "] set_style 需要 style（body/heading）或 align/line_spacing/bold/italic 至少其一");
     }
     if (style != null && !"body".equals(style) && !"heading".equals(style)) {
-      String hint =
+      String example =
           style.contains("=")
-              ? "；对齐/行距不要写进 style，作为独立字段传：{\"op\":\"set_style\",\"anchor\":\"p0\",\"align\":\"center\"}"
-              : "bold/italic 是独立布尔字段，不写进 style：{\"op\":\"set_style\",\"anchor\":\"p0\",\"bold\":true}";
-      throw new PatchException("op[" + index + "] 未知 style: " + style + "（可用 body/heading）" + hint);
+              ? "；对齐/行距是独立字段：{\"op\":\"set_style\",\"anchor\":\"p0\",\"align\":\"center\"}"
+              : "；bold/italic 是独立布尔字段：{\"op\":\"set_style\",\"anchor\":\"p0\",\"bold\":true}";
+      throw new PatchException(
+          "op["
+              + index
+              + "] 未知 style: "
+              + style
+              + "（可用 body/heading）"
+              + example
+              + "；字体不写进 style——由 style_profile 决定（标题黑体：style=heading + style_profile=report-cn）");
     }
     Alignment align = alignRaw == null ? null : MarkdownParser.alignmentOf(strValue(alignRaw));
     Double spacing = spacingRaw == null ? null : doubleValue(spacingRaw, index);
@@ -657,13 +678,19 @@ public final class PatchEngine {
 
   // ==================== 执行期辅助 ====================
 
-  /** tracked.insert：段末追加一条 ins 修订（位置语义正确——addInsertion 就是段末追加）。 */
+  /**
+   * tracked.insert：段末追加一条 ins 修订（位置语义正确——addInsertion 就是段末追加）。 {@code text} 支持行内标记（与 replace_text
+   * 同一内容语言）：多 span 生成同一 {@code <w:ins>} 内的多 run（读侧仍一条 INS），span 逐 run 叠加粗/斜/代码字体。
+   */
   private static PlannedOp planTrackedInsert(
       int index, Map<String, Object> op, String anchor, Snapshot snapshot) {
     Paragraph paragraph = snapshot.requireParagraph(anchor, index);
     String text = str(op, "text", index);
     String author = author(op, index);
-    return new PlannedOp("tracked.insert " + anchor + " +" + text.length() + " 字") {
+    List<MarkdownDoc.Span> spans = MarkdownParser.parseInline(text);
+    boolean formatted = spans.stream().anyMatch(s -> s.bold() || s.italic() || s.code());
+    return new PlannedOp(
+        "tracked.insert " + anchor + " +" + text.length() + " 字" + (formatted ? "（含格式）" : "")) {
       @Override
       void execute(
           Document doc,
@@ -671,7 +698,14 @@ public final class PatchEngine {
           List<String> changed,
           List<String> warningsOut,
           StyleProfile profile) {
-        paragraph.addInsertion(author, text);
+        if (formatted) {
+          List<Run> inserted = paragraph.addInsertion(author, spanTexts(spans));
+          for (int i = 0; i < inserted.size(); i++) {
+            applySpanFormat(inserted.get(i), spans.get(i), profile);
+          }
+        } else {
+          paragraph.addInsertion(author, text);
+        }
         changed.add(anchor);
       }
     };
@@ -682,6 +716,9 @@ public final class PatchEngine {
    *
    * <p>preflight 只做存在性校验；<b>偏移量在执行时按活文本计算</b>（tracked del 会把被删文本从 text() 里移走，preflight
    * 快照不能复用），从右到左应用避免偏移漂移。同锚点独占规则（{@link #claimAnchor}）保证执行时 文本就是 preflight 时看到的文本。
+   *
+   * <p>tracked.replace 的 {@code text} 支持行内标记：多 span 时每次命中生成一条 {@code <w:ins>} 内的多 run（每个 run
+   * 继承被替换范围首个 run 的 rPr，再按 span 叠加格式）。
    */
   private static PlannedOp planTrackedFindOp(
       int index, Map<String, Object> op, String anchor, Snapshot snapshot, boolean deleteOnly) {
@@ -689,13 +726,22 @@ public final class PatchEngine {
     String find = str(op, "find", index);
     String author = author(op, index);
     String text = deleteOnly ? null : str(op, "text", index);
+    List<MarkdownDoc.Span> spans = deleteOnly ? null : MarkdownParser.parseInline(text);
+    boolean formatted =
+        spans != null && spans.stream().anyMatch(s -> s.bold() || s.italic() || s.code());
     if (!paragraph.text().contains(find)) {
       throw new PatchException(
           "op[" + index + "] 段落 " + anchor + " 文本中找不到「" + find + "」（实际: " + paragraph.text() + "）");
     }
     String described = deleteOnly ? "tracked.delete" : "tracked.replace";
     return new PlannedOp(
-        described + " " + anchor + " 「" + find + "」" + (deleteOnly ? "" : "→「" + text + "」")) {
+        described
+            + " "
+            + anchor
+            + " 「"
+            + find
+            + "」"
+            + (deleteOnly ? "" : "→「" + text + "」" + (formatted ? "（含格式）" : ""))) {
       @Override
       void execute(
           Document doc,
@@ -710,6 +756,12 @@ public final class PatchEngine {
             (start, end) -> {
               if (deleteOnly) {
                 paragraph.deleteTrackedRange(author, start, end);
+              } else if (formatted) {
+                List<Run> inserted =
+                    paragraph.replaceTrackedRange(author, start, end, spanTexts(spans));
+                for (int i = 0; i < inserted.size(); i++) {
+                  applySpanFormat(inserted.get(i), spans.get(i), profile);
+                }
               } else {
                 paragraph.replaceTrackedRange(author, start, end, text);
               }

@@ -816,6 +816,49 @@ baseline**——它修复的是「复审误报已正确的文档」，对物理�
 内建（页脚域/批注/列表/段落删除/表格行/模板/行内格式/run 拆分），而 full 面的缺口
 是结构性的：细粒度工具天生凑不齐「整段级语义」。
 
+### 6.13 tracked 行内格式：最后一个字面文本路径，与两次被踩实的旧坑（2026-10-30）
+
+§6.11 收尾时留下：`tracked.insert`/`tracked.replace` 的 `text` 是全链路**最后一条按字面
+处理的文本路径**，且 ins 内 run 不被 `paragraph.runs()` 暴露——「以修订加粗」物理不可达。
+本次补齐：
+
+- **core**：`addInsertion(author, texts)` / `replaceTrackedRange(author, start, end, texts)`
+  多 run 变体——一条 `<w:ins>` 内每段文本一个 run（读侧仍聚合为一条 INS、文本拼接），
+  replace 版每个 run 继承被替换范围首 run 的完整 rPr；返回全部 run 供逐个设样式。
+- **PatchEngine**：tracked.insert/replace 的 `text` 复用 `parseInline`（与 replace_text
+  同一内容语言），span 逐 run 叠加粗/斜/代码字体。eval 探针 `tracked-replace-format`
+  入组（baseline 24）。
+
+**两个被多 run ins 踩实的旧坑**（单 run 时代从未暴露）：
+
+1. **accept 的 unwrap 游标失效**：`unwrapRunsAndRemove` 的「child.moveXml +
+   toNextSibling」循环在首个 moveXml 后游标失效，多 run ins 的后续 run 留在 wrapper 内
+   随 `removeXml` 一起被删——**accept 一条两 run 的 ins 丢后半段文本**。修法：run 引用
+   快照 + 逐 run 独立 cursor（迁移顺序由测试锁定）。
+2. **`text()` 的 live/reopen 语义差异**（eval 实证，旧 javadoc 断言有误）：del 文本
+   （delText）永不进 `text()`；ins 文本在 **live 对象**不可见（POI `getText()` 按 iruns
+   走，XML 手术新增的 ins 不入 live iruns），**save+reopen 后** iruns 重建自 XML，ins
+   文本进入 `text()`。eval 读落盘文档按 reopen 口径断言；agent 会话内 `read_document`
+   读 live——同一修订在两边可见性不同，已在 javadoc/docs/07 记明。
+
+**首跑两个失败与修复**（runId `20261030-150016-660` / `20261030-151033-643`）：
+
+- **heading-font 回归**：提示词加了一句 tracked 行内标记，temp 0 轨迹漂移，模型写
+  `style=font=黑体` 被拒后 20 次 dry_run 重复。错误提示补上「字体不写进 style——标题黑体
+  = style=heading + style_profile=report-cn」后恢复。提示词任何改动都可能挪动轨迹，
+  错误消息要把「正确写法」就地教全。
+- **复审的格式证据缺口**（§6.6 同族第三次）：模型**第一个 op 就正确**
+  （`tracked.replace text=**通过**`，ins 加粗），但修订内 run 不被 `runs()` 暴露，
+  复审在 annotated/run 视图里查 bold 全部落空，把已正确的文档报「未加粗」→ 模型自我
+  怀疑 → 连插 6 条纯文本 ins 污染文档。修复：修订观测面补 **bold/italic 恒出现**——
+  outline 修订明细（`recent[]` 每条）与 REVISION 详情都带（false 也是证据），经 `raw()`
+  读 ins/del 内 CTR 的 rPr 聚合。原则重申：**复审只会依据可见属性下结论，修订内 run
+  的属性必须挂在修订条目上**。
+
+终版（runId `20261030-152310-495`，compiler 8 工具，27B）：**24/24，平均 4.21**。
+tracked-replace-format 首个 op 即正确（`tracked.replace text=**通过**`），复审引用新证据
+字段直接判「ins，bold=true……达成」；23 条回归零退化，`validate_document` 全程 0 调用。
+
 ---
 
 ## 7. 明确不做什么

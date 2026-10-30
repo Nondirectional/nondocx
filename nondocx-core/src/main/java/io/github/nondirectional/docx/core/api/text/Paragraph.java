@@ -257,18 +257,48 @@ public final class Paragraph implements BodyElement {
    * @see io.github.nondirectional.docx.core.api.track.TrackedChanges
    */
   public Run addInsertion(String author, String text) {
+    return addInsertion(author, List.of(text)).get(0);
+  }
+
+  /**
+   * 在段落末尾追加一条 tracked insertion(插入)修订,内含<b>每段文本一个 run</b>,并返回全部新 run 的活跃包装。
+   *
+   * <p>与 {@link #addInsertion(String, String)} 同一形态,只是 {@code <w:ins>} 内有 N 个 {@code
+   * <w:r>}(读侧仍聚合为一条 INS 修订)。为带格式插入服务:调用方可对返回的个别 run 链式设样式(粗体段/普通段各持独立 {@code rPr},OOXML 无语义问题——ins
+   * 是包装元素)。
+   *
+   * @param author 修订作者(不能为 {@code null} 或空白)
+   * @param texts 每个元素一个 run 的文本(不能为 {@code null},列表非空且元素均非空串)
+   * @return 新插入 runs(在 {@code <w:ins>} 内,按段序)的活跃包装
+   * @throws IllegalArgumentException 如果 {@code author} 为 {@code null} 或空白,或 {@code texts} 为空列表/含
+   *     {@code null} 或空串
+   * @see io.github.nondirectional.docx.core.api.track.TrackedChanges
+   */
+  public List<Run> addInsertion(String author, List<String> texts) {
     requireAuthor(author);
-    Objects.requireNonNull(text, "text");
+    Objects.requireNonNull(texts, "texts");
+    if (texts.isEmpty()) {
+      throw new IllegalArgumentException("texts 不能为空列表");
+    }
+    for (String text : texts) {
+      Objects.requireNonNull(text, "texts 元素");
+      if (text.isEmpty()) {
+        throw new IllegalArgumentException("texts 元素不能为空串(纯删除用 deleteTrackedRange)");
+      }
+    }
     XWPFDocument doc = delegate.getDocument();
     java.util.Calendar now = java.util.Calendar.getInstance();
     java.math.BigInteger revisionId =
         io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.nextRevisionId(doc);
     org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange ins =
         io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.addInsertion(
-            delegate, text, author, now, revisionId);
+            delegate, texts, author, now, revisionId);
     // ins 内的 run 不被 XWPFParagraph.getRuns() 暴露,从 CTR 重新构造 XWPFRun。
-    XWPFRun inserted = new XWPFRun(ins.getRList().get(0), delegate);
-    return new Run(inserted);
+    List<Run> runs = new ArrayList<>(ins.sizeOfRArray());
+    for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR ctr : ins.getRList()) {
+      runs.add(new Run(new XWPFRun(ctr, delegate)));
+    }
+    return runs;
   }
 
   /**
@@ -486,8 +516,10 @@ public final class Paragraph implements BodyElement {
    * <p>校验规则与 {@link #deleteTrackedRange(String, int, int)} 完全一致：只支持普通纯文本 run（超链接、图片、域等不支持）， 范围不得拆开
    * Unicode 代理对。方法在内部 detached 副本上完成全部 XML 手术后一次性写回，任一 run 不可切片时<b>整段零改动</b>。
    *
-   * <p><b>已知 POI 读侧盲区。</b> 替换后 {@link #text()} 只反映「删除已发生」（delText 不计入），但<b>不含</b> ins 内新文本（POI
-   * {@code XWPFParagraph.getRuns()} 不暴露 ins 内 run，见 poi-bridge.md N14）；读修订请用 {@code
+   * <p><b>已知 POI 读侧盲区（live/reopen 语义不同，2026-10-30 实证修正）。</b> del 文本（delText）<b>永不</b>计入 {@link
+   * #text()}。ins 内新文本：<b>live 对象</b>的 {@code text()} 不含（POI {@code getText()} 按 iruns 走，XML 手术新增的
+   * ins 不入 live iruns）；<b>save+reopen 后</b> iruns 重建自 XML，ins 文本<b>会</b>出现在 {@code text()}。两种状态下
+   * {@code runs()} 均不暴露 ins 内 run（poi-bridge.md N14）——样式只能经本方法返回的 run 句柄设置。读修订请用 {@code
    * trackedChanges()}。
    *
    * @param author 修订作者（不能为 {@code null} 或空白）
@@ -502,10 +534,32 @@ public final class Paragraph implements BodyElement {
    * @see Run#replaceTracked(String)
    */
   public Run replaceTrackedRange(String author, int start, int end, String newText) {
+    return replaceTrackedRange(author, start, end, List.of(newText)).get(0);
+  }
+
+  /**
+   * 将本段落可见文本的一个范围以修订方式替换为<b>多段文本</b>(每段一个 run),并返回全部新 run 的活跃包装。
+   *
+   * <p>与 {@link #replaceTrackedRange(String, int, int, String)} 同一手术(del 范围拆分 + 一条 {@code <w:ins>}
+   * 紧随最后一个 del),只是 ins 内有 N 个 {@code <w:r>}——<b>每个</b> run 都复制 范围内首个 run 替换前的完整 {@code rPr},调用方再对个别
+   * run 叠加粗/斜等格式。读侧仍是一条 INS 修订(文本按段序拼接)。
+   *
+   * @param newTexts 每个元素一个 run 的文本(不能为 {@code null},列表非空且元素均非空串)
+   * @return 新插入 runs(在 {@code <w:ins>} 内,按段序)的活跃包装
+   * @throws IllegalArgumentException 如果作者、范围、{@code newTexts} 无效
+   * @see #replaceTrackedRange(String, int, int, String)
+   */
+  public List<Run> replaceTrackedRange(String author, int start, int end, List<String> newTexts) {
     requireAuthor(author);
-    java.util.Objects.requireNonNull(newText, "newText");
-    if (newText.isEmpty()) {
-      throw new IllegalArgumentException("newText 不能为空串；纯删除请用 deleteTrackedRange");
+    java.util.Objects.requireNonNull(newTexts, "newTexts");
+    if (newTexts.isEmpty()) {
+      throw new IllegalArgumentException("newTexts 不能为空列表；纯删除请用 deleteTrackedRange");
+    }
+    for (String text : newTexts) {
+      java.util.Objects.requireNonNull(text, "newTexts 元素");
+      if (text.isEmpty()) {
+        throw new IllegalArgumentException("newTexts 元素不能为空串；纯删除请用 deleteTrackedRange");
+      }
     }
     String paragraphText = text();
     if (start < 0 || end <= start || end > paragraphText.length()) {
@@ -593,14 +647,14 @@ public final class Paragraph implements BodyElement {
             working,
             delById(working, rightmostDelId),
             styleSource,
-            newText,
+            newTexts,
             author,
             now,
             insertionId);
         insertionId = insertionId.add(java.math.BigInteger.ONE);
       }
       replacePlainTextRunViews(working);
-      return new Run(insertedRunByRevisionId(insertionId.subtract(java.math.BigInteger.ONE)));
+      return insertedRunsByRevisionId(insertionId.subtract(java.math.BigInteger.ONE));
     } catch (io.github.nondirectional.docx.core.api.exception.DocxException e) {
       throw e;
     } catch (RuntimeException e) {
@@ -610,16 +664,20 @@ public final class Paragraph implements BodyElement {
   }
 
   /**
-   * 在段落直接子级的 {@code <w:ins>} 列表里按修订 id 找回刚创建的插入修订，取其内部 run。
+   * 在段落直接子级的 {@code <w:ins>} 列表里按修订 id 找回刚创建的插入修订，取其内部全部 run。
    *
    * <p>{@code replaceTrackedRange} 的 XML 手术在 detached 副本上完成后经 {@code set} 写回—— detached 句柄不再连到 live
    * 文档，必须按 {@code w:id} 在 live CTP 里重新定位。
    */
-  private XWPFRun insertedRunByRevisionId(java.math.BigInteger revisionId) {
+  private List<Run> insertedRunsByRevisionId(java.math.BigInteger revisionId) {
     for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange ins :
         delegate.getCTP().getInsList()) {
       if (revisionId.equals(ins.getId())) {
-        return new XWPFRun(ins.getRList().get(0), delegate);
+        List<Run> runs = new ArrayList<>(ins.sizeOfRArray());
+        for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR ctr : ins.getRList()) {
+          runs.add(new Run(new XWPFRun(ctr, delegate)));
+        }
+        return runs;
       }
     }
     throw new IllegalStateException("tracked replacement 的插入修订在写回后找不到（不应发生）");

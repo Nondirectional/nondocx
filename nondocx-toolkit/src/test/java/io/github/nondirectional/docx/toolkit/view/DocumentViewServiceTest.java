@@ -435,6 +435,41 @@ class DocumentViewServiceTest {
     }
   }
 
+  /**
+   * 带格式修订的证据链（2026-10-30 tracked-replace-format 实证缺口）：修订内 run 不被 paragraph.runs()
+   * 暴露（N14），复审核对「以修订加粗」只能靠修订条目的 bold/italic（恒出现） 与 REVISION 详情的同名字段。
+   */
+  @Test
+  void revisionEntriesCarryBoldItalicEvidence(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("tracked-bold.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("结论：待定。");
+      // core API 是字面文本（Markdown 解析在 toolkit PatchEngine），样式经返回 run 设置
+      doc.paragraph(0).replaceTrackedRange("审查员", 3, 5, java.util.List.of("通过")).get(0).bold();
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      RevisionEntry ins =
+          outline.revision().recent().stream()
+              .filter(e -> "ins".equals(e.type()) || "insertion".equals(e.type()))
+              .findFirst()
+              .orElseThrow();
+      assertThat(ins.snippet()).contains("通过");
+      assertThat(ins.bold()).isTrue();
+      assertThat(ins.italic()).isFalse();
+      ElementView detail = svc.element(doc, "doc-1", 1L, ins.ref());
+      assertThat(detail.kind()).isEqualTo("revision");
+      assertThat(detail.properties()).containsEntry("bold", true);
+      assertThat(detail.properties()).containsEntry("italic", false);
+      // 未带格式的修订证据同样恒出现（false）
+      RevisionEntry del =
+          outline.revision().recent().stream().filter(e -> e != ins).findFirst().orElseThrow();
+      assertThat(del.bold()).isFalse();
+    }
+  }
+
   /** 段落详情恒出现 comments（空数组=无）——复审核对「这段挂了什么批注」的直接证据。 */
   @Test
   void elementParagraphShowsCommentsAlwaysPresent(@TempDir Path tmp) throws Exception {

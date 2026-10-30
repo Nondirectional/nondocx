@@ -208,13 +208,38 @@ public final class SnapshotBuilder {
                   resolver.reference(ch).canonical(),
                   ch.type() == null ? "unknown" : ch.type().name().toLowerCase(),
                   author,
-                  changeSnippet(ch)));
+                  changeSnippet(ch),
+                  anyRunStyled(ch, true),
+                  anyRunStyled(ch, false)));
         }
       }
       return new RevisionSummary(enabled, total, byType, byAuthor, recent);
     } catch (RuntimeException ignored) {
       return new RevisionSummary(false, 0, Map.of(), Map.of(), List.of());
     }
+  }
+
+  /**
+   * 修订内任一 run 是否带粗体/斜体：经 raw() 读 ins/del 包装内的 CTR rPr—— 修订内 run 不被 paragraph.runs() 暴露（N14），run
+   * 级视图够不着，带格式修订的证据必须挂在修订条目上。
+   */
+  private static boolean anyRunStyled(
+      io.github.nondirectional.docx.core.api.track.TrackedChange change, boolean bold) {
+    try {
+      for (var ctr : change.raw().getRList()) {
+        var rpr = ctr.getRPr();
+        if (rpr == null) {
+          continue;
+        }
+        int count = bold ? rpr.sizeOfBArray() : rpr.sizeOfIArray();
+        if (count > 0) {
+          return true;
+        }
+      }
+    } catch (RuntimeException ignored) {
+      // 非文本类修订等读不到 run 的场景按「无格式」上报
+    }
+    return false;
   }
 
   /** 修订内容片段：文本类修订给改动的文本，其他家族给家族描述。 */

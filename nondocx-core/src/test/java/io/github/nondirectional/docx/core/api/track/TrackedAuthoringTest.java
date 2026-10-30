@@ -66,6 +66,96 @@ class TrackedAuthoringTest {
     }
   }
 
+  /**
+   * 多段文本 addInsertion:一条 {@code <w:ins>} 内每段一个 run,读侧聚合为一条 INS(文本拼接); 个别 run 可独立设样式,save+reopen 后
+   * rPr 存活(经 raw() 读 ins 内 run)。
+   */
+  @Test
+  void addInsertionMultipleTextsOneRevisionWithPerRunStyle(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("author-ins-multi.docx");
+    try (Document doc = Docx.open(newDoc())) {
+      List<Run> inserted = doc.paragraph(0).addInsertion("non", List.of("加粗段", "普通段"));
+      assertThat(inserted).hasSize(2);
+      inserted.get(0).bold();
+      // 一条 INS 修订,文本按段序拼接
+      assertThat(doc.trackedChanges().list()).hasSize(1);
+      assertThat(((TextChangeDetails) doc.trackedChanges().list().get(0).details()).text())
+          .isEqualTo("加粗段普通段");
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      List<TrackedChange> list = doc.trackedChanges().list();
+      assertThat(list).hasSize(1);
+      assertThat(list.get(0).type()).isEqualTo(TrackedChangeType.INS);
+      assertThat(((TextChangeDetails) list.get(0).details()).text()).isEqualTo("加粗段普通段");
+      // ins 内 run 不被 getRuns() 暴露,经 raw() 断言首个 run 粗体、次个非粗体
+      var rList = list.get(0).raw().getRList();
+      assertThat(rList).hasSize(2);
+      assertThat(rList.get(0).getRPr().sizeOfBArray()).isEqualTo(1);
+      assertThat(rList.get(1).isSetRPr() ? rList.get(1).getRPr().sizeOfBArray() : 0).isZero();
+    }
+  }
+
+  /** 多段文本入参校验:空列表 / 空串元素整体拒绝。 */
+  @Test
+  void addInsertionMultipleTextsRejectsEmptyListAndElements() throws Exception {
+    try (Document doc = Docx.open(newDoc())) {
+      assertThatThrownBy(() -> doc.paragraph(0).addInsertion("non", List.of()))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("空列表");
+      assertThatThrownBy(() -> doc.paragraph(0).addInsertion("non", List.of("a", "")))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("空串");
+      assertThat(doc.trackedChanges().list()).isEmpty();
+    }
+  }
+
+  /**
+   * 多段文本 replaceTrackedRange:一条 INS(多 run),每个 run 继承范围内首个 run 的完整 rPr, 再按段叠加样式;save+reopen 后
+   * DEL+INS 各一条、粗体落盘。
+   */
+  @Test
+  void replaceTrackedRangeMultipleTextsInheritsStylePerRun(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("author-range-replace-multi-run.docx");
+    try (Document doc = Docx.open(newDoc())) {
+      Paragraph paragraph = doc.paragraph(0);
+      paragraph.addRun("结论：待定。").italic();
+      List<Run> inserted = paragraph.replaceTrackedRange("non", 3, 5, List.of("通过", "（修订版）"));
+      assertThat(inserted).hasSize(2);
+      // 样式来源 = 范围内首个 run(italic)——每个 run 都继承
+      assertThat(inserted.get(0).isItalic()).isTrue();
+      assertThat(inserted.get(1).isItalic()).isTrue();
+      inserted.get(0).bold();
+      assertThat(doc.trackedChanges().list())
+          .extracting(TrackedChange::type)
+          .containsExactlyInAnyOrder(TrackedChangeType.DEL, TrackedChangeType.INS);
+      // 读侧语义锁定(2026-10-30 eval 实证修正):live 对象的 text() 不含 ins 内新文本
+      // (POI getText 按 iruns 走,XML 手术新增的 ins 不入 live iruns);reopen 后 iruns 重建自
+      // XML,text() 便包含 ins 文本(见下方断言)。live/reopen 的 runs() 视图也不一致(live 含
+      // del/ins 内 run,reopen 只含直接 run)——那是 replacePlainTextRunViews 的既有形态差异,
+      // 不在此锁定;样式设置走创作 API 返回的 run 句柄,不依赖 runs() 视图。
+      assertThat(paragraph.text()).isEqualTo("结论：。");
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      List<TrackedChange> list = doc.trackedChanges().list();
+      assertThat(list).hasSize(2);
+      // reopen 后 iruns 重建自 XML,ins 内 run 入 iruns——text() 因此包含 ins 文本
+      // (live 与 reopen 的 text() 语义不同;eval 读 reopen 后文档,按此口径断言)。
+      // del 文本永不进 text()。runs() 仍不暴露 ins run(N14:run 级工具够不着)。
+      assertThat(doc.paragraph(0).text()).isEqualTo("结论：通过（修订版）。");
+      TrackedChange ins =
+          list.stream().filter(c -> c.type() == TrackedChangeType.INS).findFirst().orElseThrow();
+      assertThat(((TextChangeDetails) ins.details()).text()).isEqualTo("通过（修订版）");
+      var rList = ins.raw().getRList();
+      assertThat(rList).hasSize(2);
+      // save+reopen:粗体落盘,且次 run 保留源样式(italic)未被粗体污染
+      assertThat(rList.get(0).getRPr().sizeOfBArray()).isEqualTo(1);
+      assertThat(rList.get(1).getRPr().sizeOfBArray()).isZero();
+      assertThat(rList.get(1).getRPr().sizeOfIArray()).isEqualTo(1);
+    }
+  }
+
   /** addDeletion 把既有 run 标记为删除,能被 list() 读回为 del。 */
   @Test
   void addDeletionMarksExistingRun(@TempDir Path tmp) throws Exception {

@@ -555,6 +555,103 @@ class PatchEngineTest {
   }
 
   @Test
+  void trackedReplaceWithInlineFormatCreatesOneInsWithStyledRuns() throws Exception {
+    java.nio.file.Path file = java.nio.file.Files.createTempFile("tracked-fmt-replace", ".docx");
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("结论：待定。");
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op", "tracked.replace",
+                      "anchor", "p0",
+                      "find", "待定",
+                      "text", "**通过**（修订版）",
+                      "author", "审查员")),
+              REPORT_CN,
+              false);
+      assertThat(result.applied()).isEqualTo(1);
+      // del + 一条 ins（读侧聚合，多 run 文本拼接）；无字面星号
+      var changes = doc.trackedChanges().list();
+      assertThat(changes).hasSize(2);
+      var ins =
+          changes.stream()
+              .filter(
+                  c ->
+                      c.type()
+                          == io.github.nondirectional.docx.core.api.track.TrackedChangeType.INS)
+              .findFirst()
+              .orElseThrow();
+      assertThat(
+              ((io.github.nondirectional.docx.core.api.track.TextChangeDetails) ins.details())
+                  .text())
+          .isEqualTo("通过（修订版）");
+      // ins 内两个 run：首个粗体，次个无格式（源 run 无 rPr，plain span 不产生 rPr）
+      var rList = ins.raw().getRList();
+      assertThat(rList).hasSize(2);
+      assertThat(rList.get(0).getRPr().sizeOfBArray()).isEqualTo(1);
+      assertThat(rList.get(1).isSetRPr() ? rList.get(1).getRPr().sizeOfBArray() : 0).isZero();
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document opened = Docx.open(file)) {
+      // save+reopen 后格式落盘；accept 后正文完成带格式替换
+      var ins =
+          opened.trackedChanges().list().stream()
+              .filter(
+                  c ->
+                      c.type()
+                          == io.github.nondirectional.docx.core.api.track.TrackedChangeType.INS)
+              .findFirst()
+              .orElseThrow();
+      assertThat(ins.raw().getRList().get(0).getRPr().sizeOfBArray()).isEqualTo(1);
+      assertThat(opened.trackedChanges().acceptAll()).isEqualTo(2);
+      java.nio.file.Path accepted = java.nio.file.Path.of(file + ".accepted.docx");
+      opened.save(accepted);
+      try (Document result = Docx.open(accepted)) {
+        assertThat(result.paragraph(0).text()).isEqualTo("结论：通过（修订版）。");
+        // accept 拆掉 ins 包装后，加粗 run 进入普通 runs() 视图
+        assertThat(result.paragraph(0).run(1).isBold()).isTrue();
+        assertThat(result.paragraph(0).run(2).isBold()).isFalse();
+      }
+    }
+  }
+
+  @Test
+  void trackedInsertWithInlineFormatStylesRunsInOneRevision() {
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("正文");
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op", "tracked.insert",
+                      "anchor", "p0",
+                      "text", "**要点**说明",
+                      "author", "审查员")),
+              REPORT_CN,
+              false);
+      assertThat(result.applied()).isEqualTo(1);
+      // 一条 INS 修订（不是每个 span 一条）
+      var changes = doc.trackedChanges().list();
+      assertThat(changes).hasSize(1);
+      assertThat(changes.get(0).type())
+          .isEqualTo(io.github.nondirectional.docx.core.api.track.TrackedChangeType.INS);
+      var rList = changes.get(0).raw().getRList();
+      assertThat(rList).hasSize(2);
+      assertThat(rList.get(0).getRPr().sizeOfBArray()).isEqualTo(1);
+      assertThat(rList.get(1).isSetRPr() ? rList.get(1).getRPr().sizeOfBArray() : 0).isZero();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
   void trackedReplaceAllOccurrencesAndTrackedInsertDelete() throws Exception {
     java.nio.file.Path file = java.nio.file.Files.createTempFile("tracked-multi", ".docx");
     Document doc = Docx.create();
