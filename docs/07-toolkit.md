@@ -298,6 +298,11 @@ warning（补数据重试即可，不静默清空）。
 `soffice`）；每次调用用独立 user profile 规避 LibreOffice 实例锁；超时 60s。结构检查看不见的
 视觉缺陷（分页/溢出/表格断行）靠它。
 
+**质量 post-condition**：`create_document`/`edit_document`/`fill_template` 的成功结果自动附带
+10 项质量检查反馈（失败项 `qualityIssues` + message 摘要）——写完即见质量信号，无需单独
+`validate_document`（后者保留给全量编号报告）。非阻塞；`toc` 建议项不进反馈（防恒定噪音）；
+摘要标注「提示性」，seed 未排版段落的 cjk-indent 类警告无需模型主动修复。
+
 **位置约定**：本组在 `DocxToolkit.scanAll` 里（能力清单第 9 组，EXPERIMENTAL 级），但
 **默认不进 demo/eval 的 full 工具面**——是否成为默认面由评测数据决定（见 doc 11 §P1/P2）。
 

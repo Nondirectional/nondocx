@@ -294,6 +294,8 @@ final class AgentBridge {
         + "当前文档是模板（含 {{key}}/{{#key}} 占位符）且用户给出数据时，一次调用 fill_template 填充"
         + "（缺 key 会保留原样并在 warnings 提示，补数据重试即可）。"
         + "需要检查分页/排版等视觉效果时调用 render_preview（转 PDF，需要 LibreOffice）。"
+        + "写工具（create/edit/fill）的结果自带质量检查反馈（qualityIssues）——这是提示性信息，"
+        + "除非用户明确要求排版规范，无需为它追加修改，也不必再单独调用 validate_document。"
         + "不得调用或寻找 open_docx、close_docx、save_docx 或任何保存工具——保存由系统在结束后自动完成。"
         + "完成修改后调用 review_intent 复审用户期望的修改是否已经达成。若任一工具失败，停止并说明失败。"
         + "不要使用对话记忆或推断得来的旧 doc_id。";

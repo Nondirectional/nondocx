@@ -311,3 +311,9 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 - **compiler 面是 8 入口**（P2 收尾起）：current_document + create/read/validate/edit +
   fill_template + render_preview + review_intent。eval（`EvalRunnerTest`）与 demo
   （`SurfaceSwitchTest`）双锁死；full 面 58 不变（不 scan compiler，A/B 基线保持）。
+- **质量 post-condition（P2 收尾）**：create/edit/fill 三个写工具的成功路径自动跑 10 项
+  检查，失败项放 `data.qualityIssues`、message 追加摘要；非阻塞（写入已发生，检查纯读）；
+  dry_run 不跑；检查异常按「无信号」吞掉。**`toc` 建议项不进 post-condition**（内容完整性
+  建议非写质量信号，恒触发即噪音）。seed 未排版的 cjk-indent 类警告保留但摘要标「提示性」，
+  提示词同步声明「无需为 qualityIssues 追加修改」——防警告修复循环（模型看到警告就修
+  用户没要的排版）。新增写工具时同样接 post-condition。

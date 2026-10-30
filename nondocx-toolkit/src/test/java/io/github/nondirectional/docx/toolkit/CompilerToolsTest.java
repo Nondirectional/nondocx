@@ -130,6 +130,63 @@ class CompilerToolsTest {
     tk.session.closeDocx(docId);
   }
 
+  // ---------- 质量 post-condition：写结果自带质检反馈（P2 收尾） ----------
+
+  @Test
+  void createDocumentAttachesQualityIssuesForPlainProfile(@TempDir Path temp) throws Exception {
+    DocxToolkit tk = new DocxToolkit();
+    String docId = ToolTestSupport.extractDocId(tk.session.openDocx(seed(temp)));
+    // plain + CJK 正文：无首行缩进 → cjk-indent。表分页控制编译器全 profile 默认写入，
+    // table-pagination 不会触发（docs/11 §6.4 修正过的事实）
+    String raw =
+        tk.compiler.createDocument(
+            docId, "# 报告\n\n这是中文正文段落。\n\n| 模块 | 状态 |\n|---|---|\n| core | 完成 |", "plain");
+    JsonNode data = MAPPER.readTree(ToolTestSupport.parse(raw).dataText());
+    JsonNode issues = data.get("qualityIssues");
+    assertThat(issues).isNotNull();
+    java.util.List<String> names = new java.util.ArrayList<>();
+    for (JsonNode issue : issues) {
+      names.add(issue.get("name").asText());
+    }
+    assertThat(names).contains("cjk-indent");
+    // toc 建议项不进 post-condition（内容完整性建议，非写质量信号）
+    assertThat(names).doesNotContain("toc");
+    tk.session.closeDocx(docId);
+  }
+
+  @Test
+  void editDocumentQualityPostConditionAndDryRunSkipsIt(@TempDir Path temp) throws Exception {
+    DocxToolkit tk = new DocxToolkit();
+    String docId = ToolTestSupport.extractDocId(tk.session.openDocx(seed(temp)));
+
+    // dry-run：未写入，无 post-condition
+    java.util.Map<String, Object> insert =
+        new java.util.LinkedHashMap<>(
+            java.util.Map.of("op", "insert", "position", "end", "block", "追加段落"));
+    JsonNode dry =
+        MAPPER.readTree(
+            ToolTestSupport.parse(
+                    tk.compiler.editDocument(docId, List.of(insert), true, null, null))
+                .dataText());
+    assertThat(dry.get("dryRun").asBoolean()).isTrue();
+    assertThat(dry.has("qualityIssues")).isFalse();
+
+    // 真写入：seed 的 CJK 段无首行缩进 → cjk-indent 提示；消息含质量检查摘要
+    String raw = tk.compiler.editDocument(docId, List.of(insert), null, null, null);
+    ToolResultParser.Snapshot parsed = ToolTestSupport.parse(raw);
+    assertThat(parsed.message()).contains("质量检查");
+    JsonNode issues = MAPPER.readTree(parsed.dataText()).get("qualityIssues");
+    assertThat(issues).isNotNull();
+    boolean hasCjkIndent = false;
+    for (JsonNode issue : issues) {
+      if ("cjk-indent".equals(issue.get("name").asText())) {
+        hasCjkIndent = true;
+      }
+    }
+    assertThat(hasCjkIndent).as("seed 未排版段落应触发 cjk-indent 提示").isTrue();
+    tk.session.closeDocx(docId);
+  }
+
   @Test
   void editDocumentAppliesAtomicPatchAndRejectsOnPreflightFailure(@TempDir Path temp)
       throws Exception {

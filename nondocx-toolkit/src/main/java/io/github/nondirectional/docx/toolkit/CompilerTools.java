@@ -81,7 +81,7 @@ public final class CompilerTools extends ToolkitToolContext {
               + "*斜体*、`代码`、- 无序列表、1. 有序列表、|表格|（首行为表头）。"
               + "style_profile=report-cn 时自动套中文报告排版（黑体标题、宋体小四正文、"
               + "1.5 倍行距、首行缩进 2 字符、表头加粗灰底）；plain 只做结构。"
-              + "新建/整篇重写文档时用它，不要逐段 insert。")
+              + "新建/整篇重写文档时用它，不要逐段 insert。结果自带质量检查反馈（qualityIssues）。")
   @ToolCapability(
       operation = CapabilityOperation.ADD,
       element = "document",
@@ -136,7 +136,8 @@ public final class CompilerTools extends ToolkitToolContext {
               + compiled.tableCount()
               + "，profile="
               + profile.name()
-              + (compiled.warnings().isEmpty() ? "" : "，警告 " + compiled.warnings().size() + " 条");
+              + (compiled.warnings().isEmpty() ? "" : "，警告 " + compiled.warnings().size() + " 条")
+              + qualityPostCondition(data, document(docId));
       return ToolResultRenderer.render(ToolResult.ok(data, message));
     } catch (IllegalArgumentException e) {
       return renderInvalidArgument(e.getMessage());
@@ -263,7 +264,8 @@ public final class CompilerTools extends ToolkitToolContext {
               + "comment.add（批注，anchor+text+author 必传，给整段加范围批注，不改正文）。"
               + "先校验全部 op 再写入：任一 op 非法则整体拒绝、零改动。"
               + "每个段落锚点一批里至多一个改文本 op（tracked.*/replace_text），要改多处请拆两次调用。"
-              + "多步编辑优先用它一次表达，不要逐段调用。dry_run=true 只返回计划。")
+              + "多步编辑优先用它一次表达，不要逐段调用。dry_run=true 只返回计划。"
+              + "结果自带质量检查反馈（qualityIssues，提示性，除非用户要求排版规范无需处理）。")
   @ToolCapability(
       operation = CapabilityOperation.UPDATE,
       element = "document",
@@ -353,7 +355,8 @@ public final class CompilerTools extends ToolkitToolContext {
               + " 个 op，触碰 "
               + result.changed().size()
               + " 个锚点"
-              + (result.warnings().isEmpty() ? "" : "，警告 " + result.warnings().size() + " 条");
+              + (result.warnings().isEmpty() ? "" : "，警告 " + result.warnings().size() + " 条")
+              + qualityPostCondition(data, doc);
       return ToolResultRenderer.render(ToolResult.ok(data, message));
     } catch (PatchEngine.PatchException e) {
       // preflight 失败 = 零写入，明确告知
@@ -381,7 +384,8 @@ public final class CompilerTools extends ToolkitToolContext {
               + "{{#key}}…{{/key}} 整段标记为条件块（key 为 false/缺失/空列表时删除块内段落）；"
               + "表格里任一单元格含 {{#key}} 的行是模板行，data[key] 为列表时按元素复制（行内 {{field}} "
               + "取元素字段，标量元素用 {{.}}，复制行保留模板行格式）。缺 key 的占位符保留原样并在 "
-              + "warnings 里提示。用户给出「模板 + 数据」时用它，比逐段 edit 更稳。")
+              + "warnings 里提示。用户给出「模板 + 数据」时用它，比逐段 edit 更稳。"
+              + "结果自带质量检查反馈（qualityIssues）。")
   @ToolCapability(
       operation = CapabilityOperation.UPDATE,
       element = "document",
@@ -432,7 +436,8 @@ public final class CompilerTools extends ToolkitToolContext {
               + " 段"
               + (result.warnings().isEmpty()
                   ? ""
-                  : "，警告 " + result.warnings().size() + " 条（缺数据的占位符保留原样）");
+                  : "，警告 " + result.warnings().size() + " 条（缺数据的占位符保留原样）")
+              + qualityPostCondition(out, doc);
       return ToolResultRenderer.render(ToolResult.ok(out, message));
     } catch (RuntimeException e) {
       return ToolResultRenderer.render(
@@ -485,5 +490,51 @@ public final class CompilerTools extends ToolkitToolContext {
       return ToolResultRenderer.render(
           ToolResult.fail(ToolResultCode.UNSUPPORTED_FEATURE, "渲染失败: " + e.getMessage()));
     }
+  }
+
+  // ==================== 质量 post-condition（P2 收尾） ====================
+
+  /**
+   * 写入后的质量 post-condition：10 项检查自动随写结果返回（docs/11 P2「升级成编译器的 post-condition，而不是事后可选检查」），模型无需单独调
+   * validate_document 才能看到质量信号。
+   *
+   * <p>失败项全量放进 {@code data.qualityIssues}（{@code [{name,severity,message}]}，全过不设键）， message
+   * 追加摘要。**非阻塞**——写入已发生，检查纯读不回滚；检查自身异常按「无信号」处理， 不污染写结果。error 级罕见；warning 常见于未排版文档（如 seed
+   * 无首行缩进——不是本次编辑 之过），摘要里明确「提示性、无需主动修复」，防模型看到警告就修用户没要的排版。
+   *
+   * @param data 工具结果 data（失败项写入 {@code qualityIssues}）
+   * @param doc 刚写入的活文档
+   * @return message 后缀（含前导逗号）
+   */
+  private String qualityPostCondition(Map<String, Object> data, Document doc) {
+    List<Map<String, Object>> failed = new ArrayList<>();
+    try {
+      for (QualityCheckTools.CheckResult cr : qualityCheck.runAllChecks(doc)) {
+        if (cr.passed()) {
+          continue;
+        }
+        if ("toc".equals(cr.name())) {
+          // toc 未过的语义是「有标题但没插目录」——内容完整性建议，不是写质量信号；
+          // 每次带标题的 create 都会触发，进 post-condition 就是恒定噪音。要看它走 validate_document。
+          continue;
+        }
+        Map<String, Object> issue = new LinkedHashMap<>();
+        issue.put("name", cr.name());
+        issue.put("severity", cr.severity());
+        issue.put("message", cr.message());
+        failed.add(issue);
+      }
+    } catch (RuntimeException ignored) {
+      // 质检自身崩溃不应影响写结果：按「无信号」处理
+    }
+    if (failed.isEmpty()) {
+      return "，质量检查通过";
+    }
+    data.put("qualityIssues", failed);
+    List<String> names = new ArrayList<>();
+    for (Map<String, Object> issue : failed) {
+      names.add(String.valueOf(issue.get("name")));
+    }
+    return "，质量检查 " + failed.size() + " 项未过（" + String.join("/", names) + "，提示性：除非用户要求排版规范，无需主动修复）";
   }
 }

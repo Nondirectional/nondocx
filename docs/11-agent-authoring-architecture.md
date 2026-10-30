@@ -276,14 +276,13 @@ CJK 的 `eastAsia`/`latin` 字体槽、首行缩进、行距这些 Word 坑，�
 - 如果调用数能从 10+ 降到 2~3，再继续投入。
   （实测：5 条 create 任务，总调用 23.0 → 5.6、创作调用 1~2 次、通过率 20% → 100%——继续投入。）
 
-### P2：编辑与模板
+### P2：编辑与模板（已全部落地，2026-10-30）
 
 - `edit_document` patch 引擎，接 tracked changes / comments。
-  （已落地并 A/B（§6.4/§6.5）：10 op（含 tracked.*/页脚页码）、原子、dry-run，baseline 10/10；
-  批注 op 仍待做。）
-- `fill_template`：占位符、重复表格行、条件段。
-- `render_preview`：LibreOffice headless → PDF/PNG。
-- 把 `QualityCheckTools` 升级成编译器的 post-condition，而不是事后可选检查。
+  （已落地并 A/B（§6.4~§6.8）：11 op（含 tracked.*/页脚页码/批注）、原子、dry-run。）
+- `fill_template`：占位符、重复表格行、条件段。（§6.8）
+- `render_preview`：LibreOffice headless → PDF/PNG。（§6.8）
+- 把 `QualityCheckTools` 升级成编译器的 post-condition，而不是事后可选检查。（§6.10）
 
 ### P3：评测与多模型
 
@@ -698,6 +697,27 @@ tr；经返回行的写入落进不在文档树里的对象，内存读正确、
 
 14B/27B 双模型对比延后（本地仅 27B）；页眉写不进 baseline（compiler 面无页眉 op，
 属已知能力边界，与 §6.4 时页脚缺口同型——出现真实需求再补）。
+
+### 6.10 质量 post-condition：写结果自带质检反馈（P2 收尾，2026-10-30）
+
+P2 最后一项：「把 `QualityCheckTools` 升级成编译器的 post-condition，而不是事后可选检查」。
+与「复审/保存由应用层强制」（§3.5）同精神——**写工具的返回自带质量信号**，模型不必记得
+单独调 `validate_document`：
+
+- `create_document`（换血后新文档）、`edit_document`（非 dry-run）、`fill_template` 三个
+  写工具的成功路径自动跑 10 项检查：失败项全量放 `data.qualityIssues`
+  （`[{name,severity,message}]`，全过不设键），message 追加摘要（「质量检查通过」/「N 项
+  未过 + 名称 + **提示性：除非用户要求排版规范，无需主动修复**」）。
+- **非阻塞**：写入已发生，检查纯读不回滚；检查自身异常按「无信号」处理。dry_run 不跑
+  （未写入无 post-condition 可言）。`validate_document` 保留（全量报告 + 编号，另一层用途）。
+- **噪音治理**：`toc` 建议项（「有标题但没插目录」）不进 post-condition——它是内容完整性
+  建议而非写质量信号，每次带标题的 create 都会触发，进来就是恒定噪音；要看它走
+  validate_document。seed 未排版段落的 cjk-indent 警告**保留**但摘要明确「提示性」——
+  提示词同步声明「无需为 qualityIssues 追加修改、不必再单独 validate」。
+
+eval（runId `20261030-121824-988`）：**22/22，平均 4.41**（§6.9 时 4.68）——post-condition
+未触发「警告修复循环」（护栏生效），且 `validate_document` 全程 **0 次调用**（写结果自带
+质检后它对写后校验已是冗余；最高调用任务 8 次，未新增）。
 
 ---
 
