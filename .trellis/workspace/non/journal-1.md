@@ -1687,3 +1687,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - 带真实 key 的 demo 端到端对话体验；insert-centered-title 记号混淆 prompt 治理（评测 26 次波动）
+
+
+## Session 42: 复审可观测性：alignment + eastAsia 槽，compiler 面 10/10 @4.4 次
+<!-- trellis-session: v=2 fp=60c7aa8a01a75643 -->
+
+**Date**: 2026-10-30
+**Task**: 复审可观测性：alignment + eastAsia 槽，compiler 面 10/10 @4.4 次
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- trace 推翻 insert-centered-title 的记号混淆旧归因（主模型第 2 次调用即正确，8 次 review 误报驱动空转）；view_element paragraph 恒输出 alignment；core 新增 Run.fontEastAsia()，run 详情与 view_annotated 暴露 fontEastAsia（同族修复 heading-font 24 次循环）；docs/11 §6.6 + spec 属性可见性教训与盲区清单
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `876f3c3` | feat(core,toolkit): 复审可观测性——view_element 暴露 alignment 与 eastAsia 字体槽 |
+
+### Testing
+
+- [OK] compiler 面 baseline 10/10 平均 4.4（8.0→4.4；centered-title 26→3、heading-font 24→4、body-font 9→5），首次双指标超 full 面；core 350/toolkit 234/examples 19/demo 47 全绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 复审盲区（低频）：表格单元格内容进 view_element、修订查询进 review 面、页脚进 stats；或转向批注 op / 模板填充
