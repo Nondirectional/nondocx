@@ -197,8 +197,20 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，后续需要显式 `scope`/容器
 校验或 IR patch。
 
-`view_element` 的 paragraph 详情输出 `location`（如 `页脚 section=0 variant=default 段落 0`）
-和 `lineSpacing`（>0 时），供复审确认目标容器与行距。
+`view_element` 的 paragraph 详情输出 `location`（如 `页脚 section=0 variant=default 段落 0`）、
+`alignment`（**恒出现**，未设置=left；命名与 `{align=…}` 写侧记号一致 left/center/right/both）
+和 `lineSpacing`（>0 时），供复审确认目标容器、对齐与行距。run 详情（`view_element` 与
+`view_annotated` expandRuns）输出 `font`（ascii/西文槽）**和** `fontEastAsia`（中文槽，core
+`Run.fontEastAsia()`）——编译器写的是「西文 TNR/Arial + 中文宋体/黑体」双槽，只暴露 ascii
+槽会把已正确的中文字体误判成「未设置」（heading-font 曾 24 次空转）。
+
+> **属性可见性是复审的地基**（2026-10-30 教训）：复审 SubAgent 只能依据工具**可见**的属性下结论，
+> 「详情里没有 alignment」会被它解读成「未设置对齐」——`insert-centered-title` 曾因此空转 24 次
+> （主模型第 2 次调用就已正确，8 次 review 全部误报「未居中」）。给复审需要核对的段落级要求
+> （对齐/行距/标题级别/中文字体）加观测面时，**恒出现**优于「设置才出现」：不给「属性缺失=？」留推断空间。
+> 复审盲区清单（已修 alignment/字体槽；仍开放）：表格单元格内容（view_element 的 CELL 空
+> properties）、修订记录（review 只扫 view 组，无 tracked-changes 查询）、页脚正文（HEADER_FOOTER
+> 有 text，但 stats/outline 不含页脚）。
 
 ## Convention: 编译器工具面（compiler surface，实验性）
 

@@ -489,9 +489,10 @@ baseline 组（10 条编辑任务）在 compiler 面的终版结果（`qwen3.8-2
 - **简单编辑的调用数显著下降**：追加一段 3 次、精确替换 4 次、批量替换所有 TODO
   4 次（一次 edit_document 批量 ops，full 面要搜索+逐段改）、建表 5 次、改单元格 6 次。
 - **平均调用反而略高**的原因：review/validate 固定开销（每任务 +2~3）+ 两个失效模式——
-  ①`insert-centered-title` 的波动（11~23 次）：模型把 read_document 里的 `{align=center}`
-  记号误当正文、被 set_style 拒绝后重建循环（已加错误提示指引 + prompt 说明，仍偶发）；
-  ②失败任务的重试循环拉高均值（21/11 次）。这是提示词/交互问题，不是架构问题。
+  ①`insert-centered-title` 的波动（11~23 次）：当时的归因是「模型把 `{align=center}` 记号
+  误当正文」，§6.6 的 trace 复盘**推翻**了它——真正的主因是复审 SubAgent 看不到 alignment
+  而持续误报「未居中」，主模型围绕已正确的文档空转；
+  ②失败任务的重试循环拉高均值（21/11 次）。
 
 **过程中修的三个真 bug（都被 trace 抓到）**：
 
@@ -554,17 +555,53 @@ baseline 组复跑（同口径 `qwen3.8-27b`，温度 0，runId `20261030-010150
   「一百万元」、ins 紧随其后；页脚域含 separate + 缓存 "1"，正文零改动。
 - compiler 面**首次反超 full 面**（10/10 vs 9/10）：多出的正是 full 面至今过不了的
   footer-page-number——不是模型问题，是 full 面没有可用的写侧域 API。
-- 平均 8.0 仍高于 full 的 6.2：大头还是 `insert-centered-title` 的记号混淆波动
-  （本次 26 次，历史 11~23），其余 9 任务平均 6.0。该波动是提示词层问题
-  （把 `{align=center}` 误当正文），与 op 架构无关，留给 prompt 迭代。
+- 平均 8.0 仍高于 full 的 6.2：大头是 `insert-centered-title` 的 26 次波动（其余 9 任务
+  平均 6.0）。当时把它归因于「记号混淆提示词问题」——§6.6 的 trace 复盘推翻了这一归因，
+  根因是复审可观测性缺口，修复后该任务 3 次调用收敛。
 - 已知语义边界（实证后写进 spec）：tracked 修订后 `read_document` 正文视图不含 ins 内容、
   被删文本已移除（POI `getRuns()` 不暴露 `w:ins`/`w:del` 内 run）——核对修订用
   review_intent（其 view 面含 view_tracked_changes），页脚靠 `<!-- 页脚: … -->` 元数据行
   （MarkdownView v2 新增，round-trip 安全）。
 
 **结论**：op 集补齐后 compiler 面 baseline 10/10，「文档 IR + patch」路线在编辑侧也站住了。
-demo 已于同日默认切到 compiler 面（`NONDOCX_AGENT_SURFACE=full` 回退，见 nondocx-demo/README）；
-剩余高价值项：`insert-centered-title` 的记号混淆 prompt 治理（本次 26 次）。
+demo 已于同日默认切到 compiler 面（`NONDOCX_AGENT_SURFACE=full` 回退，见 nondocx-demo/README）。
+
+### 6.6 复审可观测性：一次被 trace 推翻的归因（2026-10-30）
+
+`insert-centered-title` 长期波动（11~26 次）一直被归因为「模型把 `{align=center}` 记号误当正文」
+（§6.4 原文，本次修正）。单任务复跑（runId `20261030-090245-055`，24 次调用）的 trace
+**推翻**了它：
+
+- **第 2 次调用就正确**：`insert "# 项目周汇报 {align=center}"`——`fillHeading` 显式 align
+  优先，H1+居中一次到位（评测 check 从此刻起即通过）。
+- **循环驱动者是复审 SubAgent**：8 次 `review_intent` 全部「部分达成：未设置居中对齐」——
+  `view_element` 的段落详情只有 text/location/lineSpacing/headingLevel，**没有 alignment**，
+  复审把「工具不可见」当「属性未设置」。主模型的 set_style/重插全是围绕已正确文档的空转；
+  它从未对 `{align=center}` 发起过 replace_text。
+
+**修复 = 补观测面，不是改 prompt**：paragraph 详情恒输出 `alignment`（未设置=left，命名与
+`{align=…}` 记号一致）。复跑 3 次调用收敛（current_document → insert → review 达成）。
+
+全组复跑又暴露**同族缺口**：`heading-font` 24 次、`body-font` 9 次——复审读 run 字体只见
+ascii 槽（"Arial/Times New Roman"），看不见编译器写的 eastAsia 槽（黑体/宋体），把已正确的
+槽分离排版误报成「未设置字体」。修复：core 新增 `Run.fontEastAsia()`（与 `font()` 对称的
+中文槽读法），`view_element` run 详情与 `view_annotated`（expandRuns）均暴露 `fontEastAsia`。
+
+终版（runId `20261030-091648-612`，同口径）：
+
+| 指标 | full 面 | compiler 面（§6.5 时） | compiler 面（本次） |
+|---|---|---|---|
+| 通过率 | 9/10 | 10/10 | **10/10** |
+| 平均调用 | 6.2 | 8.0 | **4.4** |
+| 最慢任务 | ~20（footer） | 26（centered-title） | 6（table-cell-edit） |
+
+逐任务（次）：append 3 / centered-title **3**（原 26）/ replace-exact 4 / body-font **5**
+（原 9）/ heading-font **4**（原 24）/ 建表 5 / 改格 6 / tracked-replace 6 / replace-all 4 /
+footer 4。compiler 面首次在**通过率与调用数双指标**上超过 full 面。
+
+**教训（写进 spec）**：复审只能依据工具**可见**的属性下结论——「详情里没有」会被解读成
+「没设置」。给复审需要核对的属性（对齐/中文字体/行距）加观测面时**恒出现**优于「设置才出现」。
+仍开放的复审盲区（低频，见 agent-single.md 清单）：表格单元格内容、修订记录查询、页脚正文。
 
 ---
 

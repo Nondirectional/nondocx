@@ -203,6 +203,7 @@ public final class DocumentViewService {
                   r.isBold(),
                   r.isItalic(),
                   r.font(),
+                  r.fontEastAsia(),
                   r.fontSize(),
                   r.color()));
         }
@@ -347,6 +348,10 @@ public final class DocumentViewService {
           Paragraph p = resolver.resolveAny((ParagraphRef) ref);
           properties.put("text", p.text());
           properties.put("location", resolver.describe(p));
+          // 对齐恒出现（未设置=left）：只读复审靠元素详情核对「居中标题」类要求，
+          // 属性缺失会被误读成「未设置」。命名与 {align=…} 写侧记号一致（left/center/right/both），
+          // 让读者能把 alignment:"center" 与 {align=center} 对上。
+          properties.put("alignment", alignmentName(p.alignment()));
           double lineSpacing = p.lineSpacing();
           if (lineSpacing > 0) {
             properties.put("lineSpacing", lineSpacing);
@@ -373,6 +378,9 @@ public final class DocumentViewService {
           properties.put("bold", r.isBold());
           properties.put("italic", r.isItalic());
           putIfNotNull(properties, "font", r.font());
+          // 中文槽与西文槽分离展示：编译器写的是「西文 TNR/Arial + 中文宋体/黑体」双槽，
+          // 只暴露 ascii 槽会让读者把已正确设置的中文字体误判成「未设置」
+          putIfNotNull(properties, "fontEastAsia", r.fontEastAsia());
           putIfNotNull(properties, "fontSize", r.fontSize());
           putIfNotNull(properties, "color", r.color());
           break;
@@ -479,6 +487,27 @@ public final class DocumentViewService {
   private static String truncate(String s, int max) {
     if (s == null) return "";
     return s.length() <= max ? s : s.substring(0, max);
+  }
+
+  /**
+   * 对齐的稳定小写名，与 Markdown 写侧的 {@code {align=…}} 记号一致（left/center/right/both）。
+   *
+   * <p>view_element 的段落详情用它暴露 alignment——读者（含只读复审 SubAgent）需要能把读到的值与 写侧记号直接对上，不复用 enum
+   * 名（JUSTIFY）以免两套叫法。
+   */
+  private static String alignmentName(
+      io.github.nondirectional.docx.core.api.style.Alignment alignment) {
+    switch (alignment) {
+      case CENTER:
+        return "center";
+      case RIGHT:
+        return "right";
+      case JUSTIFY:
+        return "both";
+      case LEFT:
+      default:
+        return "left";
+    }
   }
 
   private static String tablePreviewText(TablePreview tp) {

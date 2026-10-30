@@ -12,7 +12,8 @@ import java.util.Objects;
  * @param text run 文本（截断）
  * @param bold 是否加粗
  * @param italic 是否斜体
- * @param font 字体名（可能为 null）
+ * @param font 字体名（ascii/西文槽，可能为 null）
+ * @param fontEastAsia 中文字体槽名（可能为 null；与 font 分离供读者核对「西文 + 中文」双槽排版）
  * @param fontSize 字号 pt（可能为 null）
  * @param color 颜色 hex（可能为 null）
  */
@@ -23,6 +24,7 @@ public final class AnnotatedRun {
   private final boolean bold;
   private final boolean italic;
   private final String font;
+  private final String fontEastAsia;
   private final Integer fontSize;
   private final String color;
 
@@ -32,6 +34,7 @@ public final class AnnotatedRun {
       boolean bold,
       boolean italic,
       String font,
+      String fontEastAsia,
       Integer fontSize,
       String color) {
     this.ref = Objects.requireNonNull(ref, "ref 不能为空");
@@ -39,6 +42,7 @@ public final class AnnotatedRun {
     this.bold = bold;
     this.italic = italic;
     this.font = font;
+    this.fontEastAsia = fontEastAsia;
     this.fontSize = fontSize;
     this.color = color;
   }
@@ -63,6 +67,11 @@ public final class AnnotatedRun {
     return font;
   }
 
+  /** eastAsia（中文）字体槽名；未设置为 {@code null}。编译器的槽分离排版（西文 TNR + 中文宋体）需要它才可核对。 */
+  public String fontEastAsia() {
+    return fontEastAsia;
+  }
+
   public Integer fontSize() {
     return fontSize;
   }
@@ -81,12 +90,13 @@ public final class AnnotatedRun {
         && ref.equals(that.ref)
         && text.equals(that.text)
         && Objects.equals(font, that.font)
+        && Objects.equals(fontEastAsia, that.fontEastAsia)
         && Objects.equals(fontSize, that.fontSize)
         && Objects.equals(color, that.color);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(ref, text, bold, italic, font, fontSize, color);
+    return Objects.hash(ref, text, bold, italic, font, fontEastAsia, fontSize, color);
   }
 }

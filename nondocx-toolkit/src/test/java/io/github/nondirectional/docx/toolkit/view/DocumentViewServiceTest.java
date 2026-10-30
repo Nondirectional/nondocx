@@ -7,6 +7,7 @@ import io.github.nondirectional.docx.core.api.Document;
 import io.github.nondirectional.docx.core.api.style.HeadingLevel;
 import io.github.nondirectional.docx.core.api.table.Table;
 import io.github.nondirectional.docx.core.api.text.Paragraph;
+import io.github.nondirectional.docx.core.api.text.Run;
 import io.github.nondirectional.docx.toolkit.DocxToolkit;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedRun;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedView;
@@ -146,9 +147,42 @@ class DocumentViewServiceTest {
       assertThat(run0.bold()).isTrue();
       assertThat(run0.fontSize()).isEqualTo(14);
       assertThat(run0.font()).isEqualTo("宋体");
+      // font() 四槽同写后 eastAsia 槽与西文槽一致
+      assertThat(run0.fontEastAsia()).isEqualTo("宋体");
       assertThat(run0.ref()).isNotBlank();
       AnnotatedRun run1 = view.paragraphs().get(0).runs().get(1);
       assertThat(run1.italic()).isTrue();
+    }
+  }
+
+  /**
+   * 槽分离排版的可观测性：编译器写「西文 TNR/Arial + 中文宋体/黑体」双槽后，annotated 与 view_element 都必须能读到 eastAsia
+   * 槽——只读复审靠它核对「设为宋体/黑体」类要求， 只见 ascii 槽会把已正确的中文字体误判成「未设置」（heading-font 曾因此空转 24 次）。
+   */
+  @Test
+  void annotatedAndElementExposeSplitFontSlots(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("split-font.docx");
+    try (Document doc = Docx.create()) {
+      Paragraph p = doc.addParagraph();
+      Run heading = p.addRun("标题");
+      var ctr = heading.raw().getCTR();
+      var rpr = ctr.isSetRPr() ? ctr.getRPr() : ctr.addNewRPr();
+      var fonts = rpr.sizeOfRFontsArray() > 0 ? rpr.getRFontsArray(0) : rpr.addNewRFonts();
+      fonts.setAscii("Arial");
+      fonts.setEastAsia("黑体");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      AnnotatedView ann =
+          svc.annotated(doc, "doc-1", 1L, ViewQuery.defaults().withExpandRuns(true));
+      AnnotatedRun run = ann.paragraphs().get(0).runs().get(0);
+      assertThat(run.font()).isEqualTo("Arial");
+      assertThat(run.fontEastAsia()).isEqualTo("黑体");
+
+      ElementView element = svc.element(doc, "doc-1", 1L, run.ref());
+      assertThat(element.properties()).containsEntry("font", "Arial");
+      assertThat(element.properties()).containsEntry("fontEastAsia", "黑体");
     }
   }
 
@@ -239,6 +273,38 @@ class DocumentViewServiceTest {
       assertThat(view.kind()).isEqualTo("paragraph");
       assertThat(view.ref()).isEqualTo(ref);
       assertThat(view.properties()).containsKey("text");
+      // alignment 恒出现（未设置=left）——只读复审靠它核对居中类要求，属性缺失会被误读成「未设置」
+      assertThat(view.properties()).containsEntry("alignment", "left");
+    }
+  }
+
+  /** 居中段的元素详情暴露 alignment=center（命名与 {align=…} 写侧记号一致）。 */
+  @Test
+  void elementExposesAlignmentForReview(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("aligned.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("普通段");
+      io.github.nondirectional.docx.core.api.text.Paragraph centered =
+          doc.addParagraph("居中标题")
+              .heading(io.github.nondirectional.docx.core.api.style.HeadingLevel.H1);
+      centered.alignment(io.github.nondirectional.docx.core.api.style.Alignment.CENTER);
+      doc.addParagraph("两端对齐")
+          .alignment(io.github.nondirectional.docx.core.api.style.Alignment.JUSTIFY);
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      // 段落 ref 在 outline 里按正文顺序出现
+      assertThat(outline.entries()).hasSize(3);
+      ElementView plain = svc.element(doc, "doc-1", 1L, outline.entries().get(0).ref());
+      assertThat(plain.properties()).containsEntry("alignment", "left");
+      ElementView centered = svc.element(doc, "doc-1", 1L, outline.entries().get(1).ref());
+      assertThat(centered.properties()).containsEntry("alignment", "center");
+      assertThat(centered.properties()).containsEntry("headingLevel", 1);
+      ElementView justified = svc.element(doc, "doc-1", 1L, outline.entries().get(2).ref());
+      // JUSTIFY 用写侧记号名 both，让读者能与 {align=both} 对上
+      assertThat(justified.properties()).containsEntry("alignment", "both");
     }
   }
 

@@ -179,6 +179,27 @@ public final class Run implements InlineElement {
   }
 
   /**
+   * 返回 eastAsia（中文）字体槽的名称，未显式设置时返回 {@code null}。
+   *
+   * <p><b>为什么需要单独的读法。</b> {@link #font()} 返回的是西文（ascii/hAnsi）槽——POI {@code getFontFamily()} 只读
+   * ascii 槽；而中文文档的规范排版常是「西文 TNR + 中文宋体/黑体」的 <b>分离双槽</b>（{@code setFontFamily} 四槽同写做不到，只有经 {@code
+   * raw()} 的槽分离写法可以， 见 {@code poi-bridge.md}）。只读侧看不见 eastAsia 槽时，读者（如只读复审 Agent）会把「西文 TNR + 中文宋体」的
+   * run 误判成「字体是 TNR、没设宋体」。
+   *
+   * <p>读的是 {@code <w:rPr>/<w:rFonts>} 的 {@code w:eastAsia} 属性；四槽同写（{@link #font(String)}）后本值与
+   * {@link #font()} 相同。
+   *
+   * @return eastAsia 字体名，未设置则 {@code null}
+   */
+  public String fontEastAsia() {
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr rpr = delegate.getCTR().getRPr();
+    if (rpr == null || rpr.sizeOfRFontsArray() == 0) {
+      return null;
+    }
+    return rpr.getRFontsArray(0).getEastAsia();
+  }
+
+  /**
    * 设置文本颜色并返回 {@code this}。
    *
    * @param hex 颜色为 6 位十六进制 RGB 字符串（例如 {@code "FF0000"}），不能为 {@code null}

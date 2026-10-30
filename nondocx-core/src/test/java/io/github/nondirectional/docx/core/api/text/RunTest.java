@@ -31,6 +31,29 @@ class RunTest {
     assertThat(run.color()).isEqualTo("FF0000");
   }
 
+  /**
+   * eastAsia 槽读法：未设置为 null；四槽同写后与 font() 一致；经 raw() 的槽分离写法（编译器路径） 后 fontEastAsia() 能读到中文字体而 font()
+   * 仍是西文槽。
+   */
+  @Test
+  void fontEastAsiaReadsTheChineseSlotIndependently() {
+    Run plain = Docx.create().addParagraph().addRun("普通");
+    assertThat(plain.fontEastAsia()).isNull();
+
+    // font() 四槽同写：两槽一致
+    Run same = Docx.create().addParagraph().addRun("同字体").font("SimSun");
+    assertThat(same.fontEastAsia()).isEqualTo("SimSun");
+
+    // 槽分离（编译器 applyRunFonts 的写法）：只覆写 eastAsia 槽
+    Run split = Docx.create().addParagraph().addRun("中文宋体");
+    var ctr = split.raw().getCTR();
+    var rpr = ctr.isSetRPr() ? ctr.getRPr() : ctr.addNewRPr();
+    var fonts = rpr.sizeOfRFontsArray() > 0 ? rpr.getRFontsArray(0) : rpr.addNewRFonts();
+    fonts.setEastAsia("宋体");
+    assertThat(split.font()).isNull();
+    assertThat(split.fontEastAsia()).isEqualTo("宋体");
+  }
+
   @Test
   void boldItalicUnderlineCanBeClearedViaBooleanOverload() {
     Run run = Docx.create().addParagraph().addRun("x").bold().italic().underline();
