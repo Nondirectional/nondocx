@@ -1823,3 +1823,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - P3:20~30 条任务评测集(模板填充/歧义指代/重复文本),14B+27B 双模型;full 面对齐新观测面复跑
+
+
+## Session 46: P3 第一步:eval baseline 12→22 条
+<!-- trellis-session: v=2 fp=d9808b8ac3623f5b -->
+
+**Date**: 2026-10-30
+**Task**: P3 第一步:eval baseline 12→22 条
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- 新增 10 条任务补齐歧义指代/重复文本/组合类缺口;22/22@4.68 首跑全过,12 条回归零退化;记录两个行为:replace-with-format 9 次(无既有文本加粗 op,delete+insert 自愈)、同段双修订独占拆分 6 次(契约可教学性)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d0b3db` | chore(task): archive 10-30-eval-baseline-expansion |
+
+### Testing
+
+- [OK] EvalTasksTest 22 条防恒真全绿;eval 20261030-113314-518:compiler 22/22 平均 4.68
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 14B 对比(待模型);set_style 加粗 op 视数据决定;full 面对齐观测面复跑;QualityCheckTools 升级为编译器 post-condition(P2 遗留项)
