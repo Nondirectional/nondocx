@@ -1891,3 +1891,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - set_style 加粗 op(replace-with-format 信号);full 面对齐观测面复跑;14B 对比(待模型)
+
+
+## Session 48: replace_text 行内格式与 set_style 加粗
+<!-- trellis-session: v=2 fp=5188988dddf303d0 -->
+
+**Date**: 2026-10-30
+**Task**: replace_text 行内格式与 set_style 加粗
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- core Paragraph.copyRun（POI insertNewRun+set 影子技法，完整 rPr 含 eastAsia 继承）；PatchEngine replace_text 的 text 改按行内标记解析（单 run 外科手术式拆分、piece 倒序插入防格式逐份累积；跨 run 重建为 span 序列并修掉超链接幸存边角）；set_style 增加 bold/italic 整段布尔；eval baseline 23（新增 bold-existing-phrase）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c57ccc` | feat(core,toolkit): replace_text 支持行内格式 + set_style 加粗（补齐既有文本加粗） |
+
+### Testing
+
+- [OK] core 361 / toolkit 268 / examples 19 / demo 47 全绿，Spotless 通过；eval runId 20261030-124819-241：23/23 平均 4.26，replace-with-format 9→4 次（首个 op 即 text=**结论：通过** 一步命中），bold-existing-phrase 首跑过，validate_document 0 调用，22 条回归零退化
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- ① full 面对齐观测面复跑（9/10@6.2 数字已落后五个观测批次）② 14B 对比（等模型到位）③ tracked op 与行内格式叠加（本轮明确不做，看需求）
