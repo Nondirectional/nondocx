@@ -1789,3 +1789,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - fill_template/render_preview(P2 收尾);full 面对齐新观测面复跑对照
+
+
+## Session 45: fill_template 与 render_preview:P2 收尾+POI 行缓存脱链陷阱
+<!-- trellis-session: v=2 fp=715e7a2174347321 -->
+
+**Date**: 2026-10-30
+**Task**: fill_template 与 render_preview:P2 收尾+POI 行缓存脱链陷阱
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- TemplateFiller(mustache 子集:值/条件块/表格模板行,首 run 承载全文防字体槽污染)+RenderPreview(soffice headless,独立 profile 防实例锁);core Table.copyRowTo 影子行技法破 POI 5.3 addRow 脱链陷阱(字节码验证:wrapper 进缓存/内容复制进树,内存对落盘错);compiler 面 6→8,full 58 不动
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3039e48` | chore(task): archive 10-30-fill-template-render-preview |
+
+### Testing
+
+- [OK] core 361/toolkit 266/examples 21/demo 47 全绿;eval 20261030-104446-951:compiler 12/12 平均 4.50,fill-template 5 调用,11 条回归零退化
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- P3:20~30 条任务评测集(模板填充/歧义指代/重复文本),14B+27B 双模型;full 面对齐新观测面复跑
