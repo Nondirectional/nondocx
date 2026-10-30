@@ -17,6 +17,7 @@ public final class OutlineView {
   private final boolean hasFooter;
   private final int sectionCount;
   private final RevisionOverview revision;
+  private final CommentOverview comments;
 
   public OutlineView(
       ViewMeta meta,
@@ -25,7 +26,8 @@ public final class OutlineView {
       boolean hasHeader,
       boolean hasFooter,
       int sectionCount,
-      RevisionOverview revision) {
+      RevisionOverview revision,
+      CommentOverview comments) {
     this.meta = Objects.requireNonNull(meta, "meta 不能为空");
     this.entries = List.copyOf(entries);
     this.hasToc = hasToc;
@@ -33,6 +35,7 @@ public final class OutlineView {
     this.hasFooter = hasFooter;
     this.sectionCount = sectionCount;
     this.revision = Objects.requireNonNull(revision, "revision 不能为空");
+    this.comments = Objects.requireNonNull(comments, "comments 不能为空");
   }
 
   public ViewMeta meta() {
@@ -63,6 +66,11 @@ public final class OutlineView {
     return revision;
   }
 
+  /** 批注概览（总数/按作者计数/最近明细）——批注创作落地后的复审核对依据。 */
+  public CommentOverview comments() {
+    return comments;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
@@ -74,11 +82,13 @@ public final class OutlineView {
         && sectionCount == that.sectionCount
         && meta.equals(that.meta)
         && entries.equals(that.entries)
-        && revision.equals(that.revision);
+        && revision.equals(that.revision)
+        && comments.equals(that.comments);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(meta, entries, hasToc, hasHeader, hasFooter, sectionCount, revision);
+    return Objects.hash(
+        meta, entries, hasToc, hasHeader, hasFooter, sectionCount, revision, comments);
   }
 }

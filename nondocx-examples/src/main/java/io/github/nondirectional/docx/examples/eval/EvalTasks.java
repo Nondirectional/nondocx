@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 第一版评测集的 10 条任务。
+ * 第一版评测集的 11 条任务。
  *
  * <p>每条任务都从代码构造 seed，断言只依赖最终 docx 的结构/文本/样式，不依赖模型自述。 任务选择的原则不是「覆盖全部能力」，而是「能区分模型问题、接口问题、能力缺失」：
  *
@@ -26,6 +26,7 @@ import java.util.Map;
  *   <li>6~7：表格，检查多级坐标与建表/样式分步。
  *   <li>8~9：修订与批量替换，检查语义工具选择。
  *   <li>10：页脚页码，检查只读能力缺口。
+ *   <li>11：批注创作，检查 comment.add 与批注只读观测（锚定段/作者/正文不动）。
  * </ul>
  */
 public final class EvalTasks {
@@ -35,7 +36,7 @@ public final class EvalTasks {
 
   private EvalTasks() {}
 
-  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 10 条任务。 */
+  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 11 条任务。 */
   public static List<EvalTask> all() {
     return TASKS;
   }
@@ -376,6 +377,62 @@ public final class EvalTasks {
                       EvalAssert.isTrue(containsDigit(text), "页脚文本应包含数字，实际「" + text + "」");
                     })),
             true));
+
+    tasks.add(
+        new EvalTask(
+            "comment-add",
+            "给段落加批注",
+            "给第二段（「本季度预算为一百五十万元」）加一条批注，作者填「审查员」，" + "批注内容需要提到「数据来源」。不要修改正文。",
+            doc -> {
+              doc.addParagraph("项目背景");
+              doc.addParagraph("本季度预算为一百五十万元。");
+              doc.addParagraph("执行计划");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "批注存在",
+                    doc ->
+                        EvalAssert.isTrue(!doc.comments().list().isEmpty(), "期望至少 1 条批注，实际 0 条")),
+                EvalTask.NamedCheck.of(
+                    "作者正确",
+                    doc -> {
+                      boolean found = false;
+                      for (io.github.nondirectional.docx.core.api.comment.Comment c :
+                          doc.comments().list()) {
+                        if ("审查员".equals(c.author())) {
+                          found = true;
+                          break;
+                        }
+                      }
+                      EvalAssert.isTrue(found, "期望存在作者为「审查员」的批注");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "内容提到数据来源",
+                    doc -> {
+                      boolean found = false;
+                      for (io.github.nondirectional.docx.core.api.comment.Comment c :
+                          doc.comments().list()) {
+                        if (c.text() != null && c.text().contains("数据来源")) {
+                          found = true;
+                          break;
+                        }
+                      }
+                      EvalAssert.isTrue(found, "期望批注内容包含「数据来源」");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "锚定在预算段",
+                    doc -> {
+                      Paragraph budget = requireParagraph(doc, 1, "预算段");
+                      EvalAssert.isTrue(!budget.comments().isEmpty(), "期望批注锚定在第二段（预算段）");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "正文未修改",
+                    doc -> {
+                      EvalAssert.equal("项目背景", requireParagraph(doc, 0, "背景段").text(), "第 0 段");
+                      EvalAssert.equal(
+                          "本季度预算为一百五十万元。", requireParagraph(doc, 1, "预算段").text(), "第 1 段");
+                      EvalAssert.equal("执行计划", requireParagraph(doc, 2, "计划段").text(), "第 2 段");
+                    }))));
 
     return List.copyOf(tasks);
   }

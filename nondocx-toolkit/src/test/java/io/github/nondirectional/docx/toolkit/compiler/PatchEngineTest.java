@@ -606,6 +606,108 @@ class PatchEngineTest {
     }
   }
 
+  // ==================== comment.add op（v3） ====================
+
+  @Test
+  void commentAddCreatesWholeParagraphCommentReadableBack() {
+    Document doc = sample();
+    try {
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op", "comment.add",
+                      "anchor", "p1",
+                      "text", "这段需要补充依据",
+                      "author", "审查员")),
+              REPORT_CN,
+              false);
+      assertThat(result.changed()).containsExactly("p1");
+      // 文档级读回：1 条，author/text 正确
+      assertThat(doc.comments().list()).hasSize(1);
+      assertThat(doc.comments().list().get(0).author()).isEqualTo("审查员");
+      assertThat(doc.comments().list().get(0).text()).isEqualTo("这段需要补充依据");
+      // comment→paragraph 映射：挂在 p1，不挂 p0
+      assertThat(doc.paragraph(0).comments()).isEmpty();
+      assertThat(doc.paragraph(1).comments()).hasSize(1);
+      // 批注不改正文
+      assertThat(doc.paragraph(1).text()).isEqualTo("第二段");
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void commentAddValidatesAnchorTextAuthorAtomically() {
+    Document doc = sample();
+    try {
+      // author/text 必填、锚点必须存在
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(op("op", "comment.add", "anchor", "p0", "text", "批注")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("author");
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(op("op", "comment.add", "anchor", "p0", "author", "甲")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("text");
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(op("op", "comment.add", "anchor", "p9", "text", "批注", "author", "甲")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("p9");
+      // 原子性：同批第二条非法 → 第一条也不写入（零批注）
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op("op", "comment.add", "anchor", "p0", "text", "好", "author", "甲"),
+                          op("op", "comment.add", "anchor", "p8", "text", "坏", "author", "乙")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("p8");
+      assertThat(doc.comments().list()).isEmpty();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void commentAddSharesBatchWithReplaceTextOnSameAnchor() {
+    Document doc = sample();
+    try {
+      // comment.add 不改段落文本，不受同锚点改文本独占约束
+      PatchEngine.apply(
+          doc,
+          ops(
+              op("op", "replace_text", "anchor", "p0", "find", "第一段", "text", "首段"),
+              op("op", "comment.add", "anchor", "p0", "text", "已改写", "author", "审查员")),
+          REPORT_CN,
+          false);
+      assertThat(doc.paragraph(0).text()).isEqualTo("首段");
+      assertThat(doc.paragraph(0).comments()).hasSize(1);
+      assertThat(doc.paragraph(0).comments().get(0).text()).isEqualTo("已改写");
+    } finally {
+      doc.close();
+    }
+  }
+
   // ==================== fixture ====================
 
   private static Document sample() {

@@ -11,6 +11,8 @@ import io.github.nondirectional.docx.core.api.text.Run;
 import io.github.nondirectional.docx.toolkit.DocxToolkit;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedRun;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedView;
+import io.github.nondirectional.docx.toolkit.view.dto.CommentEntry;
+import io.github.nondirectional.docx.toolkit.view.dto.CommentOverview;
 import io.github.nondirectional.docx.toolkit.view.dto.ElementView;
 import io.github.nondirectional.docx.toolkit.view.dto.IssuesView;
 import io.github.nondirectional.docx.toolkit.view.dto.OutlineEntry;
@@ -430,6 +432,89 @@ class DocumentViewServiceTest {
       assertThat(detail.properties()).containsEntry("author", "审查员");
       assertThat(detail.properties()).containsKey("type");
       assertThat(detail.properties()).containsKey("text");
+    }
+  }
+
+  /** 段落详情恒出现 comments（空数组=无）——复审核对「这段挂了什么批注」的直接证据。 */
+  @Test
+  void elementParagraphShowsCommentsAlwaysPresent(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("commented.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("第一段");
+      doc.addParagraph("第二段");
+      doc.paragraph(1).addComment("审查员", "这段需要补充数据来源");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      String p0 = outline.entries().get(0).ref();
+      String p1 = outline.entries().get(1).ref();
+      // 无批注段：空数组（属性存在，不被读成「未知」）
+      ElementView e0 = svc.element(doc, "doc-1", 1L, p0);
+      assertThat((java.util.List<?>) e0.properties().get("comments")).isEmpty();
+      // 有批注段：id/author/text 齐全
+      ElementView e1 = svc.element(doc, "doc-1", 1L, p1);
+      java.util.List<java.util.Map<?, ?>> comments =
+          (java.util.List<java.util.Map<?, ?>>) e1.properties().get("comments");
+      assertThat(comments).hasSize(1);
+      assertThat(comments.get(0).get("author")).isEqualTo("审查员");
+      assertThat(comments.get(0).get("text")).isEqualTo("这段需要补充数据来源");
+      assertThat(comments.get(0).get("id")).isNotNull();
+    }
+  }
+
+  /** stats 恒出现 commentCount：无批注 0；加批注后按文档级计数。 */
+  @Test
+  void statsCountsComments(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("counted.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("第一段");
+      doc.addParagraph("第二段");
+      doc.paragraph(0).addComment("甲", "一条");
+      doc.paragraph(1).addComment("乙", "两条");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      assertThat(svc.stats(doc, "doc-1", 1L).commentCount()).isEqualTo(2);
+    }
+    Path plain = tmp.resolve("plain.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("正文");
+      doc.save(plain);
+    }
+    try (Document doc = Docx.open(plain)) {
+      assertThat(svc.stats(doc, "doc-1", 1L).commentCount()).isEqualTo(0);
+    }
+  }
+
+  /** outline 批注概览带作者计数与最近明细（锚定段落 ref/作者/片段），ref 可直通 view_element。 */
+  @Test
+  void outlineCommentOverviewCarriesAuthorsAndRecentEntries(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("overview.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("第一段");
+      doc.addParagraph("第二段");
+      doc.paragraph(0).addComment("审查员", "首段意见");
+      doc.paragraph(1).addComment("审查员", "次段意见");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      CommentOverview comments = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults()).comments();
+      assertThat(comments.total()).isEqualTo(2);
+      assertThat(comments.countByAuthor()).containsEntry("审查员", 2);
+      assertThat(comments.recent()).hasSize(2);
+      assertThat(comments.recent())
+          .extracting(CommentEntry::snippet)
+          .containsExactlyInAnyOrder("首段意见", "次段意见");
+      // recent 的锚定段落 ref 可直通 view_element，其 comments 里能找到同一条批注
+      for (CommentEntry entry : comments.recent()) {
+        ElementView detail = svc.element(doc, "doc-1", 1L, entry.paragraph());
+        assertThat(detail.kind()).isEqualTo("paragraph");
+        assertThat((java.util.List<?>) detail.properties().get("comments")).isNotEmpty();
+      }
     }
   }
 }

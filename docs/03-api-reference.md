@@ -95,6 +95,7 @@ Document fresh = Docx.create();
 | 方法 | 教程位置 |
 |---|---|
 | `addComment(author, text)` ✏️ | [06/03](./06-comments/03-authoring.md)（整段范围批注，返回 `Comment`） |
+| `comments()` 👁 | 锚定在本段的批注列表（comment→paragraph 映射，活对象语义） |
 
 > 长度单位：twips（`indent`、Section 的 `margins`）。1 inch = 1440 twips。字号 `fontSize` 用磅。
 
@@ -254,6 +255,7 @@ Document fresh = Docx.create();
 | `doc.comments().list()` / `get(id)` 👁 | 只读枚举（body 顺序）/ 按 id 命中 |
 | `doc.comments().reply(parentId, author, text)` ✏️ | 回复（形成线程），返回 `Comment` |
 | `paragraph.addComment(author, text)` ✏️ | 创作（整段范围），返回 `Comment` |
+| `paragraph.comments()` 👁 | 锚定在本段的批注（与 `addComment` 读写对称） |
 | `comment.id()` / `author()` / `text()` 👁 | 基础元数据（id 跨会话稳定） |
 | `comment.date()` / `initials()` 👁 | 时间 / 缩写（可能 null / 空串） |
 | `comment.parentId()` 👁 | `Optional<String>`，回复批注指向父 id |

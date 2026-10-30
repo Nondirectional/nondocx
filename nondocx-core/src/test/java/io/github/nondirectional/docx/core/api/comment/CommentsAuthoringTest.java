@@ -159,6 +159,66 @@ class CommentsAuthoringTest {
     }
   }
 
+  // ---------- Paragraph.comments(): comment→paragraph 映射 ----------
+
+  @Test
+  void paragraphCommentsEmptyWhenDocumentHasNoComments(@TempDir Path tmp) throws Exception {
+    Path file = writeDocxWithContent(tmp, "内容");
+    try (Document doc = Docx.open(file)) {
+      assertThat(doc.paragraph(0).comments()).isEmpty();
+    }
+  }
+
+  @Test
+  void paragraphCommentsReturnsOnlyCommentsAnchoredInThisParagraph(@TempDir Path tmp)
+      throws Exception {
+    Path file = writeDocxWithContent(tmp, "段A", "段B");
+    try (Document doc = Docx.open(file)) {
+      doc.paragraph(0).addComment("甲", "第一段的问题");
+      doc.paragraph(0).addComment("乙", "补充意见");
+      doc.paragraph(1).addComment("丙", "第二段的问题");
+
+      // comment→paragraph 映射:每段只看到自己的批注,按 XML 出现顺序。
+      // addComment 把 commentRangeStart 插在段首,同段第二条在第一条之前 → 同段内后写的先出现(LIFO)。
+      assertThat(doc.paragraph(0).comments()).hasSize(2);
+      assertThat(doc.paragraph(0).comments().get(0).author()).isEqualTo("乙");
+      assertThat(doc.paragraph(0).comments().get(0).text()).isEqualTo("补充意见");
+      assertThat(doc.paragraph(0).comments().get(1).author()).isEqualTo("甲");
+      assertThat(doc.paragraph(0).comments().get(1).text()).isEqualTo("第一段的问题");
+      assertThat(doc.paragraph(1).comments()).hasSize(1);
+      assertThat(doc.paragraph(1).comments().get(0).author()).isEqualTo("丙");
+      assertThat(doc.paragraph(1).comments().get(0).text()).isEqualTo("第二段的问题");
+    }
+  }
+
+  @Test
+  void paragraphCommentsIsLiveAcrossCreation(@TempDir Path tmp) throws Exception {
+    Path file = writeDocxWithContent(tmp, "内容");
+    try (Document doc = Docx.open(file)) {
+      Paragraph p = doc.paragraph(0);
+      assertThat(p.comments()).isEmpty();
+      p.addComment("甲", "刚写的");
+      // 活对象语义:创作后立即读回,无需重开文档
+      assertThat(p.comments()).hasSize(1);
+      assertThat(p.comments().get(0).text()).isEqualTo("刚写的");
+    }
+  }
+
+  @Test
+  void paragraphCommentsSurvivesRoundTrip(@TempDir Path tmp) throws Exception {
+    Path file = writeDocxWithContent(tmp, "段A", "段B");
+    try (Document doc = Docx.open(file)) {
+      doc.paragraph(1).addComment("审查员", "这段的依据要标注");
+      doc.save(file.resolveSibling("mapped-out.docx"));
+    }
+    try (Document doc = Docx.open(file.resolveSibling("mapped-out.docx"))) {
+      assertThat(doc.paragraph(0).comments()).isEmpty();
+      assertThat(doc.paragraph(1).comments()).hasSize(1);
+      assertThat(doc.paragraph(1).comments().get(0).author()).isEqualTo("审查员");
+      assertThat(doc.paragraph(1).comments().get(0).text()).isEqualTo("这段的依据要标注");
+    }
+  }
+
   // ---------- helpers ----------
 
   /** 用 XmlBeans 手搓一个含若干带内容段落的 docx(确定性,不依赖 Word)。 */

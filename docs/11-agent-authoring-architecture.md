@@ -611,6 +611,32 @@ tracked-replace 6→4（复审首次给出「del: 一百万元 / ins: 两百万�
 证据）、footer-page-number 4→3（复审读到「页脚文本为第 1 页」）。至此 baseline 十个任务的
 复审不再对已正确的文档误报。
 
+### 6.7 批注创作 op：观测面先行的增量（2026-10-30）
+
+批注是修订的近亲（同为「作者署名的协作标记」），core 早已备好全链路
+（`Paragraph.addComment` / `doc.comments()`），但 compiler 面没有 op、view 层零观测——
+若只加 op 不补观测，批注任务会重演 §6.6 的误报循环。本次按「写读对称」一次到位：
+
+- **写侧**：`edit_document` 新增 `comment.add`（op 10→11，`anchor+text+author` 必传，
+  整段范围批注）。批注不改段落文本，**不受同锚点改文本独占约束**（可与 `replace_text`
+  同批作用于同段）——这是它与 tracked.\* 的关键差异。
+- **读侧（core）**：新增 `Paragraph.comments()`——锚定在本段的批注列表（活对象语义）。
+  这是 comment→paragraph 映射的唯一公共入口，POI 扫描（CTP 子树内 `commentRangeStart`）
+  下沉 `CommentNodes.commentsAnchoredIn`。已知语义：`addComment` 把锚点插在段首，同段
+  多条批注按 XML 出现序读取是**后写先出**（LIFO）。
+- **读侧（view/compiler）**：三处恒出现——`view_element` 段落详情 `comments`
+  `[{id,author,text}]`（空数组=无）；`view_stats` `commentCount`；`view_outline` 批注概览
+  `CommentOverview{total,countByAuthor,recent[{paragraph,author,snippet}]}`（与修订概览
+  同型，ref 可直通 view_element）。compiler 面的 `read_document` 以整行元数据注释呈现
+  `<!-- 批注 pN [作者]: 内容 -->`（round-trip 安全，解析器跳过整行注释）。
+- **评测**：baseline 增至 11 条（`comment-add`：锚定段/作者/内容关键词/正文不动四类
+  check，防恒真由「批注存在」在 seed 上失败保证）。
+
+结果（runId `20261030-100451-694`，compiler 面）：**11/11，平均 3.91**（§6.6 终版 10 任务
+4.20）。`comment-add` 首跑即过：current_document → read_document →
+`comment.add`（p1，「请核实该预算金额的数据来源。」）→ review 达成，4 次调用；复审给出
+具体证据（引用批注原文与作者），未出现 §6.6 式盲区循环——观测面先行一步到位的收益。
+
 ---
 
 ## 7. 明确不做什么

@@ -18,7 +18,8 @@ import io.github.nondirectional.docx.core.api.text.Run;
  * Markdown</b>——模型读到什么，就能照着写什么给 {@code create_document}。两者共享「只读、不改文档」的边界。
  *
  * <p>已知取舍（v1）：超链接/图片折叠为其文本；表格单元格输出纯文本；正文之外的容器只有页脚以元数据注释行进视图 （{@code <!-- 页脚: …
- * -->}，v2——页码写入后供模型核对），页眉/表格内段落不在本视图内。
+ * -->}，v2——页码写入后供模型核对），页眉/表格内段落不在本视图内。批注以整行元数据注释紧跟被评段落（{@code <!-- 批注 pN [作者]: 内容
+ * -->}，v3——comment.add 落地后模型可直接读到核对）。
  */
 public final class MarkdownView {
 
@@ -116,6 +117,17 @@ public final class MarkdownView {
       sb.append(body.isEmpty() ? "" : body).append(attr).append(' ').append(anchor).append('\n');
     } else {
       sb.append(marker).append(body).append(' ').append(anchor).append('\n');
+    }
+    // 批注元数据行（整行注释）：模型核对「这段挂了什么批注」的读侧依据；
+    // 整行注释被解析器跳过，round-trip 不产生脏块。格式与页脚元数据行同族。
+    for (io.github.nondirectional.docx.core.api.comment.Comment c : paragraph.comments()) {
+      sb.append("<!-- 批注 p")
+          .append(seq)
+          .append(" [")
+          .append(c.author())
+          .append("]: ")
+          .append(escapeText(c.text()))
+          .append(" -->\n");
     }
   }
 

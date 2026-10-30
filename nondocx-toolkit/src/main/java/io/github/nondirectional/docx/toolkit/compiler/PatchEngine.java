@@ -26,7 +26,7 @@ import java.util.Set;
  * <p><b>原子性。</b> 先 preflight 全部 op：锚点存在、参数合法、{@code find} 在段落文本中、 行列在界内、表格块只允许插到文档末尾、被本 patch 前序 op
  * 删除的锚点不得再引用。任一 失败抛 {@link PatchException}，<b>零写入</b>。执行期不存在可预期失败分支；POI 意外异常 直接上抛（由工具层报告「可能部分应用」）。
  *
- * <p><b>op 集（v2，10 种）：</b>
+ * <p><b>op 集（v2，11 种）：</b>
  *
  * <ul>
  *   <li>{@code insert}——Markdown 块插入 {@code before}/{@code after} 锚点或文档 {@code start}/{code
@@ -41,7 +41,9 @@ import java.util.Set;
  *       changes）写作：ins / del / del+ins 配对，{@code author} 必传。替换是最小 diff——只 del「find」范围、ins 紧随其后（core
  *       {@code replaceTrackedRange}）；
  *   <li>{@code footer.set_page_number}——页脚追加页码段落，{@code format} 支持 {@code {page}}/{@code {pages}}
- *       占位符（PAGE/NUMPAGES 域，带缓存结果 "1"，非渲染读者也能读到数字）。
+ *       占位符（PAGE/NUMPAGES 域，带缓存结果 "1"，非渲染读者也能读到数字）；
+ *   <li>{@code comment.add}——给锚点段落加整段范围批注（core {@code Paragraph.addComment}），{@code author}
+ *       必传。不改段落文本，不受同锚点改文本独占约束。
  * </ul>
  *
  * <p><b>同锚点独占（v2）。</b> tracked.* 与 {@code replace_text} 都改段落文本，而修订的偏移量按 <b>执行时活文本</b> 计算（tracked
@@ -192,6 +194,8 @@ public final class PatchEngine {
         return planTrackedFindOp(index, op, anchor, snapshot, false);
       case "footer.set_page_number":
         return planFooterPageNumber(index, op);
+      case "comment.add":
+        return planCommentAdd(index, op, anchor, snapshot);
       default:
         throw new PatchException(
             "op["
@@ -199,7 +203,8 @@ public final class PatchEngine {
                 + "] 未知操作类型: "
                 + kind
                 + "（可用: insert/replace_text/delete/set_style/table.set_cell/table.add_row/"
-                + "tracked.insert/tracked.delete/tracked.replace/footer.set_page_number）");
+                + "tracked.insert/tracked.delete/tracked.replace/footer.set_page_number/"
+                + "comment.add）");
     }
   }
 
@@ -580,6 +585,29 @@ public final class PatchEngine {
           throw new IllegalStateException(
               "tracked op 执行期未命中「" + find + "」（不应发生，文本在 preflight 后被改动）");
         }
+        changed.add(anchor);
+      }
+    };
+  }
+
+  /**
+   * comment.add：给锚点段落加整段范围批注（core {@code Paragraph.addComment}）。不改段落文本—— 不参与同锚点改文本独占（{@link
+   * #claimAnchor}），可与 replace_text 同批作用于同段。
+   */
+  private static PlannedOp planCommentAdd(
+      int index, Map<String, Object> op, String anchor, Snapshot snapshot) {
+    Paragraph paragraph = snapshot.requireParagraph(anchor, index);
+    String text = str(op, "text", index);
+    String author = author(op, index);
+    return new PlannedOp("comment.add " + anchor + " 「" + text + "」") {
+      @Override
+      void execute(
+          Document doc,
+          Snapshot snap,
+          List<String> changed,
+          List<String> warningsOut,
+          StyleProfile profile) {
+        paragraph.addComment(author, text);
         changed.add(anchor);
       }
     };

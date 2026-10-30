@@ -25,6 +25,8 @@ import io.github.nondirectional.docx.toolkit.ref.TableRef;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedParagraph;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedRun;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedView;
+import io.github.nondirectional.docx.toolkit.view.dto.CommentEntry;
+import io.github.nondirectional.docx.toolkit.view.dto.CommentOverview;
 import io.github.nondirectional.docx.toolkit.view.dto.ElementView;
 import io.github.nondirectional.docx.toolkit.view.dto.FontStat;
 import io.github.nondirectional.docx.toolkit.view.dto.IssueEntry;
@@ -83,6 +85,12 @@ public final class DocumentViewService {
 
   /** stats 页脚文本预览的截断长度。 */
   private static final int FOOTER_PREVIEW_MAX = 120;
+
+  /** outline 批注概览 recent 的最大条数。 */
+  private static final int RECENT_COMMENTS_MAX = 5;
+
+  /** outline 批注概览 snippet 的截断长度（与修订 recent 片段同档）。 */
+  private static final int COMMENT_SNIPPET_MAX = 40;
 
   private final ReferenceContext referenceContext;
   private final QualityCheckTools qualityCheckTools;
@@ -147,6 +155,8 @@ public final class DocumentViewService {
         rev.recent().stream()
             .map(e -> new RevisionEntry(e.ref(), e.type(), e.author(), e.snippet()))
             .collect(java.util.stream.Collectors.toList());
+    ElementResolver commentResolver =
+        referenceContext.resolver(new DocumentRef(docId, generation), doc);
     return new OutlineView(
         meta,
         entries,
@@ -159,7 +169,57 @@ public final class DocumentViewService {
             rev.totalCount(),
             rev.countByType(),
             rev.countByAuthor(),
-            recent));
+            recent),
+        buildCommentOverview(doc, commentResolver));
+  }
+
+  /**
+   * 构建批注概览：总数/按作者计数用文档级 {@code doc.comments().list()}（含锚在单元格内段落的批注）， recent 明细带锚定段落 ref（顶层段落一遍
+   * {@code Paragraph.comments()} 建 id→ref 映射）。
+   *
+   * <p>与修订概览同型：批注创作（{@code comment.add}）落地后复审要能从只读视图核对「作者/内容/挂哪段」， 否则会像修订作者盲区一样把已正确的文档误报「未达成」。
+   */
+  private static CommentOverview buildCommentOverview(Document doc, ElementResolver resolver) {
+    List<io.github.nondirectional.docx.core.api.comment.Comment> all;
+    try {
+      all = doc.comments().list();
+    } catch (RuntimeException e) {
+      all = List.of();
+    }
+    Map<String, Integer> countByAuthor = new LinkedHashMap<>();
+    for (io.github.nondirectional.docx.core.api.comment.Comment c : all) {
+      countByAuthor.merge(c.author(), 1, Integer::sum);
+    }
+    Map<String, String> anchorRefById = new HashMap<>();
+    for (BodyElement be : doc.bodyElements()) {
+      if (!(be instanceof Paragraph)) {
+        continue;
+      }
+      Paragraph p = (Paragraph) be;
+      try {
+        List<io.github.nondirectional.docx.core.api.comment.Comment> anchored = p.comments();
+        if (!anchored.isEmpty()) {
+          String ref = resolver.reference(p).canonical();
+          for (io.github.nondirectional.docx.core.api.comment.Comment c : anchored) {
+            anchorRefById.putIfAbsent(c.id(), ref);
+          }
+        }
+      } catch (RuntimeException ignored) {
+        // 单段解析失败跳过，不让批注概览拖垮整个 outline
+      }
+    }
+    List<CommentEntry> recent = new ArrayList<>();
+    for (io.github.nondirectional.docx.core.api.comment.Comment c : all) {
+      if (recent.size() >= RECENT_COMMENTS_MAX) {
+        break;
+      }
+      recent.add(
+          new CommentEntry(
+              anchorRefById.get(c.id()),
+              c.author(),
+              truncate(c.text() == null ? "" : c.text(), COMMENT_SNIPPET_MAX)));
+    }
+    return new CommentOverview(all.size(), countByAuthor, recent);
   }
 
   // ==================== text ====================
@@ -302,6 +362,7 @@ public final class DocumentViewService {
         doc.sections().size(),
         doc.bodyElements().size(),
         ov.trackedChangeCount(),
+        commentCount(doc),
         ov.hasToc(),
         ov.hasHeader(),
         ov.hasFooter(),
@@ -326,6 +387,15 @@ public final class DocumentViewService {
           : text.substring(0, FOOTER_PREVIEW_MAX);
     } catch (RuntimeException ignored) {
       return null;
+    }
+  }
+
+  /** 批注总数（文档级，恒出现——0=无）；core 读取异常时退回 0，不阻塞 stats。 */
+  private static int commentCount(Document doc) {
+    try {
+      return doc.comments().list().size();
+    } catch (RuntimeException ignored) {
+      return 0;
     }
   }
 
@@ -402,6 +472,17 @@ public final class DocumentViewService {
             properties.put("headingLevel", hl);
           }
           properties.put("listItem", p.listLevel() != null);
+          // 批注恒出现（空数组=无）：复审核对「这段挂了哪些批注」的直接证据；
+          // 属性缺失会被读成「未知/未设置」，与 alignment 恒出现同理
+          List<Map<String, Object>> comments = new ArrayList<>();
+          for (io.github.nondirectional.docx.core.api.comment.Comment c : p.comments()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", c.id());
+            entry.put("author", c.author());
+            entry.put("text", c.text());
+            comments.add(entry);
+          }
+          properties.put("comments", comments);
           break;
         }
       case TABLE:

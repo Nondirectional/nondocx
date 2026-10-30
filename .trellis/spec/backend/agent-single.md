@@ -209,6 +209,9 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 `view_outline` 修订概览带 `countByAuthor` 与 `recent` 明细（ref/type/author/片段，ref 可直通
 `view_element`）；`view_stats` 带 `footerText` 预览（截断 120，无页脚为 null）。
 **只富化既有工具输出，不增工具数**——full 58 / compiler 6 基线不动。
+第三批（同日，随 `comment.add`）补批注观测：段落详情 `comments` 数组（恒出现，空=无）、
+`view_stats` `commentCount`、`view_outline` 批注概览
+`CommentOverview{total,countByAuthor,recent[{paragraph,author,snippet}]}`（与修订概览同型）。
 
 > **属性可见性是复审的地基**（2026-10-30 教训）：复审 SubAgent 只能依据工具**可见**的属性下结论，
 > 「详情里没有 alignment」会被它解读成「未设置对齐」——`insert-centered-title` 曾因此空转 24 次
@@ -270,3 +273,14 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 - **read_document 的页脚元数据行**（P2 续）：`MarkdownView` 在正文后输出
   `<!-- 页脚: … -->`（存在且非空才输出）——页码写入后模型能读到核对；注释形态保
   round-trip（`CompilerPipelineTest#markdownViewShowsFooterAsMetadataAndKeepsRoundTrip`）。
+- **comment.add 与批注观测**（v3，2026-10-30）：`comment.add`（`anchor+text+author` 必传）
+  委托 core `Paragraph.addComment` 整段范围批注。批注**不改段落文本**，不参与同锚点
+  改文本独占（`claimAnchor` 只管 tracked.\*/`replace_text`）——可与 `replace_text` 同批
+  作用于同段。comment→paragraph 映射的唯一公共入口是 core `Paragraph.comments()`
+  （活对象语义；POI CTP 子树扫描下沉 `CommentNodes.commentsAnchoredIn`）。已知读侧语义：
+  `addComment` 把 `commentRangeStart` 插在段首，同段多条按 XML 出现序读取是**后写先出**
+  （LIFO）——断言顺序时注意。新增「作者署名标记」类能力时写读必须同批落地：只有写侧
+  op 没有读侧观测，复审会把已正确的文档误报「未达成」（§6.6 同族教训）。
+- **read_document 的批注元数据行**（v3）：`MarkdownView` 在被评段落行后输出整行
+  `<!-- 批注 pN [作者]: 内容 -->`（每条一行）；round-trip 由「解析器跳过整行注释」保证
+  （`CompilerPipelineTest#markdownViewShowsCommentAsMetadataAndKeepsRoundTrip`）。

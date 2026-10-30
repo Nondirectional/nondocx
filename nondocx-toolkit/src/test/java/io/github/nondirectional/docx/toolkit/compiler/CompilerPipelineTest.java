@@ -241,6 +241,25 @@ class CompilerPipelineTest {
   }
 
   @Test
+  void markdownViewShowsCommentAsMetadataAndKeepsRoundTrip() {
+    MarkdownDoc parsed = MarkdownParser.parse("第一段。\n\n第二段。");
+    Document doc = DocumentCompiler.compile(parsed, StyleProfile.builtin("plain")).document();
+    try {
+      // 无批注：视图不出现批注行
+      assertThat(MarkdownView.render(doc, 0).markdown()).doesNotContain("批注");
+      // 有批注：整行元数据注释紧跟被评段落，round-trip 时被解析器跳过
+      doc.paragraph(1).addComment("审查员", "这段需要补充依据");
+      String markdown = MarkdownView.render(doc, 0).markdown();
+      assertThat(markdown).contains("第二段。 <!-- p1 -->\n<!-- 批注 p1 [审查员]: 这段需要补充依据 -->");
+      MarkdownDoc reparsed = MarkdownParser.parse(markdown);
+      assertThat(reparsed.blocks()).hasSize(2);
+      assertThat(reparsed.warnings()).isEmpty();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
   void markdownViewTruncatesAtLineBoundary() {
     StringBuilder big = new StringBuilder();
     for (int i = 0; i < 200; i++) {

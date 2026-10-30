@@ -288,6 +288,25 @@ public final class Paragraph implements BodyElement {
   }
 
   /**
+   * 返回锚定在本段落范围内的全部批注(活跃视图,按出现顺序)。
+   *
+   * <p>「锚定在本段」= 批注的 {@code commentRangeStart} 出现在本段 {@code CTP} 子树内({@link #addComment}
+   * 创作的整段范围批注天然满足;手工用 XmlBeans 插进本段任意层级的锚点也算)。与 {@link #addComment} 读写对称: 创作后立即可读回,是
+   * comment→paragraph 映射的唯一公共入口(view 层的「这段挂了哪些批注」、eval 的 「批注锚定在正确段落」都靠它)。
+   *
+   * <p><b>活对象语义。</b> 每次调用当场重扫子树,不缓存——文档改动实时反映(与 {@code
+   * io.github.nondirectional.docx.core.api.comment.Comments#list()} 一致)。
+   *
+   * <p><b>防御式。</b> 单条批注解析失败跳过该条,不整体抛异常(与 {@code Comments.list()} 同口径)。 文档无任何批注部件时返回空列表。
+   *
+   * @return 锚定在本段的批注列表(可能为空,从不为 {@code null})
+   */
+  public List<Comment> comments() {
+    return io.github.nondirectional.docx.core.internal.poi.CommentNodes.commentsAnchoredIn(
+        delegate.getDocument(), delegate.getCTP());
+  }
+
+  /**
    * 将本段落中一个已有的 run 显式标记为 tracked deletion(删除),并返回 {@code this}。
    *
    * <p>目标 run 从「普通正文 run」迁入 {@code <w:del>} 修订节点(其 {@code <w:t>} 转为 {@code

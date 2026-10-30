@@ -14,6 +14,7 @@ import org.apache.poi.xwpf.usermodel.XWPFComments;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.xmlbeans.XmlCursor;
+import org.apache.xmlbeans.XmlObject;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBody;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTMarkupRange;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR;
@@ -125,6 +126,84 @@ public final class CommentNodes {
     // 孤儿降级:Map 里没被 body 锚点命中的批注,按部件顺序追加末尾
     appendOrphans(allByPartOrder, byId, seen, out, threads);
     return out;
+  }
+
+  /**
+   * 枚举锚定在给定子树(通常是某个段落的 {@code CTP})内的全部批注,按出现顺序返回。
+   *
+   * <p>「锚定在段落里」= {@code commentRangeStart} 出现在该段落的 {@code CTP} 子树内。与 {@link #collect} 共用同一套
+   * XmlCursor 深度优先遍历(byId 构建/线程解析/防御式产出),只是遍历范围从 {@code CTBody} 缩到一个段落子树—— 这是 {@code
+   * Paragraph.comments()} 的 comment→paragraph 映射依据,view/eval 靠它回答「这条批注挂在哪段」。
+   *
+   * <p>孤儿批注({@code comments.xml} 有、body 无锚点)不属于任何段落,本方法不返回它们。
+   *
+   * @param document POI 文档(不能为 {@code null})
+   * @param subtree 要扫描的子树根(不能为 {@code null};通常是 {@code XWPFParagraph.getCTP()})
+   * @return 锚定在该子树内的批注列表(按出现顺序;可能为空,从不为 {@code null})
+   */
+  public static List<Comment> commentsAnchoredIn(XWPFDocument document, XmlObject subtree) {
+    java.util.Objects.requireNonNull(document, "document");
+    java.util.Objects.requireNonNull(subtree, "subtree");
+    List<Comment> out = new ArrayList<>();
+    XWPFComments xcomments = document.getDocComments();
+    if (xcomments == null) {
+      return out;
+    }
+    List<XWPFComment> allByPartOrder = readAllSafe(xcomments);
+    Map<String, XWPFComment> byId = new HashMap<>();
+    for (XWPFComment c : allByPartOrder) {
+      String id = commentIdOf(c);
+      if (id != null) {
+        byId.putIfAbsent(id, c);
+      }
+    }
+    if (byId.isEmpty()) {
+      return out;
+    }
+    ThreadResolver threads = ThreadResolver.build(document, byId);
+    // 先收集子树内 commentRangeStart 的 id(出现顺序、去重),再按序产出
+    List<String> idsInOrder = new ArrayList<>();
+    XmlCursor cur = subtree.newCursor();
+    try {
+      collectRangeStartIdsInSubtree(cur, new HashSet<>(), idsInOrder);
+    } finally {
+      cur.dispose();
+    }
+    for (String id : idsInOrder) {
+      XWPFComment c = byId.get(id);
+      if (c != null) {
+        produceSafe(c, out, threads);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 用 {@link XmlCursor} 深度优先遍历 cursor 所指元素的整棵子树,按出现顺序收集 {@code commentRangeStart} 的 {@code
+   * w:id}(去重)。
+   *
+   * <p>与 {@link #collectRangeStartIds} 同套路(push/pop 状态管理、任意层级下钻),但只收 id 不产出—— 调用方({@link
+   * #commentsAnchoredIn})随后按 id 从 Map 取批注,两段分开让「范围扫描」与「批注产出」解耦。
+   *
+   * @param cur 指向子树根的 cursor(本方法 {@code toFirstChild} 进入第一层子并遍历整棵子树)
+   */
+  private static void collectRangeStartIdsInSubtree(
+      XmlCursor cur, Set<String> seen, List<String> ids) {
+    if (!cur.toFirstChild()) {
+      return;
+    }
+    do {
+      String local = cur.getName() == null ? "" : cur.getName().getLocalPart();
+      if ("commentRangeStart".equals(local)) {
+        String id = readWAttribute(cur, "id");
+        if (id != null && seen.add(id)) {
+          ids.add(id);
+        }
+      }
+      cur.push();
+      collectRangeStartIdsInSubtree(cur, seen, ids);
+      cur.pop();
+    } while (cur.toNextSibling());
   }
 
   /**

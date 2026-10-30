@@ -218,7 +218,7 @@ check_quality({
 | `create_document` | Markdown 子集 + 样式 profile 一次性编译整份 docx，**替换** doc_id 会话文档（句柄不变、generation+1） |
 | `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页脚以 `<!-- 页脚: … -->` 元数据行呈现，与写侧同构（round-trip） |
 | `validate_document` | 复用 10 项质量检查，输出带 `v1/v2` 编号的问题清单 |
-| `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number），短 ID 锚点，支持 dry_run |
+| `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number/comment.add），短 ID 锚点，支持 dry_run |
 
 **Markdown 子集**：`#`~`######` 标题（可带 `{align=center|left|right|both}` 行尾属性）、段落、
 `**粗体**`/`*斜体*`/`` `代码` ``、`- `/`1. ` 列表（缩进 2 空格一级）、`|…|` 表格
@@ -259,6 +259,7 @@ create_document({
 {"op":"tracked.insert","anchor":"p1","text":"补充说明。","author":"审查员"}
 {"op":"tracked.delete","anchor":"p1","find":"过期内容","author":"审查员"}
 {"op":"footer.set_page_number"}                          // format 默认「第 {page} 页」
+{"op":"comment.add","anchor":"p1","text":"金额需复核","author":"审查员"}
 ```
 
 先 preflight 全部 op 再统一写入：锚点不存在、`find` 不在文中、行列越界、表格块非 end
@@ -275,6 +276,12 @@ create_document({
 占位符（PAGE/NUMPAGES 域）。域带**缓存结果** "1"（五 run 形态：begin/instr/separate/result/end）
 ——POI/文本抽取器能读到「第 1 页」，Word/WPS 打开时按当前文档重算。同锚点独占规则不适用于
 页脚 op（它不占段落锚点）。
+
+**comment.add（批注）**：给锚点段落加**整段范围**批注（core `Paragraph.addComment`），
+`text`/`author` 必传（`author` 是 Word 批注窗格显示的作者名）。批注不改段落文本，不受同锚点
+改文本独占约束（可与 `replace_text` 同批作用于同段）。读侧三处可见：`read_document` 的
+`<!-- 批注 pN [作者]: 内容 -->` 元数据行、view 层段落详情 `comments` 数组（core
+`Paragraph.comments()` 映射）与 outline 批注概览。
 
 **位置约定**：本组在 `DocxToolkit.scanAll` 里（能力清单第 9 组，EXPERIMENTAL 级），但
 **默认不进 demo/eval 的 full 工具面**——是否成为默认面由评测数据决定（见 doc 11 §P1/P2）。
