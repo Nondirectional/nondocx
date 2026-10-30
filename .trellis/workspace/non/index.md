@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 48
+- **Total Sessions**: 49
 - **Last Active**: 2026-10-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1927 | Active |
+| `journal-1.md` | ~1961 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 49 | 2026-10-30 | full 面对齐观测面复跑 | `a0a5b8f` | `feat/paragraph-spacing-hf-refs` |
 | 48 | 2026-10-30 | replace_text 行内格式与 set_style 加粗 | `4c57ccc` | `feat/paragraph-spacing-hf-refs` |
 | 47 | 2026-10-30 | P2 全部收尾:质检升级为编译器 post-condition | `9dfd8ec` | `feat/paragraph-spacing-hf-refs` |
 | 46 | 2026-10-30 | P3 第一步:eval baseline 12→22 条 | `8d0b3db` | `feat/paragraph-spacing-hf-refs` |

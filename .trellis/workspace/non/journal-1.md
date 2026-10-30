@@ -1925,3 +1925,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - ① full 面对齐观测面复跑（9/10@6.2 数字已落后五个观测批次）② 14B 对比（等模型到位）③ tracked op 与行内格式叠加（本轮明确不做，看需求）
+
+
+## Session 49: full 面对齐观测面复跑
+<!-- trellis-session: v=2 fp=3264272495c48f03 -->
+
+**Date**: 2026-10-30
+**Task**: full 面对齐观测面复跑
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- 23 任务 baseline 复跑 full 面（runId 20261030-125616-728）：原始 15/23@11.83 vs compiler 23/23@4.26；8 失败逐 trace 归因全部静态缺口（页脚写/批注×2/模板×2/列表/段落删除/真空单元格/run 拆分），零行为失败；bold-existing-phrase 空洞通过被识破（整 run 全加粗），check 加严格子集断言后诚实口径 14/23，compiler 复验仍 4 次过；9 条缺口任务 capabilityGap flag + 锁测试；poi-bridge N2 真空单元格陷阱 eval 实证回写
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0a5b8f` | test(examples): full 面对齐复跑——8 失败全是静态缺口，check 防退化通过 |
+
+### Testing
+
+- [OK] examples 19 全绿（EvalTasksTest 23 任务防恒真 + 9 条缺口 flag 锁定）；双面单任务复验（full 131105-091 失败/compiler 131042-172 通过）；Spotless 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- ① 14B 对比（等模型到位）② tracked op 与行内格式叠加（按需）③ full 面缺口不补工具——compiler 已内建，A/B 数据已闭环
