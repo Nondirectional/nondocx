@@ -174,6 +174,44 @@ public final class Paragraph implements BodyElement {
   }
 
   /**
+   * Inserts a deep copy of the run at {@code index} immediately after it and returns a live wrapper
+   * for the copy.
+   *
+   * <p>The copy carries the source run's <b>entire</b> {@code <w:r>} content — direct character
+   * formatting ({@code <w:rPr>}, including slots nondocx does not model such as {@code eastAsia}
+   * fonts), text and run children. This is the surgical primitive for splitting a formatted run:
+   * keep the prefix in the source run, carry the replacement / suffix text in copies that inherit
+   * the original formatting.
+   *
+   * <p><b>POI trap avoided.</b> POI's {@code XWPFTable.addRow(row, pos)} copies content into a new
+   * tree element but caches the <em>passed</em> wrapper (writes through the returned row never
+   * reach the tree). {@code copyRun} uses the same shadow technique as {@code Table.copyRowTo}: it
+   * lets POI's own {@code insertNewRun(pos + 1)} create <b>and register</b> the tree element plus
+   * its wrapper, then fills that same element via {@code getCTR().set(copy)} — so the returned
+   * wrapper writes into the document tree and survives save/reopen.
+   *
+   * @param index run index (0-based, into {@link #runs()})
+   * @return the newly inserted copy (live; positioned right after the source run)
+   * @throws IndexOutOfBoundsException if {@code index} is out of range
+   */
+  public Run copyRun(int index) {
+    Run source = run(index);
+    // nondocx run 索引（过滤 hyperlink/图片后的 runs() 视图）与 POI runs 列表索引不同：
+    // 按对象身份定位源 run 在 POI 列表中的位置（与 removeInlineElement 同一映射手法）。
+    List<XWPFRun> poiRuns = delegate.getRuns();
+    int poiIndex = -1;
+    for (int i = 0; i < poiRuns.size(); i++) {
+      if (poiRuns.get(i) == source.raw()) {
+        poiIndex = i;
+        break;
+      }
+    }
+    XWPFRun inserted = delegate.insertNewRun(poiIndex + 1);
+    inserted.getCTR().set((org.apache.xmlbeans.XmlObject) source.raw().getCTR().copy());
+    return new Run(inserted);
+  }
+
+  /**
    * Appends a new, empty run to this paragraph and returns a live wrapper for it.
    *
    * @return the newly appended run

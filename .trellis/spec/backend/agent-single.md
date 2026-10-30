@@ -161,9 +161,9 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 
 `nondocx-examples/.../examples/eval/` 是当前工具面的 headless 评测基线，不是生产代码：
 
-- baseline 22 条（12 初版 + 10 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
-  加行/多步组合/模板假值条件/同段双修订/多锚点行距），seed 由 `Docx.create()` 构造，
-  check 只读最终 docx；另有 create 组 5 条（工具面 A/B）；
+- baseline 23 条（12 初版 + 10 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
+  加行/多步组合/模板假值条件/同段双修订/多锚点行距 + 1 条既有词加粗），seed 由
+  `Docx.create()` 构造，check 只读最终 docx；另有 create 组 5 条（工具面 A/B）；
 - 工具面与 demo 对齐（`current_document` + view/body/table/header/tracker + 只读 `review_intent`），
   但**不加载 6 条 Skill**，以隔离工具面本身；
 - 保存仍由应用层强制（`EvalRunner` 在 `Agent.run` 返回后调用 `save_docx`），不暴露给模型；
@@ -182,8 +182,9 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 
 **2026-10-30 compiler 面（8 工具）**：22/22，平均 4.68（runId `20261030-113314-518`）。
 P3 扩展 10 条首跑全过；歧义指代/范围限定各 4 次，同段双修订（独占拒绝→拆分）6 次。
-已知边界：compiler 面无「给既有文本加粗」op（replace-with-format 靠 delete+insert
-自愈，9 次）；页眉写无 op。**评测任务考察工具选择本身——prompt 不得提示用哪个工具。**
+**2026-10-30 行内格式补齐后**：23/23，平均 4.26（runId `20261030-124819-241`）；
+replace-with-format 9→4 次（`text=**…**` 一步命中），`validate_document` 全程 0 调用。
+已知边界：页眉写无 op。**评测任务考察工具选择本身——prompt 不得提示用哪个工具。**
 
 ## Convention: ref 的容器边界（读/写分离）
 
@@ -303,6 +304,18 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   元素并填充 → 传包树内元素的 wrapper 给 `addRow`（缓存正确、XML 多出一行复制内容）→
   `removeTr` 删掉影子行。测试必须 **save+reopen 断言**——纯内存断言测不出这类陷阱
   （`TableTest#copyRowToReturnedRowWritesIntoDocumentTree` 锁死）。
+- **replace_text 的内容语言与 run 拆分**（P3，2026-10-30）：`replace_text` 的 `text` 解析
+  Markdown 行内标记（`**粗**`/`*斜*`/`` `代码` ``，未闭合原样保留），与 create_document
+  正文、table.set_cell 同一内容语言——**全链路唯一按字面处理文本的路径就是 bug**（模型写
+  `**…**` 是正确直觉，replace-with-format 的 9 次自愈就是这堵墙）。给既有文字加粗 = 身份
+  替换 `find=X text=**X**`；整段加粗用 `set_style` 的 `bold`/`italic` 布尔（可与
+  style/align/line_spacing 叠加）。带格式 + 单 run 命中经 core `Paragraph.copyRun` 拆分。
+  两个坑：① 拷贝必须**始终复制源 run**，piece 按倒序插在源 run 紧后——顺序复制「上一份
+  拷贝」会让格式逐份累积（第二份起继承第一份的加粗，PatchEngineTest 抓过）；② 拷贝承载
+  完整 rPr（含 eastAsia 等未建模槽），**不要**用 `RunStyle` 快照重建（`font()` 只覆盖 ascii
+  槽会丢中文）。`copyRun` 比 `copyRowTo` 稳：走 POI 自己的 `insertNewRun`（元素与包装同源
+  创建登记，无缓存错配面），再 `getCTR().set(copy)` 填内容；save+reopen 测试照样锁死。纯
+  文本路径（无标记）行为与历史版本一致，有测试锁定。
 - **render_preview 只读且防环境坑**（P2 收尾）：渲染不改文档、不置 dirty（demo
   `READONLY_TOOL_PREFIXES` 含 `render_`）。soffice 路径经 `NONDOCX_SOFFICE`（默认
   `soffice`）；每次调用独立 `-env:UserInstallation` profile（LibreOffice 同 profile 单实例

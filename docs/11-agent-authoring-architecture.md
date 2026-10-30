@@ -287,8 +287,8 @@ CJK 的 `eastAsia`/`latin` 字体槽、首行缩进、行距这些 Word 坑，�
 ### P3：评测与多模型
 
 - 20~30 条任务，覆盖：新建、改写、全文格式、表格、页眉页脚、修订、批注、
-  模板填充、歧义指代、重复文本。**（已完成第一步：baseline 12→22，见 §6.9；14B 对比
-  延后——本地仅 27B。）**
+  模板填充、歧义指代、重复文本。**（已完成：baseline 12→22 见 §6.9、→23 见 §6.11；
+  14B 对比延后——本地仅 27B。）**
 - 指标：任务成功率、工具调用数、无效调用率、token、延迟、渲染缺陷率。
 - 用 trace journal 做回放；失败分类：规划 / 寻址 / 工具选择 / 参数 schema /
   能力缺失 / 渲染 / 模型。
@@ -676,7 +676,7 @@ tr；经返回行的写入落进不在文档树里的对象，内存读正确、
 | delete-paragraph | 按内容描述定位并删除段落 |
 | ambiguous-target | **歧义指代**：三段中两段含「预算」，按「超支」定位唯一目标段（4 次） |
 | scoped-replace | **重复文本 + 范围限定**：三段都有「待定」，只改第二段（4 次） |
-| replace-with-format | 带格式替换：末段换成加粗文本——`replace_text` 不吃 Markdown，模型需自我纠错 |
+| replace-with-format | 带格式替换：末段换成加粗文本——`replace_text` 当时还不吃 Markdown，模型需自我纠错（§6.11 已修复：现在支持行内标记） |
 | table-add-row | 表格加行（4 次） |
 | multi-step-combo | 一次 edit_document 批内三件事：居中+批注+文末插表（5 次） |
 | fill-template-false | 模板假值条件块删除、真值块保留、空列表删行（5 次） |
@@ -718,6 +718,49 @@ P2 最后一项：「把 `QualityCheckTools` 升级成编译器的 post-conditio
 eval（runId `20261030-121824-988`）：**22/22，平均 4.41**（§6.9 时 4.68）——post-condition
 未触发「警告修复循环」（护栏生效），且 `validate_document` 全程 **0 次调用**（写结果自带
 质检后它对写后校验已是冗余；最高调用任务 8 次，未新增）。
+
+### 6.11 replace_text 行内格式与 set_style 加粗：把模型的正确直觉变成正确结果（2026-10-30）
+
+§6.9 记录的 replace-with-format 9 次自愈暴露了缺口：compiler 面没有「给既有文本加粗」的
+op。trace 复盘给出的诊断不是「模型不会」，而是 **API 不自洽**——该编译器的内容语言是
+Markdown（create_document 正文、table.set_cell 都解析行内标记），`replace_text` 的 `text`
+却是全链路唯一按字面处理的文本路径。模型写 `text=**结论：通过**` 是正确直觉撞上不一致
+的接口；它随后试的 `set_style style=bold` 也是合理猜测。
+
+修法（不新增 op，补齐语义）：
+
+- **`replace_text` 的 `text` 改按行内标记解析**（`**粗**`/`*斜*`/`` `代码` ``，复用
+  `MarkdownParser.parseInline`；未闭合标记原样保留，纯文本路径行为与 v1 完全一致）。
+  单 run 命中做**外科手术式拆分**：源 run 保留前缀，替换片段逐 span、命中间/后缀文本
+  均以源 run 的**深拷贝**承载（完整 rPr 继承，含 eastAsia 槽），span 再叠加粗/斜/代码
+  字体。给既有文字加粗 = 身份替换 `find=逾期率 text=**逾期率**`。
+- **core 新增 `Paragraph.copyRun(int i)`**：深拷贝第 i 个 run 紧随其后插入。与
+  `Table.copyRowTo` 同一「影子」家族，但更稳：让 POI 自己的 `insertNewRun` 创建**并登记**
+  树元素与包装（避开 `XWPFTable.addRow` 缓存外部包装的陷阱），再 `getCTR().set(copy)`
+  填内容。save+reopen 测试锁定。
+- **`set_style` 增加 `bold`/`italic` 布尔**：整段字符格式，可与 style=body/heading、
+  align、line_spacing 叠加（后应用，与字体/字号正交）。给「写成 `style=bold`」的猜测
+  一条正确的表达路径（错误提示也会引导成独立布尔字段）。
+
+**实现期的拆分顺序陷阱**（测试抓住）：拷贝必须始终复制**源 run**——若顺序 `copyRun(cursor++)`
+复制「上一份拷贝」，格式会逐份累积（第二份起继承第一份的加粗）。正确做法：所有 piece
+都从源 run 索引拷贝（每次都插在源 run 紧后），按 piece **倒序**插入，最终恰好正向。
+
+eval baseline 扩到 **23**：新增 `bold-existing-phrase`（段内既有词加粗、其余文字不许动）
+验证子范围身份替换路径；replace-with-format 从「模型自我纠错」变成「一步正确」。
+跨 run 整段重建顺手修了一个潜在边角：重建现在会清掉超链接（旧实现按 runs() 计数循环
+删除，超链接可能幸存并造成重建后文本重复）。
+
+结果（runId `20261030-124819-241`，compiler 面 8 工具，27B）：**23/23，平均 4.26**
+（§6.10 时 22 任务 4.41）。两个直接验证：
+
+- **replace-with-format 9→4 次**：模型的第一个（旧版本里「错」的）op 就是
+  `replace_text text=**结论：通过**`——一步命中，不再有字面星号、不再试
+  `set_style style=bold`、不再 delete+insert 自愈。接口对了，模型本来就会。
+- **bold-existing-phrase 首跑通过（4 次）**：身份替换 `find=逾期率 text=**逾期率**`，
+  复审确认目标 run bold=true 且其余文本未动——子范围拆分路径（前后缀继承原样式）成立。
+
+`validate_document` 全程仍 0 次调用，无警告修复循环；22 条回归任务零退化。
 
 ---
 

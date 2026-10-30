@@ -255,8 +255,10 @@ public final class CompilerTools extends ToolkitToolContext {
       description =
           "对当前文档应用一批原子编辑 ops。锚点是 read_document 输出的短 ID（pN=段落，tN=表格）。"
               + "op 类型：insert（position=before/after/start/end + block=Markdown 块，含表格时仅 end）、"
-              + "replace_text（anchor+find+text，段落内精确子串）、delete（anchor 段落）、"
-              + "set_style（anchor + style=body/heading 或 align/line_spacing）、"
+              + "replace_text（anchor+find+text，段落内精确子串；text 支持行内标记 **粗体**/*斜体*/`代码`，"
+              + "如把「结论」换成加粗：text=**结论：通过**）、delete（anchor 段落）、"
+              + "set_style（anchor + style=body/heading 或 align/line_spacing/bold/italic，"
+              + "bold/italic 是整段字符格式）、"
               + "table.set_cell（anchor+row+col+text）、table.add_row（anchor+cells）、"
               + "tracked.insert/tracked.delete/tracked.replace（修订模式，anchor+find/text+author 必传，"
               + "修订可被 Word 审阅 accept/reject）、"
@@ -291,6 +293,8 @@ public final class CompilerTools extends ToolkitToolContext {
           @NestedParamCapability(path = "ops.style", type = ParamType.STRING)
           @NestedParamCapability(path = "ops.align", type = ParamType.STRING)
           @NestedParamCapability(path = "ops.line_spacing", type = ParamType.NUMBER)
+          @NestedParamCapability(path = "ops.bold", type = ParamType.BOOLEAN)
+          @NestedParamCapability(path = "ops.italic", type = ParamType.BOOLEAN)
           @NestedParamCapability(path = "ops.row", type = ParamType.INTEGER)
           @NestedParamCapability(path = "ops.col", type = ParamType.INTEGER)
           @NestedParamCapability(path = "ops.cells", type = ParamType.STRING_ARRAY)

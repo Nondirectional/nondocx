@@ -171,4 +171,64 @@ class ParagraphTest {
     assertThat(base).isNotEqualTo(diffText);
     assertThat(base).isNotEqualTo(diffAlign);
   }
+
+  @Test
+  void copyRunInsertsDeepCopyRightAfterSourceCarryingFullRPr() {
+    Document doc = Docx.create();
+    Paragraph p = doc.addParagraph();
+    p.addRun("before");
+    Run source = p.addRun("source").bold();
+    // 槽分离写法（编译器 applyRunFonts 同款）：eastAsia 槽不经公开 API 设置，拷贝必须原样携带
+    var ctr = source.raw().getCTR();
+    var rpr = ctr.isSetRPr() ? ctr.getRPr() : ctr.addNewRPr();
+    var fonts = rpr.sizeOfRFontsArray() > 0 ? rpr.getRFontsArray(0) : rpr.addNewRFonts();
+    fonts.setEastAsia("宋体");
+    p.addRun("after");
+
+    Run copy = p.copyRun(1);
+
+    assertThat(p.runs()).hasSize(4);
+    assertThat(p.run(0).text()).isEqualTo("before");
+    // run() 视图每次访问重建 Run 包装，经底层 XWPFRun 判同
+    assertThat(p.run(1).raw()).isSameAs(source.raw());
+    assertThat(p.run(2).raw()).isSameAs(copy.raw());
+    assertThat(p.run(3).text()).isEqualTo("after");
+    assertThat(copy.text()).isEqualTo("source");
+    assertThat(copy.isBold()).isTrue();
+    assertThat(copy.fontEastAsia()).isEqualTo("宋体");
+
+    // 拷贝独立于源：改拷贝不影响源 run
+    copy.text("copy").italic();
+    assertThat(source.text()).isEqualTo("source");
+    assertThat(source.isItalic()).isFalse();
+  }
+
+  @Test
+  void copyRunReturnedWrapperWritesIntoDocumentTree(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("persist.docx");
+    Document doc = Docx.create();
+    try {
+      Paragraph p = doc.addParagraph();
+      p.addRun("原").bold();
+      Run copy = p.copyRun(0);
+      copy.text("经返回值改写");
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document reopened = Docx.open(file)) {
+      assertThat(reopened.paragraph(0).runs()).hasSize(2);
+      assertThat(reopened.paragraph(0).run(0).text()).isEqualTo("原");
+      assertThat(reopened.paragraph(0).run(1).text()).isEqualTo("经返回值改写");
+      assertThat(reopened.paragraph(0).run(1).isBold()).isTrue();
+    }
+  }
+
+  @Test
+  void copyRunRejectsOutOfRangeIndex() {
+    Paragraph p = Docx.create().addParagraph();
+    p.addRun("only");
+    assertThatThrownBy(() -> p.copyRun(1)).isInstanceOf(IndexOutOfBoundsException.class);
+    assertThatThrownBy(() -> p.copyRun(-1)).isInstanceOf(IndexOutOfBoundsException.class);
+  }
 }

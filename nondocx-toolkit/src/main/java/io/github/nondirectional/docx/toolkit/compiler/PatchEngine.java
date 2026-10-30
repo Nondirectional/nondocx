@@ -31,10 +31,12 @@ import java.util.Set;
  * <ul>
  *   <li>{@code insert}——Markdown 块插入 {@code before}/{@code after} 锚点或文档 {@code start}/{code
  *       end}；含表格块时仅允许 {@code end}（core 无定位插表 API）；
- *   <li>{@code replace_text}——段落内精确子串替换；跨 run 时整段重建为单 run（丢段内直接 格式，记 warning）；
+ *   <li>{@code replace_text}——段落内精确子串替换；{@code text} 支持行内标记（{@code **粗**}/{@code *斜*}/{@code
+ *       `代码`}，与 create_document/table.set_cell 同一内容语言）：单 run 命中按 span 拆分（前后缀经 {@code copyRun}
+ *       继承原样式），跨 run 时整段重建（丢段内直接格式，记 warning）；
  *   <li>{@code delete}——删除段落（删表不在 v2：core 无 API）；
  *   <li>{@code set_style}——套 profile 的 {@code body}/{@code heading} 样式，或显式 {@code align}/{@code
- *       line_spacing}；
+ *       line_spacing}/{@code bold}/{@code italic}（bold/italic 为整段字符格式，可与其余叠加）；
  *   <li>{@code table.set_cell}——改单元格文本；
  *   <li>{@code table.add_row}——末尾加一行（可带初始文本）；
  *   <li>{@code tracked.insert} / {@code tracked.delete} / {@code tracked.replace}——修订模式 （tracked
@@ -304,7 +306,12 @@ public final class PatchEngine {
       throw new PatchException(
           "op[" + index + "] 段落 " + anchor + " 文本中找不到「" + find + "」（实际: " + current + "）");
     }
-    return new PlannedOp("replace_text " + anchor + " 「" + find + "」→「" + text + "」") {
+    // text 按行内标记解析（Markdown 是本编译器的统一内容语言，与 create_document/table.set_cell 一致）；
+    // 纯文本（无标记）保持原行为不变。
+    List<MarkdownDoc.Span> spans = MarkdownParser.parseInline(text);
+    boolean formatted = spans.stream().anyMatch(s -> s.bold() || s.italic() || s.code());
+    return new PlannedOp(
+        "replace_text " + anchor + " 「" + find + "」→「" + text + "」" + (formatted ? "（含格式）" : "")) {
       @Override
       void execute(
           Document doc,
@@ -312,22 +319,123 @@ public final class PatchEngine {
           List<String> changed,
           List<String> warningsOut,
           StyleProfile profile) {
-        // 单 run 内命中：原位替换保样式；跨 run：整段重建为单 run（丢段内直接格式）。
         int runIndex = runContaining(paragraph, find);
-        if (runIndex >= 0) {
+        if (runIndex >= 0 && !formatted) {
+          // 单 run 内命中：原位替换保样式。
           Run run = paragraph.run(runIndex);
           run.text(run.text().replace(find, text));
-        } else {
-          String rebuilt = paragraph.text().replace(find, text);
-          while (paragraph.runs().size() > 0) {
-            paragraph.removeInlineElement(paragraph.runs().size() - 1);
+        } else if (runIndex >= 0) {
+          replaceFormattedInRun(paragraph, runIndex, find, spans, profile);
+        } else if (formatted) {
+          // 跨 run 命中 + 带格式：整段重建为 span 序列（前后缀纯文本 run + 格式 run）。
+          String full = paragraph.text();
+          removeAllInline(paragraph);
+          int pos = 0;
+          for (int[] occ : occurrencesOf(full, find)) {
+            if (occ[0] > pos) {
+              paragraph.addRun(full.substring(pos, occ[0]));
+            }
+            for (MarkdownDoc.Span span : spans) {
+              applySpanFormat(paragraph.addRun(span.text()), span, profile);
+            }
+            pos = occ[1];
           }
+          if (pos < full.length()) {
+            paragraph.addRun(full.substring(pos));
+          }
+          warningsOut.add("replace_text " + anchor + " 跨 run 命中，段落已重建（段内直接格式丢失，替换片段按行内标记重建）");
+        } else {
+          // 跨 run 命中（纯文本）：整段重建为单 run（丢段内直接格式）。
+          String rebuilt = paragraph.text().replace(find, text);
+          removeAllInline(paragraph);
           paragraph.addRun(rebuilt);
           warningsOut.add("replace_text " + anchor + " 跨 run 命中，段落已重建为单 run（段内直接格式丢失，段落属性保留）");
         }
         changed.add(anchor);
       }
     };
+  }
+
+  /**
+   * 单 run 内的带格式替换。源 run 只保留前缀文本；替换片段逐 span、以及命中之间的间隔/后缀文本，均以<b>源 run 的深拷贝</b>承载 （完整 rPr 继承，含
+   * eastAsia 等未建模槽），span 再叠加粗/斜/代码字体。源 run 内多处命中全部处理（非重叠，与 {@code String.replace} 语义一致）。源 run
+   * 剩空文本时移除。
+   *
+   * <p>插入顺序陷阱：拷贝必须始终复制源 run——若顺序拷贝「上一份拷贝」，格式会逐份累积（第二份起继承第一份的加粗）。 因此所有 piece 都从源 run 索引拷贝（每次都插在源 run
+   * 紧后），按 piece <b>倒序</b>插入，最终恰好是正向顺序。
+   */
+  private static void replaceFormattedInRun(
+      Paragraph paragraph,
+      int runIndex,
+      String find,
+      List<MarkdownDoc.Span> spans,
+      StyleProfile profile) {
+    Run source = paragraph.run(runIndex);
+    String text = source.text();
+    List<int[]> occurrences = occurrencesOf(text, find);
+    // 正向 piece 序列：每个命中 → 逐 span；命中之间与结尾 → 原文本片段（纯 span，applySpanFormat 对其无操作）
+    List<MarkdownDoc.Span> pieces = new ArrayList<>();
+    for (int k = 0; k < occurrences.size(); k++) {
+      pieces.addAll(spans);
+      int gapStart = occurrences.get(k)[1];
+      int gapEnd = k + 1 < occurrences.size() ? occurrences.get(k + 1)[0] : text.length();
+      if (gapEnd > gapStart) {
+        pieces.add(MarkdownDoc.Span.text(text.substring(gapStart, gapEnd)));
+      }
+    }
+    source.text(text.substring(0, occurrences.get(0)[0]));
+    for (int i = pieces.size() - 1; i >= 0; i--) {
+      MarkdownDoc.Span piece = pieces.get(i);
+      Run copy = paragraph.copyRun(runIndex);
+      copy.text(piece.text());
+      applySpanFormat(copy, piece, profile);
+    }
+    if (source.text().isEmpty()) {
+      for (int i = 0; i < paragraph.inlineElements().size(); i++) {
+        if (paragraph.inlineElement(i) instanceof Run) {
+          Run element = (Run) paragraph.inlineElement(i);
+          if (element.raw() == source.raw()) {
+            paragraph.removeInlineElement(i);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /** 逐 span 套行内格式：粗/斜叠加在继承的样式上；代码 span 两槽均改 profile 等宽字体（与 table.set_cell 一致）。 */
+  private static void applySpanFormat(Run run, MarkdownDoc.Span span, StyleProfile profile) {
+    if (span.bold()) {
+      run.bold();
+    }
+    if (span.italic()) {
+      run.italic();
+    }
+    if (span.code()) {
+      DocumentCompiler.applyRunFonts(run, profile.codeFont(), profile.codeFont());
+    }
+  }
+
+  /** 清空段落全部内联元素（含超链接等），供整段重建。 */
+  private static void removeAllInline(Paragraph paragraph) {
+    while (paragraph.inlineElements().size() > 0) {
+      paragraph.removeInlineElement(paragraph.inlineElements().size() - 1);
+    }
+  }
+
+  /** 在文本中从左到右收集 find 的全部非重叠命中（半开区间），与 {@code String.replace} 的替换语义一致。 */
+  private static List<int[]> occurrencesOf(String text, String find) {
+    List<int[]> ranges = new ArrayList<>();
+    int from = 0;
+    while (from <= text.length()) {
+      int found = text.indexOf(find, from);
+      if (found < 0) {
+        break;
+      }
+      ranges.add(new int[] {found, found + find.length()});
+      from = found + find.length();
+    }
+    return ranges;
   }
 
   private static PlannedOp planDelete(
@@ -360,20 +468,36 @@ public final class PatchEngine {
     String style = op.get("style") == null ? null : String.valueOf(op.get("style")).trim();
     Object alignRaw = op.get("align");
     Object spacingRaw = op.get("line_spacing");
-    if (style == null && alignRaw == null && spacingRaw == null) {
+    Object boldRaw = op.get("bold");
+    Object italicRaw = op.get("italic");
+    if (style == null
+        && alignRaw == null
+        && spacingRaw == null
+        && boldRaw == null
+        && italicRaw == null) {
       throw new PatchException(
-          "op[" + index + "] set_style 需要 style（body/heading）或 align/line_spacing 至少其一");
+          "op["
+              + index
+              + "] set_style 需要 style（body/heading）或 align/line_spacing/bold/italic 至少其一");
     }
     if (style != null && !"body".equals(style) && !"heading".equals(style)) {
       String hint =
           style.contains("=")
               ? "；对齐/行距不要写进 style，作为独立字段传：{\"op\":\"set_style\",\"anchor\":\"p0\",\"align\":\"center\"}"
-              : "";
+              : "bold/italic 是独立布尔字段，不写进 style：{\"op\":\"set_style\",\"anchor\":\"p0\",\"bold\":true}";
       throw new PatchException("op[" + index + "] 未知 style: " + style + "（可用 body/heading）" + hint);
     }
     Alignment align = alignRaw == null ? null : MarkdownParser.alignmentOf(strValue(alignRaw));
     Double spacing = spacingRaw == null ? null : doubleValue(spacingRaw, index);
-    return new PlannedOp("set_style " + anchor + (style == null ? "" : " style=" + style)) {
+    Boolean bold = boldRaw == null ? null : booleanValue(boldRaw, index, "bold");
+    Boolean italic = italicRaw == null ? null : booleanValue(italicRaw, index, "italic");
+    String described =
+        "set_style "
+            + anchor
+            + (style == null ? "" : " style=" + style)
+            + (bold == null ? "" : " bold=" + bold)
+            + (italic == null ? "" : " italic=" + italic);
+    return new PlannedOp(described) {
       @Override
       void execute(
           Document doc,
@@ -408,6 +532,17 @@ public final class PatchEngine {
         }
         if (spacing != null && spacing > 0) {
           paragraph.lineSpacing(spacing);
+        }
+        // bold/italic 后应用：可叠加在 style=body/heading 的字体/字号之上（两者正交）
+        if (bold != null) {
+          for (Run run : paragraph.runs()) {
+            run.bold(bold);
+          }
+        }
+        if (italic != null) {
+          for (Run run : paragraph.runs()) {
+            run.italic(italic);
+          }
         }
         changed.add(anchor);
       }
@@ -796,6 +931,21 @@ public final class PatchEngine {
     } catch (NumberFormatException e) {
       throw new PatchException("op[" + index + "] line_spacing 不是数字: " + value);
     }
+  }
+
+  /** 布尔入参归一化：接受 Boolean 或 "true"/"false"（忽略大小写），其余整体拒绝（零写入）。 */
+  private static Boolean booleanValue(Object value, int index, String key) {
+    if (value instanceof Boolean) {
+      return (Boolean) value;
+    }
+    String text = String.valueOf(value).trim();
+    if ("true".equalsIgnoreCase(text)) {
+      return Boolean.TRUE;
+    }
+    if ("false".equalsIgnoreCase(text)) {
+      return Boolean.FALSE;
+    }
+    throw new PatchException("op[" + index + "] " + key + " 不是布尔（true/false）: " + value);
   }
 
   // ==================== 内部结构 ====================

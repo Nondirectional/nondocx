@@ -10,11 +10,13 @@ import io.github.nondirectional.docx.core.api.style.HeadingLevel;
 import io.github.nondirectional.docx.core.api.style.ListKind;
 import io.github.nondirectional.docx.toolkit.compiler.PatchEngine.PatchException;
 import io.github.nondirectional.docx.toolkit.compiler.PatchEngine.PatchResult;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFonts;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr;
 
@@ -214,6 +216,177 @@ class PatchEngineTest {
       assertThat(doc.paragraph(1).lineSpacing()).isEqualTo(2.0);
     } finally {
       doc.close();
+    }
+  }
+
+  @Test
+  void setStyleBoldItalicApplyToAllRunsAndStackOnBody() {
+    Document doc = sample();
+    try {
+      doc.paragraph(0).addRun("追加");
+      PatchEngine.apply(
+          doc,
+          ops(
+              op("op", "set_style", "anchor", "p0", "style", "body", "bold", true),
+              op("op", "set_style", "anchor", "p1", "italic", "false")),
+          REPORT_CN,
+          false);
+      // bold 与 style=body 叠加：字体/字号来自 profile，bold 作用于全部 run
+      assertThat(doc.paragraph(0).run(0).isBold()).isTrue();
+      assertThat(doc.paragraph(0).run(1).isBold()).isTrue();
+      assertThat(doc.paragraph(0).run(0).font()).isEqualTo("Times New Roman");
+      assertThat(eastAsia(doc.paragraph(0).run(0))).isEqualTo("宋体");
+      // italic=false 显式关闭
+      assertThat(doc.paragraph(1).run(0).isItalic()).isFalse();
+      // body 行距等段落属性仍生效
+      assertThat(doc.paragraph(0).lineSpacing()).isEqualTo(1.5);
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void setStyleRejectsNonBooleanBoldAtomically() {
+    Document doc = sample();
+    try {
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(op("op", "set_style", "anchor", "p0", "bold", "yes")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("bold")
+          .hasMessageContaining("布尔");
+      assertThat(doc.paragraph(0).run(0).isBold()).isFalse();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void replaceTextWithBoldMarkerSplitsRunPreservingSurroundingStyle() {
+    Document doc = sample();
+    try {
+      var paragraph = doc.paragraph(0); // 「第一段」
+      paragraph.run(0).fontSize(14);
+      var ctr = paragraph.run(0).raw().getCTR();
+      var rpr = ctr.isSetRPr() ? ctr.getRPr() : ctr.addNewRPr();
+      var fonts = rpr.sizeOfRFontsArray() > 0 ? rpr.getRFontsArray(0) : rpr.addNewRFonts();
+      fonts.setEastAsia("宋体");
+
+      PatchEngine.apply(
+          doc,
+          ops(op("op", "replace_text", "anchor", "p0", "find", "第一", "text", "**首要**")),
+          REPORT_CN,
+          false);
+
+      // 源 run 前缀为空已移除；替换片段 + 后缀各成 run，均继承源样式（字号 + eastAsia 槽）
+      assertThat(paragraph.text()).isEqualTo("首要段");
+      assertThat(paragraph.runs()).hasSize(2);
+      assertThat(paragraph.run(0).text()).isEqualTo("首要");
+      assertThat(paragraph.run(0).isBold()).isTrue();
+      assertThat(paragraph.run(1).text()).isEqualTo("段");
+      assertThat(paragraph.run(1).isBold()).isFalse();
+      assertThat(paragraph.run(0).fontSize()).isEqualTo(14);
+      assertThat(paragraph.run(1).fontSize()).isEqualTo(14);
+      assertThat(eastAsia(paragraph.run(0))).isEqualTo("宋体");
+      assertThat(eastAsia(paragraph.run(1))).isEqualTo("宋体");
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void replaceTextWithMarkerAcrossRunsRebuildsAsSpanSequence() {
+    Document doc = sample();
+    try {
+      Paragraph_Without_Helpers.split(doc.paragraph(0)); // 「第一」+「段」
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op", "replace_text",
+                      "anchor", "p0",
+                      "find", "第一段",
+                      "text", "**新的**整段")),
+              REPORT_CN,
+              false);
+      assertThat(doc.paragraph(0).text()).isEqualTo("新的整段");
+      assertThat(doc.paragraph(0).runs()).hasSize(2);
+      assertThat(doc.paragraph(0).run(0).isBold()).isTrue();
+      assertThat(doc.paragraph(0).run(1).isBold()).isFalse();
+      assertThat(result.warnings()).anyMatch(w -> w.contains("跨 run"));
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void replaceTextFormattedHandlesAllNonOverlappingOccurrences() {
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("甲乙甲乙甲");
+      PatchEngine.apply(
+          doc,
+          ops(op("op", "replace_text", "anchor", "p0", "find", "甲乙", "text", "**XY**")),
+          REPORT_CN,
+          false);
+      // 与 String.replace 的非重叠语义一致：两处命中 + 尾缀
+      assertThat(doc.paragraph(0).text()).isEqualTo("XYXY甲");
+      assertThat(doc.paragraph(0).runs()).hasSize(3);
+      assertThat(doc.paragraph(0).run(0).isBold()).isTrue();
+      assertThat(doc.paragraph(0).run(1).isBold()).isTrue();
+      assertThat(doc.paragraph(0).run(2).isBold()).isFalse();
+      assertThat(doc.paragraph(0).run(2).text()).isEqualTo("甲");
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void replaceTextUnmatchedMarkerStaysLiteralSingleRun() {
+    Document doc = sample();
+    try {
+      // 未闭合的单个 * 不是标记：按纯文本原位替换
+      PatchEngine.apply(
+          doc,
+          ops(op("op", "replace_text", "anchor", "p0", "find", "第一", "text", "3*4")),
+          REPORT_CN,
+          false);
+      assertThat(doc.paragraph(0).text()).isEqualTo("3*4段");
+      assertThat(doc.paragraph(0).runs()).hasSize(1);
+      assertThat(doc.paragraph(0).run(0).isItalic()).isFalse();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void replaceTextFormattedSurvivesSaveAndReopen(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("formatted.docx");
+    Document doc = sample();
+    try {
+      doc.paragraph(0).run(0).fontSize(14);
+      PatchEngine.apply(
+          doc,
+          ops(op("op", "replace_text", "anchor", "p0", "find", "第一", "text", "**首要**")),
+          REPORT_CN,
+          false);
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document reopened = Docx.open(file)) {
+      // save+reopen 才能暴露「拷贝写进了非树对象」这类 POI 缓存陷阱
+      assertThat(reopened.paragraph(0).text()).isEqualTo("首要段");
+      assertThat(reopened.paragraph(0).run(0).text()).isEqualTo("首要");
+      assertThat(reopened.paragraph(0).run(0).isBold()).isTrue();
+      assertThat(reopened.paragraph(0).run(0).fontSize()).isEqualTo(14);
+      assertThat(reopened.paragraph(0).run(1).text()).isEqualTo("段");
+      assertThat(reopened.paragraph(0).run(1).isBold()).isFalse();
     }
   }
 

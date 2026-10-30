@@ -76,6 +76,8 @@ public final class EvalRunner {
           + "结构/属性标记，不是正文文本，不要试图删除或替换它们。"
           + "编辑既有文档时，把一批修改整理成 ops 一次调用 edit_document（锚点用短 ID，"
           + "插入内容用 Markdown 块），不要逐段零散修改。"
+          + "给文字加粗/倾斜（含替换后加粗）用行内标记：replace_text 的 text 写 **加粗**/*倾斜*，"
+          + "如把「待定」换成加粗的「通过」就是 text=**通过**；整段全加粗可用 set_style 的 bold=true。"
           + "用户要求「修订模式/以修订」修改时用 tracked.replace / tracked.insert / tracked.delete op"
           + "（必传 author=修订作者，如用户给了作者名就用它）；"
           + "用户要求在页脚插页码时用 footer.set_page_number op（format 如「第 {page} 页」）；"

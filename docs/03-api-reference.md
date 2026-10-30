@@ -67,6 +67,7 @@ Document fresh = Docx.create();
 | `inlineElements()` 👁 | **结构真相**：按阅读顺序返回 run/超链接/图片（图片算 `Image` 不算 `Run`） |
 | `runs()` / `run(int i)` 👁 | 纯 run 的筛选视图 |
 | `addRun()` / `addRun(text)` ✏️🔄 | 末尾追加空 run / 带文本 run |
+| `copyRun(int i)` ✏️🔄 | 在第 i 个 run 紧后插入其**深拷贝**（完整 `<w:r>` 含 rPr 与未建模槽如 eastAsia 字体）；拆分带格式 run 的外科手术原语，返回活对象 |
 | `addHyperlink(text, url)` ✏️🔄 | 追加超链接 |
 | `addImage(bytes, type, wPx, hPx)` ✏️🔄 | 追加内联图片（像素 → EMU 内部转换） |
 | `removeInlineElement(int i)` ✏️ | 删第 i 个内联元素 |

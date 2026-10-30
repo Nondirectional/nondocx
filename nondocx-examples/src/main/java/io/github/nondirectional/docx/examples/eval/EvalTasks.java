@@ -8,6 +8,7 @@ import io.github.nondirectional.docx.core.api.table.Cell;
 import io.github.nondirectional.docx.core.api.table.Row;
 import io.github.nondirectional.docx.core.api.table.Table;
 import io.github.nondirectional.docx.core.api.text.Paragraph;
+import io.github.nondirectional.docx.core.api.text.Run;
 import io.github.nondirectional.docx.core.api.track.TrackedChange;
 import io.github.nondirectional.docx.core.api.track.TrackedChangeType;
 import java.util.ArrayList;
@@ -784,6 +785,46 @@ public final class EvalTasks {
                     }),
                 EvalTask.NamedCheck.of(
                     "正文未被误改", doc -> EvalAssert.contains(EvalAssert.bodyText(doc), "第一段", "正文")))));
+
+    tasks.add(
+        new EvalTask(
+            "bold-existing-phrase",
+            "段内既有词加粗",
+            "把第二段中的「逾期率」一词加粗显示，其他内容一律保持不变。",
+            doc -> {
+              doc.addParagraph("首段：本月经营情况概述。");
+              doc.addParagraph("本月风险指标：逾期率 3.2%，环比上升 0.4 个百分点。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "目标词已加粗",
+                    doc -> {
+                      Paragraph p = requireParagraph(doc, 1, "第二段");
+                      boolean hit = false;
+                      for (Run run : p.runs()) {
+                        if (run.text().contains("逾期率")) {
+                          hit = true;
+                          EvalAssert.isTrue(run.isBold(), "含「逾期率」的 run「" + run.text() + "」应为粗体");
+                        }
+                      }
+                      EvalAssert.isTrue(hit, "未找到含「逾期率」的 run");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "其余文字未被误加粗",
+                    doc -> {
+                      Paragraph p = requireParagraph(doc, 1, "第二段");
+                      for (Run run : p.runs()) {
+                        if (!run.text().isBlank() && !run.text().contains("逾期率")) {
+                          EvalAssert.isTrue(!run.isBold(), "不含目标词的 run「" + run.text() + "」不应被加粗");
+                        }
+                      }
+                    }),
+                EvalTask.NamedCheck.of(
+                    "段落文本未变",
+                    doc ->
+                        EvalAssert.equal(
+                            "本月风险指标：逾期率 3.2%，环比上升 0.4 个百分点。",
+                            requireParagraph(doc, 1, "第二段").text().trim(), "第二段文本")))));
 
     return List.copyOf(tasks);
   }

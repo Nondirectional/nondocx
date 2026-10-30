@@ -253,8 +253,10 @@ create_document({
 ```json
 {"op":"insert","anchor":"p3","position":"after","block":"# 小节 {align=center}\n\n正文。"}
 {"op":"replace_text","anchor":"p8","find":"旧文本","text":"新文本"}
+{"op":"replace_text","anchor":"p8","find":"待定","text":"**通过**"}    // 替换后加粗（行内标记）
 {"op":"delete","anchor":"p5"}
-{"op":"set_style","anchor":"p8","style":"body"}          // 或 heading；也可只用 align/line_spacing
+{"op":"set_style","anchor":"p8","style":"body"}          // 或 heading；也可只用 align/line_spacing/bold/italic
+{"op":"set_style","anchor":"p8","bold":true}             // 整段字符格式，可与 style/align 叠加
 {"op":"table.set_cell","anchor":"t0","row":1,"col":2,"text":"完成"}
 {"op":"table.add_row","anchor":"t0","cells":["a","b"]}
 {"op":"tracked.replace","anchor":"p1","find":"一百万元","text":"两百万元","author":"审查员"}
@@ -266,7 +268,13 @@ create_document({
 
 先 preflight 全部 op 再统一写入：锚点不存在、`find` 不在文中、行列越界、表格块非 end
 插入、引用本 patch 前序删除的锚点、同一锚点多个改文本 op——任一失败**整体拒绝、零改动**。
-`replace_text` 跨 run 时整段重建为单 run（丢段内直接格式，记 warning）。
+
+**replace_text 的行内格式**：`text` 与 create_document 正文、table.set_cell 同一内容语言，
+支持 `**粗体**`/`*斜体*`/`` `代码` ``（未闭合标记原样保留）。给既有文字加粗 = 身份替换
+`find=逾期率 text=**逾期率**`。单 run 命中按 span **外科手术式拆分**：前后缀经 core
+`Paragraph.copyRun` 深拷贝源 run（完整 rPr 含 eastAsia 槽继承），替换片段再套粗/斜/代码
+字体；跨 run 命中整段重建（丢段内直接格式，记 warning）。纯文本（无标记）行为与 v1
+完全一致。
 
 **tracked.\*（修订模式）**：产出 Word 可审阅的 ins/del 修订（`author` 必传）。`tracked.replace`
 是**最小 diff**——只 del「find」范围、ins 紧随其后（core `Paragraph.replaceTrackedRange`），
