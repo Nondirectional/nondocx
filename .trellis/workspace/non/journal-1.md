@@ -1959,3 +1959,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - ① 14B 对比（等模型到位）② tracked op 与行内格式叠加（按需）③ full 面缺口不补工具——compiler 已内建，A/B 数据已闭环
+
+
+## Session 50: tracked op 行内格式与修订格式证据
+<!-- trellis-session: v=2 fp=38a186c046017cec -->
+
+**Date**: 2026-10-30
+**Task**: tracked op 行内格式与修订格式证据
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- core addInsertion/replaceTrackedRange 多 run 变体（一条 ins 多 run、每 run 继承源 rPr）；PatchEngine tracked.insert/replace 解析行内标记（内容语言统一）；修订观测面 outline recent + REVISION 详情恒带 bold/italic（N14 下复审格式证据的唯一入口）；eval 探针 tracked-replace-format（baseline 24）。踩实三坑均修复并进 spec：accept unwrap 游标失效（多 run ins 丢文本）、text() live/reopen 语义差异（旧 javadoc 有误）、复审格式证据缺口（首跑模型 op 正确但复审误报→连插 6 条 ins 污染）；顺手修 heading-font 的 style=font=黑体 dry_run 循环（错误提示教正确写法）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `381276f` | feat(core,toolkit): tracked op 支持行内格式，修订观测面补格式证据 |
+
+### Testing
+
+- [OK] core 364 / toolkit 271 / examples 19 / demo 47 全绿，Spotless 通过；eval runId 20261030-152310-495：24/24 平均 4.21，tracked-replace-format 首个 op 即正确（text=**通过**），复审引用 ins bold=true 判达成，validate_document 0 调用，23 条回归零退化（过程 660→643→495 两坑迭代修复）
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- ① 14B 对比（等模型到位）② full 面对新任务 tracked-replace-format 尚未跑过（可随下次 full 复跑观察其 workaround 路径）③ 行内格式至此全链路统一，无已知字面文本路径
