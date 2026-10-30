@@ -915,6 +915,11 @@ scratch 复现定位根因：`apply_tracked_changes` 按 id 应用 move 对时�
 `XWPFParagraph.getText()` → `CTR.getDelTextArray()`：accept 后残留的 CTR 包装与 XML
 树脱连——POI 影子包装家族，与 §6.6/§6.13 同族）。落盘文档完好（reopen 可读、无残留
 修订），纯 live 会话缺陷。本轮记档不修（eval 观测任务不夹带产品修复）。
+**（2026-10-30 后续任务已修复**：调研实证悬空产生于 move 创作的 moveXml 而非 accept；core 以
+POI 同包桥接「按需重建段落缓存」根治全家族（含 addDeletion/accept/reject 同族手术点），live
+读不再抛，「§6.13 的 live/reopen 语义差异」不受影响；`apply_tracked_changes` 返回串补成对修订
+说明。锁定测试 `TrackedMovePairLiveReadTest` / `TrackedMovePairApplyTest`，详见
+`.trellis/spec/backend/poi-bridge.md` N25。）
 
 **结论**：24 任务口径下 A/B 差距（100% vs 58.3%、4.21 vs 9.88 次）主体仍是 9 条静态
 缺口；新增的第 10 个失败是首个「可过而未过」，其结构（ins 无位置参数 × 位置对复审

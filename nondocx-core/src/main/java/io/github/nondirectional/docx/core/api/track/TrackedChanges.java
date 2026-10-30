@@ -475,12 +475,12 @@ public final class TrackedChanges {
     }
   }
 
-  /** 对单条已校验为文本类的修订执行底层 accept / reject。 */
-  private static void applyOne(TrackedChange change, boolean accept) {
+  /** 对单条已校验为文本类的修订执行底层 accept / reject(下传文档句柄,供手术后修复 POI 段落缓存)。 */
+  private void applyOne(TrackedChange change, boolean accept) {
     if (accept) {
-      TrackedChangeNodes.acceptText(change.raw());
+      TrackedChangeNodes.acceptText(delegate, change.raw());
     } else {
-      TrackedChangeNodes.rejectText(change.raw());
+      TrackedChangeNodes.rejectText(delegate, change.raw());
     }
   }
 
@@ -493,6 +493,11 @@ public final class TrackedChanges {
    *   <li>accept move:moveFrom 删除生效(移除)、moveTo 插入生效(保留文本)。
    *   <li>reject move:moveFrom 删除撤销(恢复文本)、moveTo 插入撤销(移除)。
    * </ul>
+   *
+   * <p><b>成对语义(按 id 批量应用的预期行为)。</b> 命中任一端即对两端同时执行——「应用一半即整对完成」。因此批量 ids 同时含 {@code move_to} 与
+   * {@code move_from} 时,先成功的一端已令整对完成,配对端随后按 id 再应用会因该修订已消失而抛 {@link NoSuchElementException}(「找不到 id
+   * 为 ... 的修订」),<b>属预期</b>而非错误(修订确已生效)。toolkit 的 {@code apply_tracked_changes} 对这类失败行追加成对说明,但失败计数与
+   * PARTIAL_FAILURE 行为保持不变。
    *
    * <p>两端底层 mechanics 与文本类 ins/del 同型(moveTo 同 ins、moveFrom 同 del),复用 {@link
    * TrackedChangeNodes#acceptText} / {@link #rejectText}。
@@ -513,11 +518,11 @@ public final class TrackedChanges {
     TrackedChange from = change.type() == TrackedChangeType.MOVE_FROM ? change : counterpart;
     TrackedChange to = change.type() == TrackedChangeType.MOVE_TO ? change : counterpart;
     if (accept) {
-      TrackedChangeNodes.acceptText(from.raw());
-      TrackedChangeNodes.acceptText(to.raw());
+      TrackedChangeNodes.acceptText(delegate, from.raw());
+      TrackedChangeNodes.acceptText(delegate, to.raw());
     } else {
-      TrackedChangeNodes.rejectText(from.raw());
-      TrackedChangeNodes.rejectText(to.raw());
+      TrackedChangeNodes.rejectText(delegate, from.raw());
+      TrackedChangeNodes.rejectText(delegate, to.raw());
     }
   }
 

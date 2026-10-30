@@ -503,11 +503,11 @@ advanced-types/cell 补齐了高级修订类型的**读 + accept/reject** 后,�
 - **`w:name` 只在 rangeStart 上,两端必须相同**——配对靠 name,不靠 moveFrom/moveTo 的 id。实现用 `_move_<baseId>`(baseId 来自 nextRevisionId,文档内唯一)防冲突。
 - 源端文本用 `delText`、目标端用 `t`(同 del/ins 规则,N12)。
 - 一次 move 需 6 个独立 `w:id`(rangeStart/End ×2 + moveFrom/moveTo)。
-- **moveXml 后源 CTR 句柄 XmlValueDisconnected**——目标端 run 的文本必须在 moveXml **之前**预捕获,不能移动后再读源 run 的 delText。
+- **moveXml 后源 CTR 句柄 XmlValueDisconnected**——目标端 run 的文本必须在 moveXml **之前**预捕获,不能移动后再读源 run 的 delText。手术后 core 会经 N25 按需重建 POI 段落缓存(live 读不再抛),但**术中**(moveXml 与重建之间)仍不能读断连句柄,预捕获规则不变。
 
 **nextRevisionId 必须用 wId(),不能用 raw()(重要修复)**:创作需分配 `w:id` 时扫已有最大 id。原实现 `c.raw().getId()` 对属性/单元格类会抛 `UnsupportedFeatureException`(raw 仅文本/移动类)。新增 `TrackedChange.wId()`(public)在两个委托槽(`runDelegate`/`propertyDelegate`)取非空那个读 `CTMarkup.getId()`——所有 family 都继承 `CTMarkup`,共享 `getId()`。`nextRevisionId` 改用 `c.wId()`。**这是 N15 落地时被掩盖的 bug,高级类型创作首次暴露**。
 
-**accept/reject 后的 POI 缓存失效(测试/使用须知)**:accept/reject 重构树后,POI 的内存 `XWPFParagraph`/`XWPFRun` 包装器会 `XmlValueDisconnected`。验证 accept 后的结构,必须 save→reopen 重新读,不能信任 accept 前的内存 wrapper。
+**accept/reject 后的 POI 缓存失效(测试/使用须知)**:accept/reject 重构树后,POI 的内存 `XWPFParagraph`/`XWPFRun` 包装器会 `XmlValueDisconnected`。~~验证 accept 后的结构,必须 save→reopen 重新读,不能信任 accept 前的内存 wrapper。~~ **(2026-10-30 升级:core 已在所有 tracked 手术点自动按需重建段落缓存,见 N25——live 读不再抛,「必须 save+reopen」不再是硬性须知,仅作为防御性测试写法保留。)**
 
 **与 Rule 1 的关系(无偏离)**:四类创作方法的公共表面 POI-free(住在 `Paragraph`/`Run`/`Cell`);CT 脏活在 `internal/poi/TrackedChangeNodes`。author 必传,date/w:id 自动分配。与 `<w:trackChanges/>` 开关正交。
 
@@ -676,6 +676,22 @@ comments-infrastructure 子任务补齐批注的**现代 Word 兼容元数据**:
 **与 Rule 1 的关系(无偏离)**: 三项基础设施脏活全收进 `internal/poi/AuthoringInfra`(新建)+ `CommentNodes.stampAuthoringInfrastructure`(私有 helper),公共 API 无感——用户调 `addComment`/`reply` 不变。`AuthoringInfra` 的方法 public 但在 `internal/poi`(内部包,POI-free 表面在 `api/`)。**与 tracked-changes 的隔离(AC6)**:`TrackedChangeNodes` **不**接入 `AuthoringInfra`——基础设施仅作用于 comments 创作路径(父任务 Q4,避免改动已稳定的 track 包)。
 
 **范围**: 覆盖 people.xml(注册 + 幂等)、paraId(收敛 + 补 addComment)、RSID(Document 级单例 + settings.xml + 节点级)。**不**含:w16du:dateUtc(reply-threads 已做)、presenceInfo 真实 providerId/userId、回溯补到 tracked-changes 创作路径(AC6)。回归:`CommentsInfrastructureTest` 11 用例(people.xml 存在/幂等/round-trip + paraId addComment/reply + RSID 节点级/settings.xml rsids/文档级单例/round-trip 持久化/不同文档不同 + tracked-changes 隔离 AC6);全量 332 tests green、spotless clean。
+
+---
+
+### N25 — 影子包装家族终态:POI 段落缓存「按需重建」;同包桥接访问 protected,照抄 buildRunsInOrderFromXml
+
+move-pair-live-crash 子任务(TODO #009,docs/11 §6.14)修复 tracked 手术后 live 会话读必抛 `XmlValueDisconnectedException` 的家族缺陷。**根因不在 accept,在创作**:POI `XWPFParagraph` 在文档 open 时把直接子 run **和已存在修订包装(ins/del/moveFrom/moveTo)内的 run** 一次性包成 `XWPFRun` 固化进 `runs`/`iruns`(protected 字段,`buildRunsInOrderFromXml`,无公开 rebuild API);此后任何 `moveXml`/`removeXml` 手术(move 创作、addDeletion 迁 run 入 del、accept/reject 的 unwrap/remove)都会让缓存里的旧 CTR 句柄断连,`getText()` 对每个缓存 run 先调 `getDelTextArray()`——断连处必抛。落盘走 XML 树序列化不经缓存,故 save+reopen 一切正常,纯 live 会话缺陷(eval 里模型因此失去复核能力)。
+
+**修法:按需重建(rebuild-if-disconnected),不是无条件重建。** 新增同包桥接 `org.apache.poi.xwpf.usermodel.XWPFParagraphCacheBridge`(与 `XWPFParagraph` 同包,protected 字段 `runs`/`iruns` 同包直访,**无反射、不子类化**,POI 升级改字段名编译期即暴露——优于反射运行时脆断):`hasDisconnectedRuns`(对缓存 run 调 `getDelTextArray()` 捕获 `XmlValueDisconnectedException` 作断连探针)+ `refreshIfDisconnected`(检测到断连才清空并**照抄 POI 5.2.5 `buildRunsInOrderFromXml` 全分支**重建:CTR/CTHyperlink/CTSimpleField/CTSdtBlock·Run(仅 iruns)/CTRunTrackChange 含嵌套 ins 递归/CTSmartTagRun 递归;`footnoteText` 不动)。桥接层内部用 xmlbeans 异常做探针,不泄漏到 `api/` 公开签名。
+
+**为什么必须「按需」而不是手术后无条件重建(语义红线)**:纯新建创作路径(`addInsertion`/`replaceTrackedRange`,新节点不入固化缓存)**没有断连**,不触发重建——这保住了 §6.13 锁定的 live/reopen 语义差异「XML 手术新建的 ins 在 live `text()` 不可见,save+reopen 后可见」(`TrackedAuthoringTest` live 断言依赖它,eval 基线也按此)。若无条件重建,新建 ins 的 run 会进缓存,live `text()` 突然可见 ins 文本——语义被动变更,零测试能提前拦住。已知边缘效应(显式接受):同段既有断连句柄又有本会话新建 ins 时,重建会把新建 ins 带入缓存(可见性向 reopen 对齐);XML 上无「新建」身份信息,不做特判。
+
+**接线点(TrackedChangeNodes 五处,手术前捕获 owner CTP——断连后无法上溯)**:`moveRuns` 尾部(源段必断连必重建;目标段防御性同检)、`addDeletion` 尾部(check 阶段探针实证的同族缺口:它 `moveXml` 直接子 run 入 del,design 曾误判为「原地转换不 moveXml」)、`removeNode`/`unwrapRunsAndRemove` 尾部(accept 路径)、`restoreDelTextToT`(reject 防御)。受影响段定位:创作链下传 `XWPFParagraph`(`Paragraph.moveRunsFrom`);accept/reject 从手术 cursor 上溯 CTP 后在 body 段落+表格 cell(含嵌套)按 `getCTP()` 比对回查。
+
+**toolkit 连带修复(教训:缓存口径变化会暴露「依赖陈旧缓存」的既有代码)**:`addDeletion` 接入重建后,`replace_run_tracked` 原依赖「replaceTracked 后 POI 仍把 run 计入 runs() 故索引稳定」的口径失效(第二笔替换误中前一笔 del 内 run,`DocxToolkitBatchTest` 抓出)——重构为**快照解析(目标 wrapper+旧文本先于执行锚定)→逐条执行**。凡 rebuild 生效面扩大,要 grep toolkit 是否有依赖 POI runs()/iruns() 陈旧口径的索引逻辑。
+
+**回归面**:`TrackedMovePairLiveReadTest`(move 对 live 全时序+第二端 NoSuchElementException 锁定+open 已有修订 accept/reject 后 live 读,首个正面锁定 live 崩溃的测试)、toolkit `TrackedMovePairApplyTest`(TODO #009 复现:PARTIAL_FAILURE+成对说明+view 不抛);core 368 / toolkit 273 / 全量 707 green,spotless clean。同批交付 `apply_tracked_changes` 对成对修订的返回语义说明(失败行追加「应用一半即整对完成」文案,计数/PARTIAL_FAILURE/异常零变化)。
 
 ---
 

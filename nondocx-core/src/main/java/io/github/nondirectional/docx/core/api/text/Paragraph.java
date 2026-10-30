@@ -788,7 +788,7 @@ public final class Paragraph implements BodyElement {
     }
     List<org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR> movedCtrs =
         io.github.nondirectional.docx.core.internal.poi.TrackedChangeNodes.moveRuns(
-            doc, sourceParagraph.raw().getCTP(), delegate.getCTP(), srcCtrs, author, now);
+            doc, sourceParagraph.raw(), delegate, srcCtrs, author, now);
     // 把新建的 moveTo 内 run 包成活跃 Run
     List<Run> moved = new java.util.ArrayList<>();
     for (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR ctr : movedCtrs) {

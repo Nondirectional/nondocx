@@ -56,47 +56,6 @@
 
 ## 待办
 
-## #009 · move 对 accept 后 live view 崩溃：XmlValueDisconnectedException（2026-10-30）
-
-- 状态：💡 待启动
-- 项目：core / toolkit
-- 背景：full 面 24 任务复跑（runId `20261030-220341-436`，fill-template 尾部）踩实 + scratch 复现：`apply_tracked_changes` 按 id 应用 move 对时，应用 `move_to` 即完成整对（`move_from` 随之消失，报「找不到 id」partial_failure——该语义本身可辩护）；**此后任何 view/读都抛 `XmlValueDisconnectedException`**（`Paragraph.text()` → `XWPFParagraph.getText()` → `CTR.getDelTextArray()`：accept 后残留的 CTR 包装与 XML 树脱连——POI 影子包装家族，§6.6/§6.13 同族）。落盘文档完好（reopen 可读、无残留修订），纯 live 会话缺陷；eval 里模型因此失去复核能力（5 个读工具连败）。详见 docs/11 §6.14。
-- 复现（toolkit 直调）：三段文档 → `move_run_tracked(docId, 0, 0, 2, author)` → `apply_tracked_changes(ACCEPT, TEXT_OR_MOVE, [move_to id, move_from id])`（partial_failure）→ `view_outline` 抛异常。
-- 目标：
-  1. move（及同类成对修订）accept 后，live 会话的 view/读路径不再抛异常（上述步骤转为锁定测试）。
-  2. 顺带审计 apply_tracked_changes 对成对修订按 id 重复应用时的返回语义（「应用一半即成对完成」是否在返回串中说明）。
-- 设计要点：根因方向是 accept 的 unwrap/移除后 Paragraph/Run 的 POI 包装缓存（iruns / CT 包装）未失效或残留悬空引用；参考 §6.13 accept unwrap 游标失效的修法（引用快照 + 逐 run 独立 cursor）与 save+reopen 锁定测试惯例。
-- 待定问题（无人值守：按各项推荐自主拍板）：
-  1. 修法层次：core accept 路径修根因 vs view 快照侧防御性容错（推荐：core 修根因，view 不加兜底——避免掩盖家族问题）。
-  2. 成对修订按 id 应用的语义提示（推荐：返回串加一句说明，不改行为）。
-- 启动 Prompt：
-  ```
-  # move 对 accept 后 live view 崩溃（XmlValueDisconnectedException）
-
-  ## 背景
-  full 面复跑踩实 + 已复现（docs/11 §6.14、TODO #009 条目）：apply_tracked_changes 按 id
-  应用 move 对（move_to 应用即整对完成、move_from 报找不到）后，live 会话任何 view/读
-  抛 XmlValueDisconnectedException——Paragraph.text() 走到已脱连的 CTR 包装。落盘完好。
-
-  ## 目标
-  1. 成对修订 accept 后 live view/读不崩（复现步骤转锁定测试）。
-  2. apply_tracked_changes 对成对修订的返回语义说明（不改行为）。
-
-  ## 已讨论的设计方案
-  - 根因：accept unwrap 后 POI 包装缓存悬空（影子包装家族）；参考 §6.13 快照+独立 cursor 修法。
-  - save+reopen 测试锁定；core 修根因，view 侧不兜底。
-
-  ## 待定问题（无人值守：按各项推荐自主拍板）
-  1. 修法层次（推荐：core 修根因）。
-  2. 语义提示（推荐：返回串加说明，不改行为）。
-
-  ## 执行要求（无人值守）
-  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
-  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
-  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
-  - 质量门禁：`mvn -q spotless:apply` 后全量 `mvn test` 全绿（core/toolkit/examples/demo）；提交中文、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
-  ```
-
 ## #007 · 14B vs 27B 对比：P3 收官（2026-10-30）
 
 - 状态：💡 待启动（**卡外部条件**：本地仅 qwen3.8-27b，等 14B 模型部署）
