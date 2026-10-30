@@ -56,46 +56,45 @@
 
 ## 待办
 
-## #008 · full 面复跑：补 tracked-replace-format 的对照数据（2026-10-30）
+## #009 · move 对 accept 后 live view 崩溃：XmlValueDisconnectedException（2026-10-30）
 
 - 状态：💡 待启动
-- 项目：examples（eval）
-- 背景：baseline 24 条里 tracked-replace-format 只在 compiler 面验证过（4 次，首个 op 即正确）。它是目前唯一没有 full 面数据的任务；full 面有 tracked 工具但 ins run 不可寻址，理论上存在「先 `update_run_style` 加粗源 run → `replace_run_tracked` 继承 rPr」的 workaround 链，值得拿数据验证。上一轮 full 面口径见 docs/11 §6.12（runId `20261030-125616-728`：14/23，8 失败全是静态缺口）。
+- 项目：core / toolkit
+- 背景：full 面 24 任务复跑（runId `20261030-220341-436`，fill-template 尾部）踩实 + scratch 复现：`apply_tracked_changes` 按 id 应用 move 对时，应用 `move_to` 即完成整对（`move_from` 随之消失，报「找不到 id」partial_failure——该语义本身可辩护）；**此后任何 view/读都抛 `XmlValueDisconnectedException`**（`Paragraph.text()` → `XWPFParagraph.getText()` → `CTR.getDelTextArray()`：accept 后残留的 CTR 包装与 XML 树脱连——POI 影子包装家族，§6.6/§6.13 同族）。落盘文档完好（reopen 可读、无残留修订），纯 live 会话缺陷；eval 里模型因此失去复核能力（5 个读工具连败）。详见 docs/11 §6.14。
+- 复现（toolkit 直调）：三段文档 → `move_run_tracked(docId, 0, 0, 2, author)` → `apply_tracked_changes(ACCEPT, TEXT_OR_MOVE, [move_to id, move_from id])`（partial_failure）→ `view_outline` 抛异常。
 - 目标：
-  1. `--surface full --group baseline` 全量复跑（24 任务），与 compiler 24/24@4.21 对照。
-  2. tracked-replace-format 的 trace 逐条归因：workaround 成立还是新缺口；成立则记入 docs/11，不成立则按 §6.12 先例评估是否 flag `capabilityGap`。
-- 设计要点：口径与 §6.12 完全一致（同模型同温度、无 Skill、24 轮上限）；本轮新增的 3 条任务（bold-existing-phrase 已 flag、line-spacing-all 可过、tracked-replace-format 待观察）逐条给失败归因表。
+  1. move（及同类成对修订）accept 后，live 会话的 view/读路径不再抛异常（上述步骤转为锁定测试）。
+  2. 顺带审计 apply_tracked_changes 对成对修订按 id 重复应用时的返回语义（「应用一半即成对完成」是否在返回串中说明）。
+- 设计要点：根因方向是 accept 的 unwrap/移除后 Paragraph/Run 的 POI 包装缓存（iruns / CT 包装）未失效或残留悬空引用；参考 §6.13 accept unwrap 游标失效的修法（引用快照 + 逐 run 独立 cursor）与 save+reopen 锁定测试惯例。
 - 待定问题（无人值守：按各项推荐自主拍板）：
-  1. 若 tracked-replace-format 失败，是否 flag capabilityGap（推荐：trace 确认是静态缺口才 flag，锁测试同步；否则保持不 flag 并记录行为归因）。
-  2. 报告落点（推荐：docs/11 新增 §6.14，§6.12 表格不回改、只引用对照）。
+  1. 修法层次：core accept 路径修根因 vs view 快照侧防御性容错（推荐：core 修根因，view 不加兜底——避免掩盖家族问题）。
+  2. 成对修订按 id 应用的语义提示（推荐：返回串加一句说明，不改行为）。
 - 启动 Prompt：
   ```
-  # full 面复跑：补 tracked-replace-format 的对照数据
+  # move 对 accept 后 live view 崩溃（XmlValueDisconnectedException）
 
   ## 背景
-  baseline 24 条里 tracked-replace-format 只在 compiler 面验证过（4 次）。full 面有 tracked
-  工具但 ins run 不可寻址，理论上存在「先 update_run_style 加粗源 run → replace_run_tracked
-  继承 rPr」的 workaround 链。上一轮 full 面口径见 docs/11 §6.12（runId 20261030-125616-728）。
+  full 面复跑踩实 + 已复现（docs/11 §6.14、TODO #009 条目）：apply_tracked_changes 按 id
+  应用 move 对（move_to 应用即整对完成、move_from 报找不到）后，live 会话任何 view/读
+  抛 XmlValueDisconnectedException——Paragraph.text() 走到已脱连的 CTR 包装。落盘完好。
 
   ## 目标
-  1. --surface full --group baseline 全量复跑（24 任务），与 compiler 24/24@4.21 对照。
-  2. tracked-replace-format 逐条 trace 归因：workaround 成立记入 docs/11；不成立则按 §6.12
-     先例评估 flag capabilityGap（锁测试同步）。
+  1. 成对修订 accept 后 live view/读不崩（复现步骤转锁定测试）。
+  2. apply_tracked_changes 对成对修订的返回语义说明（不改行为）。
 
   ## 已讨论的设计方案
-  - 口径与 §6.12 一致：同模型同温度、无 Skill、默认 24 轮上限、check 防退化口径不变。
-  - 逐失败归因表（静态缺口 vs 行为），与 §6.12 的 8 缺口清单对照更新。
+  - 根因：accept unwrap 后 POI 包装缓存悬空（影子包装家族）；参考 §6.13 快照+独立 cursor 修法。
+  - save+reopen 测试锁定；core 修根因，view 侧不兜底。
 
   ## 待定问题（无人值守：按各项推荐自主拍板）
-  1. 失败时是否 flag capabilityGap（推荐：trace 确认静态缺口才 flag）。
-  2. 报告落点（推荐：docs/11 §6.14，不回改 §6.12）。
+  1. 修法层次（推荐：core 修根因）。
+  2. 语义提示（推荐：返回串加说明，不改行为）。
 
   ## 执行要求（无人值守）
   本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
   - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
   - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
-  - 质量门禁：eval 前必须 `mvn -q spotless:apply` + install core/toolkit（toolkit 从 ~/.m2 解析）；若改了 EvalTasks（flag/check），`mvn test` 全绿 + EvalTasksTest 锁定同步；提交信息附 full 与 compiler 双 runId 与逐任务数据，失败诚实报告。
-  - 文档：docs/11 §6.14 + spec agent-single 结果块同步；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
+  - 质量门禁：`mvn -q spotless:apply` 后全量 `mvn test` 全绿（core/toolkit/examples/demo）；提交中文、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
   ```
 
 ## #007 · 14B vs 27B 对比：P3 收官（2026-10-30）

@@ -859,6 +859,68 @@ baseline**——它修复的是「复审误报已正确的文档」，对物理�
 tracked-replace-format 首个 op 即正确（`tracked.replace text=**通过**`），复审引用新证据
 字段直接判「ins，bold=true……达成」；23 条回归零退化，`validate_document` 全程 0 调用。
 
+### 6.14 full 面 24 任务口径：全链首个「可过而未过」（2026-10-30）
+
+§6.13 后 baseline 扩到 24，tracked-replace-format 只有 compiler 面数据。full 面全量
+复跑（runId `20261030-220341-436`，58 工具，同模型同温度）：
+
+| 指标 | full 面 | compiler 面（§6.13 终版） |
+|---|---|---|
+| 通过率 | **14/24（58.3%）** | **24/24（100%）** |
+| 平均调用 | **9.88**（2.3×） | **4.21** |
+| 已知缺口失败 | 9（与 §6.12 清单完全一致，零回归） | 0 |
+| 行为失败 | **1（tracked-replace-format，见下）** | 0 |
+| 撞 24 轮上限（空收尾） | 2（table-add-row、bold-existing-phrase） | 0 |
+
+9 条缺口 flag 任务全部如期失败、归因不变；14 条通过集与 §6.12 完全一致（零回归、
+零意外通过）。诚实止损的行为方差值得一提：comment-add 24→5 次（模型查完工具面直接
+报告不可达并给出替代方案）、multi-step-combo 24→9 次（居中✓ 建表✓，批注部分快速
+承认无工具）——同模型同温度下的单次样本，方向可喜但不下结论。
+
+**tracked-replace-format：eval 历史上第一例「任务可做但没做成」**（§6.12 的 8 个失败
+全是静态缺口、零行为失败）。模型 9 次调用的路径：
+
+1. 定位 5 次（current_document / search×2 / read_paragraph / read_run）；
+2. `delete_run_tracked target_text=待定`——**外科手术式删除**，位置精确（该工具的
+   target_text 模式可跨 run、可删 run 内部分文本）；
+3. `insert_tracked_run bold=true`——加粗✓，但该工具**只能插在段落末尾**（唯一败着）；
+4. `list_tracked_changes` 复核 → 复审判「达成」→ 收尾「两条修订均已记录」。
+
+唯一失败的 check：最终可见文本「结论：。通过」≠「结论：通过。」——ins 落在句号之后。
+
+**workaround 链成立（探针实证）**：`update_run_style` 先加粗源 run →
+`replace_run_tracked new_text=结论：通过。`（新 run 复制源 run 完整 rPr，含 bold）→
+save+reopen 后 4 项 check 全过，锁定为 toolkit 测试 `TrackedReplaceFormatWorkaroundTest`。
+任务在 full 面**物理可达**，按 §6.12「flag 只标物理不可达」的先例**不 flag
+capabilityGap**，归行为失败。
+
+模型为什么没能自纠——三个因素叠加，单看每层都不是错：
+
+1. `insert_tracked_run` 无位置参数（工具缺口，但非任务级不可达——整 run 替换链可绕）；
+2. **ins 的段内位置对复审不可见**：修订明细有 bold/italic 证据（§6.13 补的），但没有
+   「插在第几个字之后」——复审查不到位置错误，判「达成」；
+3. **live 读侧 ins 文本不进 `text()`**（§6.13 的 live/reopen 语义差异）：模型在会话内
+   永远看不到「结论：。通过」这个最终形态，只有 eval 的 save+reopen 口径可见。
+
+模型选的路径（外科 del + 段尾 ins）其实是对任务语义最忠实的分解；败因是「ins 半边
+无位置控制」×「错误形态在会话内不可观测」。这给 §6.6/§6.13 的「复审只依据可见属性」
+原则再加一层：**当正确结果只在 reopen 口径可见而会话内不可见时，模型没有纠错回路——
+可观测性缺口会伪装成能力缺口**。compiler 面同任务 4 次一步命中（§6.13）。
+
+**顺带踩实第二个 live 会话缺陷（记 TODO #009）**：fill-template 27 次尾部，
+view_outline / view_text / read_paragraph / search_text / view_stats 连续「工具执行失败」。
+scratch 复现定位根因：`apply_tracked_changes` 按 id 应用 move 对时，应用 `move_to` 即
+完成整对（`move_from` 随之消失，报「找不到 id」partial_failure——语义本身可辩护）；
+**此后任何 view 都抛 `XmlValueDisconnectedException`**（`Paragraph.text()` →
+`XWPFParagraph.getText()` → `CTR.getDelTextArray()`：accept 后残留的 CTR 包装与 XML
+树脱连——POI 影子包装家族，与 §6.6/§6.13 同族）。落盘文档完好（reopen 可读、无残留
+修订），纯 live 会话缺陷。本轮记档不修（eval 观测任务不夹带产品修复）。
+
+**结论**：24 任务口径下 A/B 差距（100% vs 58.3%、4.21 vs 9.88 次）主体仍是 9 条静态
+缺口；新增的第 10 个失败是首个「可过而未过」，其结构（ins 无位置参数 × 位置对复审
+不可见 × live 不可见）说明细粒度工具面的问题不只在「凑不齐整段级语义」（§6.12），
+还在「中间态不可观测时模型没有自纠回路」。
+
 ---
 
 ## 7. 明确不做什么

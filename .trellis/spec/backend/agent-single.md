@@ -198,7 +198,15 @@ tracked-replace-format 首个 op 即正确，复审引用修订条目的 bold �
 bold check 加严口径）——8 个失败全部是静态能力缺口（页脚写/批注/列表/段落删除/
 真空单元格/模板/run 拆分），零「任务可做但做砸」；4 任务撞 24 轮上限。原十任务
 9/10、平均 7.0（612 时 6.2）：观测面富化不改变 full 面 baseline。已知边界：页眉
-写无 op（两面）。**评测任务考察工具选择本身——prompt 不得提示用哪个工具。**
+写无 op（两面）。
+**2026-10-30 full 面 24 任务口径**：14/24，平均 9.88（runId `20261030-220341-436`）——
+9 条缺口 flag 任务如期失败（通过集与 728 完全一致，零回归）；tracked-replace-format
+是全链首个「可过而未过」：模型走「target_text 外科 del + 段尾 bold ins」（ins 无位置
+参数），复审与 live 读侧都看不到位置错误（可观测性缺口伪装成能力缺口，docs/11 §6.14）；
+整 run 替换 workaround（update_run_style 加粗源 run → replace_run_tracked 继承 rPr）
+由 toolkit `TrackedReplaceFormatWorkaroundTest` 实证可过全部 check——行为失败，不 flag。
+另踩实：move 对按 id accept 后 live view 抛 XmlValueDisconnectedException（落盘完好，
+TODO #009）。**评测任务考察工具选择本身——prompt 不得提示用哪个工具。**
 
 ## Convention: ref 的容器边界（读/写分离）
 
