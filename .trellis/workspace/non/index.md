@@ -7,8 +7,8 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 50
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 51
 - **Last Active**: 2026-10-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1995 | Active |
+| `journal-2.md` | ~29 | Active |
+| `journal-1.md` | ~1995 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 51 | 2026-10-30 | full 面 24 任务复跑：tracked-replace-format 归因（首个「可过而未过」） | `65ba23a` | `feat/paragraph-spacing-hf-refs` |
 | 50 | 2026-10-30 | tracked op 行内格式与修订格式证据 | `381276f` | `feat/paragraph-spacing-hf-refs` |
 | 49 | 2026-10-30 | full 面对齐观测面复跑 | `a0a5b8f` | `feat/paragraph-spacing-hf-refs` |
 | 48 | 2026-10-30 | replace_text 行内格式与 set_style 加粗 | `4c57ccc` | `feat/paragraph-spacing-hf-refs` |
