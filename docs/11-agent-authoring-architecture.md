@@ -601,7 +601,15 @@ footer 4。compiler 面首次在**通过率与调用数双指标**上超过 full
 
 **教训（写进 spec）**：复审只能依据工具**可见**的属性下结论——「详情里没有」会被解读成
 「没设置」。给复审需要核对的属性（对齐/中文字体/行距）加观测面时**恒出现**优于「设置才出现」。
-仍开放的复审盲区（低频，见 agent-single.md 清单）：表格单元格内容、修订记录查询、页脚正文。
+
+**第二批（同日）**：把 §6.6 初版留下的三个开放盲区一并补齐——表格详情含 `cellTexts`
+矩阵预览（CELL/REVISION 详情同时补全实现）；`view_outline` 修订概览带 `countByAuthor` 与
+`recent` 明细（type/author/文本片段，ref 可直通 view_element）；`view_stats` 带 `footerText`
+预览。**只富化既有工具输出，不增工具数**（full 58 / compiler 6 基线不动）。终版
+（runId `20261030-093623-921`）：**10/10，平均 4.20**——table-cell-edit 6→5、
+tracked-replace 6→4（复审首次给出「del: 一百万元 / ins: 两百万元，author=审查员」的具体
+证据）、footer-page-number 4→3（复审读到「页脚文本为第 1 页」）。至此 baseline 十个任务的
+复审不再对已正确的文档误报。
 
 ---
 

@@ -9,6 +9,7 @@ import io.github.nondirectional.docx.core.api.text.Paragraph;
 import io.github.nondirectional.docx.core.api.text.Run;
 import io.github.nondirectional.docx.toolkit.QualityCheckTools;
 import io.github.nondirectional.docx.toolkit.QualityCheckTools.CheckResult;
+import io.github.nondirectional.docx.toolkit.ref.CellRef;
 import io.github.nondirectional.docx.toolkit.ref.DocumentRef;
 import io.github.nondirectional.docx.toolkit.ref.ElementKind;
 import io.github.nondirectional.docx.toolkit.ref.ElementRef;
@@ -18,6 +19,7 @@ import io.github.nondirectional.docx.toolkit.ref.HeaderFooterRef;
 import io.github.nondirectional.docx.toolkit.ref.ParagraphRef;
 import io.github.nondirectional.docx.toolkit.ref.RefResolutionException;
 import io.github.nondirectional.docx.toolkit.ref.ReferenceContext;
+import io.github.nondirectional.docx.toolkit.ref.RevisionRef;
 import io.github.nondirectional.docx.toolkit.ref.RunRef;
 import io.github.nondirectional.docx.toolkit.ref.TableRef;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedParagraph;
@@ -29,6 +31,7 @@ import io.github.nondirectional.docx.toolkit.view.dto.IssueEntry;
 import io.github.nondirectional.docx.toolkit.view.dto.IssuesView;
 import io.github.nondirectional.docx.toolkit.view.dto.OutlineEntry;
 import io.github.nondirectional.docx.toolkit.view.dto.OutlineView;
+import io.github.nondirectional.docx.toolkit.view.dto.RevisionEntry;
 import io.github.nondirectional.docx.toolkit.view.dto.RevisionOverview;
 import io.github.nondirectional.docx.toolkit.view.dto.StatsView;
 import io.github.nondirectional.docx.toolkit.view.dto.TextEntry;
@@ -71,6 +74,15 @@ import java.util.Map;
  * ElementResolver}，保证可被 {@link #element} 解析。
  */
 public final class DocumentViewService {
+
+  /** view_element 表格详情的 cellTexts 矩阵最大行数（超出标「…」）。 */
+  private static final int TABLE_ELEMENT_ROWS_MAX = 6;
+
+  /** cellTexts 矩阵里单个单元格文本的截断长度。 */
+  private static final int TABLE_ELEMENT_CELL_MAX = 24;
+
+  /** stats 页脚文本预览的截断长度。 */
+  private static final int FOOTER_PREVIEW_MAX = 120;
 
   private final ReferenceContext referenceContext;
   private final QualityCheckTools qualityCheckTools;
@@ -131,6 +143,10 @@ public final class DocumentViewService {
             snapshot.createdAt().toString(),
             truncated,
             totalCount);
+    List<RevisionEntry> recent =
+        rev.recent().stream()
+            .map(e -> new RevisionEntry(e.ref(), e.type(), e.author(), e.snippet()))
+            .collect(java.util.stream.Collectors.toList());
     return new OutlineView(
         meta,
         entries,
@@ -138,7 +154,12 @@ public final class DocumentViewService {
         ov.hasHeader(),
         ov.hasFooter(),
         doc.sections().size(),
-        new RevisionOverview(rev.trackingEnabled(), rev.totalCount(), rev.countByType()));
+        new RevisionOverview(
+            rev.trackingEnabled(),
+            rev.totalCount(),
+            rev.countByType(),
+            rev.countByAuthor(),
+            recent));
   }
 
   // ==================== text ====================
@@ -284,8 +305,28 @@ public final class DocumentViewService {
         ov.hasToc(),
         ov.hasHeader(),
         ov.hasFooter(),
+        footerTextPreview(doc),
         fonts,
         fontSizes);
+  }
+
+  /** 页脚文本预览：无页脚/空页脚为 null；截断到 {@value #FOOTER_PREVIEW_MAX} 字符。 */
+  private static String footerTextPreview(Document doc) {
+    try {
+      Footer footer = doc.footer();
+      if (footer == null) {
+        return null;
+      }
+      String text = footer.text();
+      if (text == null || text.isBlank()) {
+        return null;
+      }
+      return text.length() <= FOOTER_PREVIEW_MAX
+          ? text.trim()
+          : text.substring(0, FOOTER_PREVIEW_MAX);
+    } catch (RuntimeException ignored) {
+      return null;
+    }
   }
 
   // ==================== issues ====================
@@ -368,6 +409,42 @@ public final class DocumentViewService {
           Table t = resolver.resolve((TableRef) ref);
           properties.put("rowCount", t.rows().size());
           properties.put("columnCount", t.rows().isEmpty() ? 0 : t.rows().get(0).cells().size());
+          // 单元格文本矩阵预览（≤6 行，每格截断）——只读复审核对「某格改成了什么」的依据；
+          // 只给行列数时复审无法确认单元格内容（table-cell-edit 曾因此误报）
+          List<List<String>> cellTexts = new ArrayList<>();
+          int rowsShown = Math.min(t.rows().size(), TABLE_ELEMENT_ROWS_MAX);
+          for (int r = 0; r < rowsShown; r++) {
+            List<String> rowTexts = new ArrayList<>();
+            for (io.github.nondirectional.docx.core.api.table.Cell c : t.rows().get(r).cells()) {
+              rowTexts.add(truncate(c.text(), TABLE_ELEMENT_CELL_MAX));
+            }
+            cellTexts.add(rowTexts);
+          }
+          if (t.rows().size() > rowsShown) {
+            cellTexts.add(List.of("…（共 " + t.rows().size() + " 行）"));
+          }
+          properties.put("cellTexts", cellTexts);
+          break;
+        }
+      case CELL:
+        {
+          io.github.nondirectional.docx.core.api.table.Cell c = resolver.resolve((CellRef) ref);
+          properties.put("text", c.text());
+          break;
+        }
+      case REVISION:
+        {
+          io.github.nondirectional.docx.core.api.track.TrackedChange change =
+              resolver.resolve((RevisionRef) ref);
+          properties.put("type", change.type() == null ? null : change.type().name().toLowerCase());
+          properties.put("author", change.author());
+          properties.put("date", change.date() == null ? null : change.date().toString());
+          var details = change.details();
+          if (details instanceof io.github.nondirectional.docx.core.api.track.TextChangeDetails) {
+            properties.put(
+                "text",
+                ((io.github.nondirectional.docx.core.api.track.TextChangeDetails) details).text());
+          }
           break;
         }
       case RUN:

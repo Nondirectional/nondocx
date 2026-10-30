@@ -15,6 +15,8 @@ import io.github.nondirectional.docx.toolkit.view.dto.ElementView;
 import io.github.nondirectional.docx.toolkit.view.dto.IssuesView;
 import io.github.nondirectional.docx.toolkit.view.dto.OutlineEntry;
 import io.github.nondirectional.docx.toolkit.view.dto.OutlineView;
+import io.github.nondirectional.docx.toolkit.view.dto.RevisionEntry;
+import io.github.nondirectional.docx.toolkit.view.dto.RevisionOverview;
 import io.github.nondirectional.docx.toolkit.view.dto.StatsView;
 import io.github.nondirectional.docx.toolkit.view.dto.TextView;
 import java.nio.file.Path;
@@ -347,6 +349,87 @@ class DocumentViewServiceTest {
       assertThat(stats.meta().sessionGeneration()).isEqualTo(gen);
       assertThat(ann.meta().sessionGeneration()).isEqualTo(gen);
       assertThat(issues.meta().sessionGeneration()).isEqualTo(gen);
+    }
+  }
+
+  /** 表格详情含 cellTexts 矩阵——只读复审核对「某格改成了什么」的依据（只有行列数时无法确认）。 */
+  @Test
+  void elementTableShowsCellTextsMatrix(@TempDir Path tmp) throws Exception {
+    Path file = buildSampleDoc(tmp);
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      String tableRef =
+          outline.entries().stream()
+              .filter(e -> "table".equals(e.kind()))
+              .map(OutlineEntry::ref)
+              .findFirst()
+              .orElseThrow(() -> new AssertionError("outline 应含表格条目"));
+      ElementView view = svc.element(doc, "doc-1", 1L, tableRef);
+      assertThat(view.kind()).isEqualTo("table");
+      assertThat(view.properties()).containsEntry("rowCount", 2);
+      @SuppressWarnings("unchecked")
+      java.util.List<java.util.List<String>> cellTexts =
+          (java.util.List<java.util.List<String>>) view.properties().get("cellTexts");
+      assertThat(cellTexts).hasSize(2);
+      assertThat(cellTexts.get(0)).containsExactly("单元格00", "单元格01");
+      assertThat(cellTexts.get(1)).containsExactly("", "");
+    }
+  }
+
+  /** stats 暴露页脚文本预览：无页脚为 null；有页脚给截断文本（复审核对「第 1 页」类内容的依据）。 */
+  @Test
+  void statsShowsFooterTextPreview(@TempDir Path tmp) throws Exception {
+    DocumentViewService svc = newService();
+    Path plain = tmp.resolve("plain.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("正文");
+      doc.save(plain);
+    }
+    try (Document doc = Docx.open(plain)) {
+      assertThat(svc.stats(doc, "doc-1", 1L).footerText()).isNull();
+    }
+
+    Path withFooter = tmp.resolve("footer.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("正文");
+      doc.ensureFooter().addParagraph().addRun("第 1 页");
+      doc.save(withFooter);
+    }
+    try (Document doc = Docx.open(withFooter)) {
+      StatsView stats = svc.stats(doc, "doc-1", 1L);
+      assertThat(stats.hasFooter()).isTrue();
+      assertThat(stats.footerText()).contains("第 1 页");
+    }
+  }
+
+  /** outline 修订概览带作者计数与最近明细（type/author/片段）——复审核对「作者填了谁、改了什么」。 */
+  @Test
+  void outlineRevisionOverviewCarriesAuthorsAndRecentEntries(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("tracked.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("合同金额为一百万元。");
+      doc.paragraph(0).deleteTrackedRange("审查员", 5, 9);
+      doc.paragraph(0).addInsertion("审查员", "两百万元");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      RevisionOverview revision = outline.revision();
+      assertThat(revision.totalCount()).isEqualTo(2);
+      assertThat(revision.countByAuthor()).containsEntry("审查员", 2);
+      assertThat(revision.recent()).hasSize(2);
+      assertThat(revision.recent()).allMatch(e -> "审查员".equals(e.author()));
+      assertThat(revision.recent())
+          .extracting(RevisionEntry::snippet)
+          .containsExactlyInAnyOrder("一百万元", "两百万元");
+      // recent 的 ref 是完整 canonical，可直通 view_element 查修订详情
+      ElementView detail = svc.element(doc, "doc-1", 1L, revision.recent().get(0).ref());
+      assertThat(detail.kind()).isEqualTo("revision");
+      assertThat(detail.properties()).containsEntry("author", "审查员");
+      assertThat(detail.properties()).containsKey("type");
+      assertThat(detail.properties()).containsKey("text");
     }
   }
 }

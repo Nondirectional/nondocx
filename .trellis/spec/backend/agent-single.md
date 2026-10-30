@@ -204,13 +204,17 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 `Run.fontEastAsia()`）——编译器写的是「西文 TNR/Arial + 中文宋体/黑体」双槽，只暴露 ascii
 槽会把已正确的中文字体误判成「未设置」（heading-font 曾 24 次空转）。
 
+**复审盲区已补齐**（2026-10-30 第二批，同日评测三任务复审全部「达成」且给出具体证据）：
+表格详情含 `cellTexts` 矩阵预览（≤6 行、每格截断）+ CELL/REVISION 详情实现；
+`view_outline` 修订概览带 `countByAuthor` 与 `recent` 明细（ref/type/author/片段，ref 可直通
+`view_element`）；`view_stats` 带 `footerText` 预览（截断 120，无页脚为 null）。
+**只富化既有工具输出，不增工具数**——full 58 / compiler 6 基线不动。
+
 > **属性可见性是复审的地基**（2026-10-30 教训）：复审 SubAgent 只能依据工具**可见**的属性下结论，
 > 「详情里没有 alignment」会被它解读成「未设置对齐」——`insert-centered-title` 曾因此空转 24 次
-> （主模型第 2 次调用就已正确，8 次 review 全部误报「未居中」）。给复审需要核对的段落级要求
-> （对齐/行距/标题级别/中文字体）加观测面时，**恒出现**优于「设置才出现」：不给「属性缺失=？」留推断空间。
-> 复审盲区清单（已修 alignment/字体槽；仍开放）：表格单元格内容（view_element 的 CELL 空
-> properties）、修订记录（review 只扫 view 组，无 tracked-changes 查询）、页脚正文（HEADER_FOOTER
-> 有 text，但 stats/outline 不含页脚）。
+> （主模型第 2 次调用就已正确，8 次 review 全部误报「未居中」）。给复审需要核对的属性
+> （对齐/行距/标题级别/中文字体/单元格内容/修订作者/页脚文本）加观测面时，**恒出现**优于
+> 「设置才出现」：不给「属性缺失=？」留推断空间。
 
 ## Convention: 编译器工具面（compiler surface，实验性）
 

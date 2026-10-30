@@ -49,6 +49,12 @@ public final class SnapshotBuilder {
   /** 表格采样的最大行数（首行优先）。 */
   private static final int TABLE_SAMPLE_ROWS = 1;
 
+  /** 修订摘要携带的最近明细条数上限。 */
+  private static final int RECENT_REVISIONS_MAX = 5;
+
+  /** 修订内容片段最大长度。 */
+  private static final int RECENT_SNIPPET_MAX = 40;
+
   private final ReferenceContext referenceContext;
 
   public SnapshotBuilder() {
@@ -73,7 +79,7 @@ public final class SnapshotBuilder {
     ElementResolver resolver =
         referenceContext.resolver(new DocumentRef(conversationId, sessionGeneration), doc);
     BodyPreviews body = buildBodyPreviews(doc, resolver);
-    RevisionSummary revision = buildRevision(doc);
+    RevisionSummary revision = buildRevision(doc, resolver);
     QualitySummary quality = new QualitySummary(0, 0, List.of());
 
     Instant sourceLastModified = readLastModified(sourcePath);
@@ -180,22 +186,47 @@ public final class SnapshotBuilder {
     return samples;
   }
 
-  private RevisionSummary buildRevision(Document doc) {
+  private RevisionSummary buildRevision(Document doc, ElementResolver resolver) {
     try {
       TrackedChanges tc = doc.trackedChanges();
       boolean enabled = tc.enabled();
       var changes = tc.list();
       int total = changes.size();
       Map<String, Integer> byType = new HashMap<>();
+      Map<String, Integer> byAuthor = new HashMap<>();
+      List<RevisionSummary.Entry> recent = new ArrayList<>();
       for (var ch : changes) {
         TrackedChangeFamily family = ch.family();
         String key = family == null ? "unknown" : family.name().toLowerCase();
         byType.merge(key, 1, Integer::sum);
+        String author = ch.author() == null ? "unknown" : ch.author();
+        byAuthor.merge(author, 1, Integer::sum);
+        if (recent.size() < RECENT_REVISIONS_MAX) {
+          // ref 用完整 canonical（可直通 view_element 查详情），不是裸修订 id
+          recent.add(
+              new RevisionSummary.Entry(
+                  resolver.reference(ch).canonical(),
+                  ch.type() == null ? "unknown" : ch.type().name().toLowerCase(),
+                  author,
+                  changeSnippet(ch)));
+        }
       }
-      return new RevisionSummary(enabled, total, byType);
+      return new RevisionSummary(enabled, total, byType, byAuthor, recent);
     } catch (RuntimeException ignored) {
-      return new RevisionSummary(false, 0, Map.of());
+      return new RevisionSummary(false, 0, Map.of(), Map.of(), List.of());
     }
+  }
+
+  /** 修订内容片段：文本类修订给改动的文本，其他家族给家族描述。 */
+  private static String changeSnippet(
+      io.github.nondirectional.docx.core.api.track.TrackedChange change) {
+    var details = change.details();
+    if (details instanceof io.github.nondirectional.docx.core.api.track.TextChangeDetails) {
+      String text =
+          ((io.github.nondirectional.docx.core.api.track.TextChangeDetails) details).text();
+      return truncate(text == null ? "" : text, RECENT_SNIPPET_MAX);
+    }
+    return change.family() == null ? "" : change.family().name().toLowerCase();
   }
 
   // ==================== 辅助 ====================

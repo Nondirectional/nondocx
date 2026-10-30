@@ -233,10 +233,11 @@ public final class ViewTools extends ToolkitToolContext {
   @ToolDef(
       name = "view_element",
       description =
-          "按 canonical ref 获取单个元素的结构化详情（段落/表格/run/页眉页脚 part）。"
+          "按 canonical ref 获取单个元素的结构化详情（段落/表格/run/单元格/修订/页眉页脚 part）。"
               + "段落/表格/run ref 来自 view_outline/view_text/view_annotated；"
+              + "单元格 ref 来自 read_table_cell；修订 ref 来自 view_outline 修订概览或 list_tracked_changes；"
               + "页眉/页脚 ref 来自 read_header_footer/read_header_footer_ref。"
-              + "段落与 run 详情会带 location，便于确认目标容器。")
+              + "段落/run 详情带 location；表格详情含 cellTexts 单元格文本矩阵预览；修订详情含 type/author/text。")
   @ToolCapability(operation = CapabilityOperation.READ, element = "element")
   public String viewElement(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
