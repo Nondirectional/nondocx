@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "compiler surface op 约定(原子性/锚点独占/元数据行)、评测基线约定(baseline 计数/capabilityGap/ref 容器边界)——本任务 op 与 eval 的规范依据"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "N5 读写分离:读侧 header() 只读绝不创建、写侧 ensureHeader() 创建路径;页眉 op 写读两侧入口必须分开选"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "无 Lombok、fluent mutator、全中文对外、content-equal、测试规范"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "DocxException 全 unchecked 体系;PatchException(preflight 零写入)消息风格对齐"}
+{"file": ".trellis/tasks/10-31-header-write-op/research/01-footer-set-page-number-chain.md", "reason": "footer.set_page_number 全链模板:PatchEngine dispatch/plan/执行体、CompilerTools 描述/示例/NestedParamCapability、提示词两处、11 处同步文件清单"}
+{"file": ".trellis/tasks/10-31-header-write-op/research/02-core-header-footer-api-n5.md", "reason": "ensureHeader/ensureFooter 位置与语义、Header 段落 API(addParagraph 追加、无替换)、Paragraph/Run 行内写入路径"}
+{"file": ".trellis/tasks/10-31-header-write-op/research/03-toolkit-inline-markup-and-tests.md", "reason": "行内标记链路(parseInline→Span→applySpanFormat)与三层测试先例(PatchEngineTest/CompilerToolsTest/CompilerPipelineTest)及新测试放置映射"}
+{"file": ".trellis/tasks/10-31-header-write-op/research/read-view-footer-metadata.md", "reason": "MarkdownView 页脚元数据行代码与格式惯例(存在且非空/多行' / '/截断不输出/round-trip 剥注释),页眉行照此实现"}
+{"file": ".trellis/tasks/10-31-header-write-op/research/eval-header-task-pattern.md", "reason": "footer-page-number 任务样例、check 三件套模式、命名入组惯例、防恒真/防退化/reopen 硬约束"}
+{"file": ".trellis/tasks/10-31-header-write-op/research/eval-structure-and-rerun.md", "reason": "EvalTasks/EvalTasksTest 计数锁与 capabilityGap 清单锁、baseline 复跑命令与 runId 产物位置"}
