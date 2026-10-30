@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "验收对照：flag 变更须 EvalTasksTest 锁定同步、mvn test 全绿；报告须含双 runId 与逐任务数据"}
