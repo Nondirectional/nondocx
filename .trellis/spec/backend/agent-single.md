@@ -169,6 +169,14 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 - 保存仍由应用层强制（`EvalRunner` 在 `Agent.run` 返回后调用 `save_docx`），不暴露给模型；
 - `EvalTasksTest#everyTaskFailsAtLeastOneCheckOnUnmodifiedSeed` 是防恒真 check 的硬约束：
   每条任务在未修改 seed 上必须至少失败一次；
+- **check 还要防退化通过**（2026-10-30 教训）：通过条件必须排除「能力弱的面用退化方式
+  满足字面断言」——bold-existing-phrase 曾被 full 面「整段唯一 run 全加粗」空洞通过
+  （「其余未误加粗」找不到非目标 run 可检）。修法是严格子集断言（存在目标词以外的
+  文字 ⇒ 必须存在非粗体 run）。写跨面任务的 check 时问一句：**能力不够的面会用什么
+  退化解满足这条断言？**
+- full 面静态缺口任务 flag `capabilityGap=true`（9 条，`EvalTasksTest#
+  marksKnownCapabilityGapTasks` 锁定）：页脚写/批注/列表/段落删除/真空单元格表格行/
+  模板填充×2/run 拆分。flag 只影响报告分类列，compiler 面全过时 inert；
 - 运行：`mvn -q -pl nondocx-examples -Dexec.mainClass=...EvalMain exec:java`；
   产物在 `target/eval/<runId>/`。
 
@@ -184,7 +192,11 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 P3 扩展 10 条首跑全过；歧义指代/范围限定各 4 次，同段双修订（独占拒绝→拆分）6 次。
 **2026-10-30 行内格式补齐后**：23/23，平均 4.26（runId `20261030-124819-241`）；
 replace-with-format 9→4 次（`text=**…**` 一步命中），`validate_document` 全程 0 调用。
-已知边界：页眉写无 op。**评测任务考察工具选择本身——prompt 不得提示用哪个工具。**
+**2026-10-30 full 面对齐复跑**：14/23，平均 11.83（runId `20261030-125616-728`，
+bold check 加严口径）——8 个失败全部是静态能力缺口（页脚写/批注/列表/段落删除/
+真空单元格/模板/run 拆分），零「任务可做但做砸」；4 任务撞 24 轮上限。原十任务
+9/10、平均 7.0（612 时 6.2）：观测面富化不改变 full 面 baseline。已知边界：页眉
+写无 op（两面）。**评测任务考察工具选择本身——prompt 不得提示用哪个工具。**
 
 ## Convention: ref 的容器边界（读/写分离）
 

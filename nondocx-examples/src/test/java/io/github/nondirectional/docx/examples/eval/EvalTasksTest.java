@@ -77,12 +77,23 @@ class EvalTasksTest {
 
   @Test
   void marksKnownCapabilityGapTasks() {
+    // full 面静态能力缺口任务（compiler 面全部可过；flag 仅影响 full 面报告的分类列）。
+    // 2026-10-30 full 面复跑（runId 20261030-125616-728）逐条 trace 确认后加入。
     assertThat(
             EvalTasks.all().stream()
                 .filter(EvalTask::capabilityGap)
                 .map(EvalTask::id)
                 .collect(java.util.stream.Collectors.toList()))
-        .containsExactly("footer-page-number");
+        .containsExactly(
+            "footer-page-number",
+            "comment-add",
+            "fill-template",
+            "insert-list",
+            "delete-paragraph",
+            "table-add-row",
+            "multi-step-combo",
+            "fill-template-conditional-false",
+            "bold-existing-phrase");
   }
 
   @Test

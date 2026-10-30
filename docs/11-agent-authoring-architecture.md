@@ -762,6 +762,60 @@ eval baseline 扩到 **23**：新增 `bold-existing-phrase`（段内既有词加
 
 `validate_document` 全程仍 0 次调用，无警告修复循环；22 条回归任务零退化。
 
+### 6.12 full 面对齐复跑：8 个失败全是静态缺口，零「模型做砸」（2026-10-30）
+
+§6.11 后 compiler 面是 23/23@4.26，而 full 面的对照数字停在 §6.6 的 9/10@6.2（runId
+`20261030-091648-612`）——中间隔了五个观测/能力批次。在 23 任务 baseline 上复跑 full 面
+（runId `20261030-125616-728`，58 工具，同模型同温度）：
+
+| 指标 | full 面 | compiler 面（§6.11） |
+|---|---|---|
+| 通过率 | **14/23（60.9%）**＊ | **23/23（100%）** |
+| 平均调用 | **11.83**（2.8×） | **4.26** |
+| 撞 24 轮迭代上限 | **4 任务**（footer/insert-list/table-add-row/multi-step-combo） | 0 |
+| 已知能力缺口失败 | 9（复跑后全量 flag，见下） | 0 |
+
+＊runId 728 原始口径 15/23——其中 bold-existing-phrase 是**空洞通过**（见下），check
+加严后按失败计（复验 runId `131105-091` 失败 / compiler `131042-172` 仍 4 次通过）。
+原十任务子集 9/10、平均 7.0 次调用（612 时 6.2）：**观测面富化没有改变 full 面
+baseline**——它修复的是「复审误报已正确的文档」，对物理不可能的任务无能为力。
+
+**逐失败归因（全部静态能力缺口，零「任务可做但模型做砸」）**：
+
+| 任务 | 调用 | 缺口 |
+|---|---|---|
+| footer-page-number | 24 | 页脚只读（写工具 ref 只解析正文）——模型误把正文「正文」改成「第 页」后 review 循环到上限 |
+| comment-add | 24 | 无批注创作工具 |
+| multi-step-combo | 24 | 批注部分（居中✓ 插表✓——两步可达成） |
+| fill-template | 26 | 无 fill_template；条件块整段删除还需段落删除 |
+| fill-template-conditional-false | 13 | 同上 + 空列表模板行删除 |
+| insert-list | 24 | `insert_paragraph` 无列表参数、正文段无列表工具（§6.3 create 组同款缺口） |
+| delete-paragraph | 5 | 无正文段落删除工具——模型用 tracked run del 做最接近的事后快速放弃 |
+| table-add-row | 24 | **真空单元格陷阱**（poi-bridge N2）：`add_table_row` 的新格 0 段落，无「单元格内建段落」工具可填——模型陷入不可能状态后**破坏性重建表头**（表头「模块」被删错位） |
+| bold-existing-phrase（加严后） | 27 | 无 run 拆分——只能整 run 加粗，bold↔unbold 振荡，与「只加粗该词」不可调和 |
+
+**三个新记录**：
+
+1. **复审在不可能任务上产生修复循环**。footer trace：模型正确找到页脚 run 的 ref，
+   但 `replace_run_text` 只按正文索引寻址（误改正文），复审持续报「未达成」→ 模型重试
+   到 24 轮上限。与 §6.10 post-condition 的噪音治理同族、方向相反：post-condition
+   过滤「不该修的信号」，这里的循环本身是「任务不可达」的信号——能力缺口补齐前，
+   上限截断是唯一止损。
+2. **真空单元格陷阱首次在 eval 里被踩实**。N2 在 spec 里躺了两天，这次模型用 24 次
+   调用 + 一次破坏性重建把它变成一等数据点：**「加行」与「能写进加的行」之间隔着
+   一个段落创建工具**。compiler 的 `table.add_row` 一步内建格填文本，同一任务 4 次通过。
+3. **check 要防工具面的退化通过**。bold-existing-phrase 初版 check 在「整段唯一 run
+   全加粗」时空洞通过（「其余文字未被误加粗」找不到非目标 run 可检）。修复：目标词
+   check 追加**严格子集断言**（段内存在目标词以外的文字 ⇒ 必须存在非粗体 run）。
+   该任务连同其余 7 个缺口任务已按 footer-page-number 先例 flag `capabilityGap=true`
+   （`EvalTasksTest#marksKnownCapabilityGapTasks` 锁定 9 条）——flag 只影响报告分类
+   （compiler 面全过时 inert），full 面报告从此自带缺口标注。
+
+**结论**：A/B 差距（100% vs 60.9%，4.26 vs 11.83 次）**全部由能力缺口构成**，与模型
+能力无关——full 面做得到的任务（15 条）它都做到了。compiler 面的胜势来自把缺口逐个
+内建（页脚域/批注/列表/段落删除/表格行/模板/行内格式/run 拆分），而 full 面的缺口
+是结构性的：细粒度工具天生凑不齐「整段级语义」。
+
 ---
 
 ## 7. 明确不做什么

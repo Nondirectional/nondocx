@@ -180,7 +180,10 @@ assertions break.
 
 **toolkit 层下游影响**: 此剥离在 toolkit 层产生连锁约束——`add_table_row` / `add_table_cell`
 返回的是**真空结构**（新行 0 单元格、新单元格 0 段落），无法直接被 `replace_table_cell_run_text`
-等 run 文本工具填充（会报段落索引越界）。SubAgent 遇到该结构时需先创建可写段落。
+等 run 文本工具填充（会报段落索引越界）。toolkit 的 full 面没有「单元格内建段落」工具——
+2026-10-30 eval（runId `20261030-125616-728`，table-add-row 任务）实测模型陷入该不可能状态后
+**破坏性重建表头**（24 次调用，表头被删错位）。「加行」与「能写进加的行」之间是结构性缺口，
+提示词救不了；compiler 面的 `table.add_row` op 一步内建格填文本（同任务 4 次通过）。
 
 ### N3 — `XWPFRun.addPicture` width/height are EMU, not pixels
 POI 5.2.5 stores the `width`/`height` args of `addPicture(...)` **verbatim as EMU** on

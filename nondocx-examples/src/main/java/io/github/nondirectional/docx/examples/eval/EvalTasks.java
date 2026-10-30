@@ -436,7 +436,9 @@ public final class EvalTasks {
                       EvalAssert.equal(
                           "本季度预算为一百五十万元。", requireParagraph(doc, 1, "预算段").text(), "第 1 段");
                       EvalAssert.equal("执行计划", requireParagraph(doc, 2, "计划段").text(), "第 2 段");
-                    }))));
+                    })),
+            // full 面已知缺口：无批注创作工具（toolkit 仅 view 侧批注观测）
+            true));
 
     tasks.add(
         new EvalTask(
@@ -479,7 +481,9 @@ public final class EvalTasks {
                       EvalAssert.equal("3", table.rows().get(1).cells().get(1).text(), "明细 1 人日");
                       EvalAssert.equal("开发", table.rows().get(2).cells().get(0).text(), "明细 2 事项");
                       EvalAssert.equal("5", table.rows().get(2).cells().get(1).text(), "明细 2 人日");
-                    }))));
+                    })),
+            // full 面已知缺口：无 fill_template，且条件块整段删除需要段落删除工具
+            true));
 
     // ==================== P3 扩展（第 13~22 条）：列表/删除/歧义指代/范围限定/格式/组合 ====================
 
@@ -508,7 +512,9 @@ public final class EvalTasks {
                     doc -> {
                       EvalAssert.equal("项目背景", requireParagraph(doc, 0, "背景段").text(), "第 0 段");
                       EvalAssert.equal("以下为待办事项。", requireParagraph(doc, 1, "引导段").text(), "第 1 段");
-                    }))));
+                    })),
+            // full 面已知缺口：insert_paragraph 无列表参数（§6.3 create 组已证实），正文段无列表工具
+            true));
 
     tasks.add(
         new EvalTask(
@@ -530,7 +536,9 @@ public final class EvalTasks {
                           doc.paragraphs().size() == 2, "期望剩 2 段，实际 " + doc.paragraphs().size());
                       EvalAssert.equal("项目概述。", requireParagraph(doc, 0, "概述段").text(), "第 0 段");
                       EvalAssert.equal("进度正常。", requireParagraph(doc, 1, "进度段").text(), "第 1 段");
-                    }))));
+                    })),
+            // full 面已知缺口：无正文段落删除工具（仅 remove_table_row/cell、tracked run 删除）
+            true));
 
     tasks.add(
         new EvalTask(
@@ -651,7 +659,10 @@ public final class EvalTasks {
                       EvalAssert.equal("模块", table.rows().get(0).cells().get(0).text(), "表头");
                       EvalAssert.equal("解析器", table.rows().get(1).cells().get(0).text(), "第 1 行模块");
                       EvalAssert.equal("完成", table.rows().get(1).cells().get(1).text(), "第 1 行状态");
-                    }))));
+                    })),
+            // full 面已知缺口：add_table_row 追加的单元格是 0 段落真空结构（poi-bridge N2），
+            // 无「单元格内建段落」工具可填充——模型陷入不可能状态后破坏性重建（runId 728 trace）
+            true));
 
     tasks.add(
         new EvalTask(
@@ -686,7 +697,9 @@ public final class EvalTasks {
                       EvalAssert.equal("结论", table.rows().get(0).cells().get(1).text(), "表头 2");
                       EvalAssert.equal("评审", table.rows().get(1).cells().get(0).text(), "数据 1");
                       EvalAssert.equal("通过", table.rows().get(1).cells().get(1).text(), "数据 2");
-                    }))));
+                    })),
+            // full 面已知缺口：批注部分（无批注创作工具；居中/插表两步可达成）
+            true));
 
     tasks.add(
         new EvalTask(
@@ -723,7 +736,9 @@ public final class EvalTasks {
                       EvalAssert.isTrue(
                           table.rows().size() == 1, "期望只剩表头 1 行，实际 " + table.rows().size());
                       EvalAssert.equal("事项", table.rows().get(0).cells().get(0).text(), "表头");
-                    }))));
+                    })),
+            // full 面已知缺口：同 fill-template（无 fill_template + 无段落/表格行删除组合）
+            true));
 
     tasks.add(
         new EvalTask(
@@ -808,6 +823,16 @@ public final class EvalTasks {
                         }
                       }
                       EvalAssert.isTrue(hit, "未找到含「逾期率」的 run");
+                      // 严格子集：段内还有目标词以外的文字时，必须存在非粗体 run——
+                      // 整段唯一 run 全加粗（无 run 拆分能力的工具面）不算「只加粗该词」
+                      boolean anyPlain = false;
+                      for (Run run : p.runs()) {
+                        if (!run.text().isBlank() && !run.isBold()) {
+                          anyPlain = true;
+                          break;
+                        }
+                      }
+                      EvalAssert.isTrue(anyPlain, "整段非空 run 全部加粗——目标词以外的文字也被加粗（未做 run 拆分）");
                     }),
                 EvalTask.NamedCheck.of(
                     "其余文字未被误加粗",
@@ -824,7 +849,9 @@ public final class EvalTasks {
                     doc ->
                         EvalAssert.equal(
                             "本月风险指标：逾期率 3.2%，环比上升 0.4 个百分点。",
-                            requireParagraph(doc, 1, "第二段").text().trim(), "第二段文本")))));
+                            requireParagraph(doc, 1, "第二段").text().trim(), "第二段文本"))),
+            // full 面已知缺口：无 run 拆分能力，只能整 run 加粗（严格子集 check 必然失败）
+            true));
 
     return List.copyOf(tasks);
   }
