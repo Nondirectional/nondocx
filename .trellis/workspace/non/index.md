@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 43
+- **Total Sessions**: 44
 - **Last Active**: 2026-10-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1757 | Active |
+| `journal-1.md` | ~1791 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 44 | 2026-10-30 | 批注创作 comment.add 与批注观测面 | `8abb488` | `feat/paragraph-spacing-hf-refs` |
 | 43 | 2026-10-30 | 复审盲区补齐：表格矩阵/修订明细/页脚文本，10/10 @4.2 次 | `8938f3c` | `feat/paragraph-spacing-hf-refs` |
 | 42 | 2026-10-30 | 复审可观测性：alignment + eastAsia 槽，compiler 面 10/10 @4.4 次 | `876f3c3` | `feat/paragraph-spacing-hf-refs` |
 | 41 | 2026-10-30 | demo 默认切 compiler 面（6 入口），env 可回退 full | `bb95987` | `feat/paragraph-spacing-hf-refs` |

@@ -1755,3 +1755,37 @@ Session summary was not supplied.
 ### Next Steps
 
 - 批注创作 op（core 已有 addComment）；fill_template/render_preview（P2 收尾）；或 full 面对齐新观测面后复跑对照
+
+
+## Session 44: 批注创作 comment.add 与批注观测面
+<!-- trellis-session: v=2 fp=8c46580d30f3893e -->
+
+**Date**: 2026-10-30
+**Task**: 批注创作 comment.add 与批注观测面
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- PatchEngine 增 comment.add(op 10→11)；core 新增 Paragraph.comments()(comment→paragraph 映射,CTP 子树扫描下沉 CommentNodes;同段多条 LIFO)；view 三处恒出现批注观测(element comments/stats commentCount/outline CommentOverview)+read_document 批注元数据行；eval baseline 增至 11 条
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8abb488` | chore(task): archive 10-30-comment-authoring-op |
+
+### Testing
+
+- [OK] core 355/toolkit 244/examples 20/demo 47 全绿;eval 20261030-100451-694:compiler 11/11 平均 3.91,comment-add 4 调用复审达成
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- fill_template/render_preview(P2 收尾);full 面对齐新观测面复跑对照
