@@ -340,6 +340,107 @@ class CompilerPipelineTest {
     }
   }
 
+  @Test
+  void createDocumentAppliesUnderlineInBodyAndListAndSurvivesReopen(@TempDir Path temp)
+      throws Exception {
+    String markdown =
+        "正文含<u>下划线</u>词。\n"
+            + "\n"
+            + "- 列表<u>项</u>\n"
+            + "\n"
+            + "| **表头** | 备注 |\n"
+            + "|---|---|\n"
+            + "| <u>格</u> | 纯文本 |\n";
+    MarkdownDoc parsed = MarkdownParser.parse(markdown);
+    Path file = temp.resolve("underline.docx");
+    try (Document doc =
+        DocumentCompiler.compile(parsed, StyleProfile.builtin("plain")).document()) {
+      // 正文：命中片段独立成 run 且带下划线，前后缀不受牵连
+      var body = doc.paragraph(0);
+      assertThat(body.text()).isEqualTo("正文含下划线词。");
+      assertThat(body.runs()).hasSize(3);
+      assertThat(body.run(1).text()).isEqualTo("下划线");
+      assertThat(body.run(1).isUnderline()).isTrue();
+      assertThat(body.run(0).isUnderline()).isFalse();
+      assertThat(body.run(2).isUnderline()).isFalse();
+
+      // 列表项：与正文同一内容语言
+      var listItem = doc.paragraph(1);
+      assertThat(listItem.listKind()).isEqualTo(ListKind.BULLET);
+      assertThat(listItem.text()).isEqualTo("列表项");
+      assertThat(listItem.run(1).isUnderline()).isTrue();
+      assertThat(listItem.run(0).isUnderline()).isFalse();
+
+      // 表格单元格（create 路径是纯文本通道）：`<u>` 与 `**` 同为「剥标记」，不留字面标签、
+      // 也不产生下划线；富文本单元格走 edit_document 的 table.set_cell
+      var cell = doc.tables().get(0).rows().get(1).cells().get(0);
+      assertThat(cell.text()).isEqualTo("格");
+      assertThat(cell.paragraph(0).run(0).isUnderline()).isFalse();
+      doc.save(file);
+    }
+    try (Document reopened = io.github.nondirectional.docx.core.Docx.open(file)) {
+      assertThat(reopened.paragraph(0).run(1).isUnderline()).isTrue();
+      assertThat(reopened.paragraph(0).run(0).isUnderline()).isFalse();
+      assertThat(reopened.paragraph(1).run(1).isUnderline()).isTrue();
+      assertThat(reopened.tables().get(0).rows().get(1).cells().get(0).text()).isEqualTo("格");
+    }
+  }
+
+  @Test
+  void markdownViewRendersUnderlineAndRoundTripsThroughReparse() {
+    // 粗体+下划线 / 斜体+下划线 / 纯下划线三种组合，读侧都必须能表达出来
+    MarkdownDoc parsed = MarkdownParser.parse("**<u>粗下</u>**与*<u>斜下</u>*和<u>纯下</u>");
+    Document doc = DocumentCompiler.compile(parsed, StyleProfile.builtin("plain")).document();
+    String markdown;
+    try {
+      var paragraph = doc.paragraph(0);
+      assertThat(paragraph.runs()).hasSize(5);
+      assertThat(paragraph.run(0).isBold()).isTrue();
+      assertThat(paragraph.run(0).isUnderline()).isTrue();
+      assertThat(paragraph.run(2).isItalic()).isTrue();
+      assertThat(paragraph.run(2).isUnderline()).isTrue();
+      assertThat(paragraph.run(4).isUnderline()).isTrue();
+      assertThat(paragraph.run(4).isBold()).isFalse();
+
+      markdown = MarkdownView.render(doc, 0).markdown();
+      // 下划线在最内层、粗/斜在外层——读回可还原
+      assertThat(markdown).contains("**<u>粗下</u>**与*<u>斜下</u>*和<u>纯下</u>");
+    } finally {
+      doc.close();
+    }
+
+    // round-trip：视图再解析 → 三个片段的下划线都还在，粗/斜标记也都在
+    MarkdownDoc reparsed = MarkdownParser.parse(markdown);
+    var spans = ((MarkdownDoc.Para) reparsed.blocks().get(0)).spans();
+    assertThat(spans)
+        .filteredOn(MarkdownDoc.Span::underline)
+        .extracting(MarkdownDoc.Span::text)
+        .containsExactly("粗下", "斜下", "纯下");
+    assertThat(
+            spans.stream()
+                .filter(MarkdownDoc.Span::underline)
+                .filter(MarkdownDoc.Span::bold)
+                .count())
+        .isEqualTo(1);
+    assertThat(
+            spans.stream()
+                .filter(MarkdownDoc.Span::underline)
+                .filter(MarkdownDoc.Span::italic)
+                .count())
+        .isEqualTo(1);
+
+    // 再编译一次：属性闭环（写 → 读 → 再写）
+    try (Document recompiled =
+        DocumentCompiler.compile(reparsed, StyleProfile.builtin("plain")).document()) {
+      var paragraph = recompiled.paragraph(0);
+      assertThat(paragraph.run(0).isBold()).isTrue();
+      assertThat(paragraph.run(0).isUnderline()).isTrue();
+      assertThat(paragraph.run(2).isItalic()).isTrue();
+      assertThat(paragraph.run(2).isUnderline()).isTrue();
+      assertThat(paragraph.run(4).isUnderline()).isTrue();
+    }
+  }
+
   /** 读 run 的 eastAsia 字体槽（core 公开 API 无此入口，测试经 raw 断言编译器兜底写入）。 */
   private static String eastAsia(io.github.nondirectional.docx.core.api.text.Run run) {
     CTRPr rpr = run.raw().getCTR().getRPr();

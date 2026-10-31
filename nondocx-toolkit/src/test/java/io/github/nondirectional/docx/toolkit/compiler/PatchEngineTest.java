@@ -1320,6 +1320,239 @@ class PatchEngineTest {
     }
   }
 
+  // ==================== <u> 下划线标记 ====================
+
+  @Test
+  void replaceTextWithUnderlineMarkerUnderlinesOnlyMatchedRange(@TempDir Path tmp)
+      throws Exception {
+    Document doc = sample();
+    Path file = tmp.resolve("underline-split.docx");
+    try {
+      var paragraph = doc.paragraph(0); // 「第一段」
+      paragraph.run(0).fontSize(14);
+      var ctr = paragraph.run(0).raw().getCTR();
+      var rpr = ctr.isSetRPr() ? ctr.getRPr() : ctr.addNewRPr();
+      var fonts = rpr.sizeOfRFontsArray() > 0 ? rpr.getRFontsArray(0) : rpr.addNewRFonts();
+      fonts.setEastAsia("宋体");
+
+      // 命中段在中间：「第」+「一」+「段」，前缀与后缀都非空——两边的拷贝都不得被顺手加上下划线
+      PatchEngine.apply(
+          doc,
+          ops(op("op", "replace_text", "anchor", "p0", "find", "一", "text", "<u>壹</u>")),
+          REPORT_CN,
+          false);
+
+      assertThat(paragraph.text()).isEqualTo("第壹段");
+      assertThat(paragraph.runs()).hasSize(3);
+      assertThat(paragraph.run(0).text()).isEqualTo("第");
+      assertThat(paragraph.run(0).isUnderline()).isFalse();
+      assertThat(paragraph.run(1).text()).isEqualTo("壹");
+      assertThat(paragraph.run(1).isUnderline()).isTrue();
+      assertThat(paragraph.run(2).text()).isEqualTo("段");
+      assertThat(paragraph.run(2).isUnderline()).isFalse();
+      // 拆分出的片段继承源 run 完整样式（字号 + eastAsia 槽）
+      for (int i = 0; i < 3; i++) {
+        assertThat(paragraph.run(i).fontSize()).isEqualTo(14);
+        assertThat(eastAsia(paragraph.run(i))).isEqualTo("宋体");
+      }
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document reopened = Docx.open(file)) {
+      // save+reopen：拷贝若写进非树对象，内存读正确、落盘原样（poi-bridge §3 的缓存陷阱只有落盘可暴露）
+      assertThat(reopened.paragraph(0).text()).isEqualTo("第壹段");
+      assertThat(reopened.paragraph(0).run(0).isUnderline()).isFalse();
+      assertThat(reopened.paragraph(0).run(1).text()).isEqualTo("壹");
+      assertThat(reopened.paragraph(0).run(1).isUnderline()).isTrue();
+      assertThat(reopened.paragraph(0).run(2).isUnderline()).isFalse();
+      assertThat(reopened.paragraph(0).run(1).fontSize()).isEqualTo(14);
+    }
+  }
+
+  @Test
+  void replaceTextWithUnderlineAcrossRunsRebuildsAsSpanSequence() {
+    Document doc = sample();
+    try {
+      Paragraph_Without_Helpers.split(doc.paragraph(0)); // 「第一」+「段」
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op", "replace_text",
+                      "anchor", "p0",
+                      "find", "第一段",
+                      "text", "前<u>新的</u>")),
+              REPORT_CN,
+              false);
+      assertThat(doc.paragraph(0).text()).isEqualTo("前新的");
+      assertThat(doc.paragraph(0).runs()).hasSize(2);
+      assertThat(doc.paragraph(0).run(0).text()).isEqualTo("前");
+      assertThat(doc.paragraph(0).run(0).isUnderline()).isFalse();
+      assertThat(doc.paragraph(0).run(1).text()).isEqualTo("新的");
+      assertThat(doc.paragraph(0).run(1).isUnderline()).isTrue();
+      assertThat(result.warnings()).anyMatch(w -> w.contains("跨 run"));
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void tableSetCellAppliesUnderlineAndPlainPathKeepsSingleRun() {
+    Document doc = sample();
+    try {
+      PatchEngine.apply(
+          doc,
+          ops(
+              op(
+                  "op", "insert",
+                  "position", "end",
+                  "block", "| 模块 | 状态 |\n|---|---|\n| core | 进行中 |")),
+          REPORT_CN,
+          false);
+      // 富文本单元格：`<u>` 落 run
+      PatchEngine.apply(
+          doc,
+          ops(op("op", "table.set_cell", "anchor", "t0", "row", 1, "col", 0, "text", "<u>核心</u>")),
+          REPORT_CN,
+          false);
+      var styled = doc.tables().get(0).rows().get(1).cells().get(0);
+      assertThat(styled.text()).isEqualTo("核心");
+      assertThat(styled.paragraph(0).run(0).isUnderline()).isTrue();
+
+      // 纯文本路径不变：单 run、无下划线
+      PatchEngine.apply(
+          doc,
+          ops(op("op", "table.set_cell", "anchor", "t0", "row", 1, "col", 1, "text", "已完成")),
+          REPORT_CN,
+          false);
+      var plain = doc.tables().get(0).rows().get(1).cells().get(1);
+      assertThat(plain.text()).isEqualTo("已完成");
+      assertThat(plain.paragraph(0).runs()).hasSize(1);
+      assertThat(plain.paragraph(0).run(0).isUnderline()).isFalse();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void headerSetTextAppliesUnderlineToMatchedSpan() {
+    Document doc = sample();
+    try {
+      PatchResult result =
+          PatchEngine.apply(
+              doc, ops(op("op", "header.set_text", "text", "<u>机密</u> 内部文档")), REPORT_CN, false);
+      assertThat(result.changed()).containsExactly("header");
+      assertThat(doc.header().text()).contains("机密 内部文档").doesNotContain("<u>");
+      assertThat(doc.header().paragraph(0).run(0).text()).isEqualTo("机密");
+      assertThat(doc.header().paragraph(0).run(0).isUnderline()).isTrue();
+      assertThat(doc.header().paragraph(0).run(1).text()).isEqualTo(" 内部文档");
+      assertThat(doc.header().paragraph(0).run(1).isUnderline()).isFalse();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void trackedInsertWithUnderlineKeepsFormatAfterReopen() throws Exception {
+    java.nio.file.Path file = java.nio.file.Files.createTempFile("tracked-underline-ins", ".docx");
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("正文");
+      PatchEngine.apply(
+          doc,
+          ops(
+              op(
+                  "op", "tracked.insert",
+                  "anchor", "p0",
+                  "text", "<u>要点</u>说明",
+                  "author", "审查员")),
+          REPORT_CN,
+          false);
+      // 一条 INS 修订、两个 run；下划线写在 run 的 rPr 上（live 口径先看原始 rPr）
+      var changes = doc.trackedChanges().list();
+      assertThat(changes).hasSize(1);
+      var rList = changes.get(0).raw().getRList();
+      assertThat(rList).hasSize(2);
+      assertThat(rList.get(0).getRPr().sizeOfUArray()).isEqualTo(1);
+      assertThat(rList.get(1).isSetRPr() ? rList.get(1).getRPr().sizeOfUArray() : 0).isZero();
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document opened = Docx.open(file)) {
+      // reopen 口径：ins 内 run 的 rPr 落盘可读
+      var ins =
+          opened.trackedChanges().list().stream()
+              .filter(
+                  c ->
+                      c.type()
+                          == io.github.nondirectional.docx.core.api.track.TrackedChangeType.INS)
+              .findFirst()
+              .orElseThrow();
+      assertThat(ins.raw().getRList().get(0).getRPr().sizeOfUArray()).isEqualTo(1);
+      assertThat(opened.trackedChanges().acceptAll()).isEqualTo(1);
+      java.nio.file.Path accepted = java.nio.file.Path.of(file + ".accepted.docx");
+      opened.save(accepted);
+      try (Document result = Docx.open(accepted)) {
+        assertThat(result.paragraph(0).text()).isEqualTo("正文要点说明");
+        assertThat(result.paragraph(0).run(1).text()).isEqualTo("要点");
+        assertThat(result.paragraph(0).run(1).isUnderline()).isTrue();
+        assertThat(result.paragraph(0).run(2).isUnderline()).isFalse();
+      }
+    }
+  }
+
+  @Test
+  void trackedReplaceWithUnderlineKeepsFormatAfterReopen() throws Exception {
+    java.nio.file.Path file = java.nio.file.Files.createTempFile("tracked-underline-rep", ".docx");
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("结论：待定。");
+      PatchEngine.apply(
+          doc,
+          ops(
+              op(
+                  "op", "tracked.replace",
+                  "anchor", "p0",
+                  "find", "待定",
+                  "text", "<u>通过</u>",
+                  "author", "审查员")),
+          REPORT_CN,
+          false);
+      var changes = doc.trackedChanges().list();
+      assertThat(changes).hasSize(2); // del + ins
+      var ins =
+          changes.stream()
+              .filter(
+                  c ->
+                      c.type()
+                          == io.github.nondirectional.docx.core.api.track.TrackedChangeType.INS)
+              .findFirst()
+              .orElseThrow();
+      assertThat(ins.raw().getRList()).hasSize(1);
+      assertThat(ins.raw().getRList().get(0).getRPr().sizeOfUArray()).isEqualTo(1);
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document opened = Docx.open(file)) {
+      assertThat(opened.trackedChanges().acceptAll()).isEqualTo(2);
+      java.nio.file.Path accepted = java.nio.file.Path.of(file + ".accepted.docx");
+      opened.save(accepted);
+      try (Document result = Docx.open(accepted)) {
+        assertThat(result.paragraph(0).text()).isEqualTo("结论：通过。");
+        // accept 拆掉 ins 包装后：前缀 / 下划线片段 / 后缀 三段，只有中段带下划线
+        assertThat(result.paragraph(0).run(0).text()).isEqualTo("结论：");
+        assertThat(result.paragraph(0).run(0).isUnderline()).isFalse();
+        assertThat(result.paragraph(0).run(1).text()).isEqualTo("通过");
+        assertThat(result.paragraph(0).run(1).isUnderline()).isTrue();
+        assertThat(result.paragraph(0).run(2).isUnderline()).isFalse();
+      }
+    }
+  }
+
   // ==================== fixture ====================
 
   private static Document sample() {

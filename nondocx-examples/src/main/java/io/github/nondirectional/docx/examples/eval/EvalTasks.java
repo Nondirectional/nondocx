@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 评测集 baseline 组的 26 条任务（初版 12 条 + P3 系列扩展与探针；计数锁在 {@code EvalTasksTest}）。
+ * 评测集 baseline 组的 27 条任务（初版 12 条 + P3 系列扩展与探针；计数锁在 {@code EvalTasksTest}）。
  *
  * <p>每条任务都从代码构造 seed，断言只依赖最终 docx 的结构/文本/样式，不依赖模型自述。 任务选择的原则不是「覆盖全部能力」，而是「能区分模型问题、接口问题、能力缺失」：
  *
@@ -36,6 +36,8 @@ import java.util.Map;
  *       全文行距多锚点——覆盖 docs/11 P3 的「歧义指代、重复文本」缺口。
  *   <li>23~26：既有词加粗/修订带格式替换（行内标记链路探针）与页眉写文本（header.set_text 写读同批 + 防退化加粗 run 断言）/以修订方式加粗既有词
  *       （tracked.set_style 的 rPrChange 语义 + 防 tracked.replace 身份替换 workaround）。
+ *   <li>27：段内既有词加下划线（{@code <u>} 行内标记；check 用严格子集防「整段加下划线」退化通过，与 bold-existing-phrase 同型； full 面
+ *       gap flag 同根因：无 run 拆分）。
  * </ul>
  */
 public final class EvalTasks {
@@ -45,7 +47,7 @@ public final class EvalTasks {
 
   private EvalTasks() {}
 
-  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 26 条任务。 */
+  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 27 条任务。 */
   public static List<EvalTask> all() {
     return TASKS;
   }
@@ -1056,6 +1058,61 @@ public final class EvalTasks {
                             requireParagraph(doc, 1, "第二段").text().trim(), "第二段文本"))),
             // full 面已知缺口：mark_style_change_tracked 按 run_index 定位、无 run 拆分
             // （bold-existing-phrase 同根因）；compiler 面 tracked.set_style 可过
+            true));
+
+    tasks.add(
+        new EvalTask(
+            "underline-existing-phrase",
+            "段内既有词加下划线",
+            "给第二段中的「逾期率」一词加下划线，其他内容一律保持不变。",
+            doc -> {
+              doc.addParagraph("首段：本月经营情况概述。");
+              doc.addParagraph("本月风险指标：逾期率 3.2%，环比上升 0.4 个百分点。");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "目标词已加下划线",
+                    doc -> {
+                      Paragraph p = requireParagraph(doc, 1, "第二段");
+                      boolean hit = false;
+                      for (Run run : p.runs()) {
+                        if (run.text().contains("逾期率")) {
+                          hit = true;
+                          EvalAssert.isTrue(
+                              run.isUnderline(), "含「逾期率」的 run「" + run.text() + "」应带下划线");
+                        }
+                      }
+                      EvalAssert.isTrue(hit, "未找到含「逾期率」的 run");
+                      // 严格子集：段内还有目标词以外的文字时，必须存在非下划线 run——
+                      // 整段唯一 run 全加下划线（无 run 拆分能力的工具面）不算「只给该词加下划线」
+                      boolean anyPlain = false;
+                      for (Run run : p.runs()) {
+                        if (!run.text().isBlank() && !run.isUnderline()) {
+                          anyPlain = true;
+                          break;
+                        }
+                      }
+                      EvalAssert.isTrue(anyPlain, "整段非空 run 全部加下划线——目标词以外的文字也被加下划线（未做 run 拆分）");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "其余文字未被误加下划线",
+                    doc -> {
+                      Paragraph p = requireParagraph(doc, 1, "第二段");
+                      for (Run run : p.runs()) {
+                        if (!run.text().isBlank() && !run.text().contains("逾期率")) {
+                          EvalAssert.isTrue(
+                              !run.isUnderline(), "不含目标词的 run「" + run.text() + "」不应带下划线");
+                        }
+                      }
+                    }),
+                EvalTask.NamedCheck.of(
+                    "段落文本未变",
+                    doc ->
+                        EvalAssert.equal(
+                            "本月风险指标：逾期率 3.2%，环比上升 0.4 个百分点。",
+                            requireParagraph(doc, 1, "第二段").text().trim(), "第二段文本"))),
+            // full 面已知缺口：update_run_style 按 run 定位、无 run 拆分，只能整 run 加下划线
+            // （bold-existing-phrase 同根因）；compiler 面 <u> 行内标记可过
             true));
 
     return List.copyOf(tasks);

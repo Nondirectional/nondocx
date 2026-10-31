@@ -16,7 +16,7 @@ import java.util.Objects;
  *
  * <ul>
  *   <li>{@link Heading}——{@code #}~{@code ######} 标题，可带 {@code {align=…}} 属性；
- *   <li>{@link Para}——段落，由行内 span 组成（粗体/斜体/代码）；
+ *   <li>{@link Para}——段落，由行内 span 组成（粗体/斜体/代码/下划线）；
  *   <li>{@link Table}——Markdown 管线表格，首行为表头；
  *   <li>{@link ListItem}——无序（{@code -}/{@code *})或有序（{@code 1.}）列表项，按缩进分级。
  * </ul>
@@ -138,23 +138,30 @@ public final class MarkdownDoc {
     }
   }
 
-  /** 行内 span：纯文本 + 三个直接格式标记。不支持嵌套强调。 */
+  /** 行内 span：纯文本 + 四个直接格式标记（粗/斜/代码/下划线）。不支持嵌套同名标记。 */
   public static final class Span {
 
     private final String text;
     private final boolean bold;
     private final boolean italic;
     private final boolean code;
+    private final boolean underline;
 
+    /** 兼容构造器：不带下划线（{@code underline=false}），供既有调用方原样沿用。 */
     public Span(String text, boolean bold, boolean italic, boolean code) {
+      this(text, bold, italic, code, false);
+    }
+
+    public Span(String text, boolean bold, boolean italic, boolean code, boolean underline) {
       this.text = Objects.requireNonNull(text, "text");
       this.bold = bold;
       this.italic = italic;
       this.code = code;
+      this.underline = underline;
     }
 
     public static Span text(String text) {
-      return new Span(text, false, false, false);
+      return new Span(text, false, false, false, false);
     }
 
     public String text() {
@@ -171,6 +178,19 @@ public final class MarkdownDoc {
 
     public boolean code() {
       return code;
+    }
+
+    public boolean underline() {
+      return underline;
+    }
+
+    /**
+     * 返回本 span 的「加下划线」副本（其余标记不变）。
+     *
+     * <p>解析器递归处理 {@code <u>…</u>} 内层时用它打标：下划线与内层其它标记（粗/斜/代码）取并集，不做覆盖。
+     */
+    public Span withUnderline() {
+      return new Span(text, bold, italic, code, true);
     }
   }
 }

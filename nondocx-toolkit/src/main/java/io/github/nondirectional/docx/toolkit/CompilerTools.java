@@ -69,7 +69,7 @@ public final class CompilerTools extends ToolkitToolContext {
    * 用 Markdown 编译生成一份新文档，替换 doc_id 当前会话文档。
    *
    * @param docId 文档句柄（保持不变，generation+1）
-   * @param markdown 整份文档的 Markdown（支持 # 标题、粗体、斜体、行内代码、列表、表格、{align=…} 属性）
+   * @param markdown 整份文档的 Markdown（支持 # 标题、粗体、斜体、行内代码、下划线、列表、表格、{align=…} 属性）
    * @param styleProfile 样式 profile 名：report-cn（中文报告）/ plain（纯结构）
    * @return 编译结果（段落数/表格数/warnings）
    */
@@ -78,7 +78,7 @@ public final class CompilerTools extends ToolkitToolContext {
       description =
           "用一份 Markdown 一次性生成整份 docx 文档，替换 doc_id 当前的文档（句柄不变）。"
               + "Markdown 支持：# ~ ###### 标题（可加 {align=center} 属性）、段落、**粗体**、"
-              + "*斜体*、`代码`、- 无序列表、1. 有序列表、|表格|（首行为表头）。"
+              + "*斜体*、`代码`、<u>下划线</u>、- 无序列表、1. 有序列表、|表格|（首行为表头）。"
               + "style_profile=report-cn 时自动套中文报告排版（黑体标题、宋体小四正文、"
               + "1.5 倍行距、首行缩进 2 字符、表头加粗灰底）；plain 只做结构。"
               + "新建/整篇重写文档时用它，不要逐段 insert。结果自带质量检查反馈（qualityIssues）。")
@@ -255,19 +255,19 @@ public final class CompilerTools extends ToolkitToolContext {
       description =
           "对当前文档应用一批原子编辑 ops。锚点是 read_document 输出的短 ID（pN=段落，tN=表格）。"
               + "op 类型：insert（position=before/after/start/end + block=Markdown 块，含表格时仅 end）、"
-              + "replace_text（anchor+find+text，段落内精确子串；text 支持行内标记 **粗体**/*斜体*/`代码`，"
+              + "replace_text（anchor+find+text，段落内精确子串；text 支持行内标记 **粗体**/*斜体*/`代码`/<u>下划线</u>，"
               + "如把「结论」换成加粗：text=**结论：通过**）、delete（anchor 段落）、"
               + "set_style（anchor + style=body/heading 或 align/line_spacing/bold/italic，"
               + "bold/italic 是整段字符格式）、"
               + "table.set_cell（anchor+row+col+text）、table.add_row（anchor+cells）、"
               + "tracked.insert/tracked.delete/tracked.replace（修订模式，anchor+find/text+author 必传，"
-              + "insert/replace 的 text 同样支持 **粗体**/*斜体*/`代码` 行内标记，"
+              + "insert/replace 的 text 同样支持 **粗体**/*斜体*/`代码`/<u>下划线</u> 行内标记，"
               + "修订可被 Word 审阅 accept/reject）、"
               + "tracked.set_style（以修订方式变更既有文字格式，anchor+find+bold/italic+author 必传，"
               + "bold/italic 至少给一个：true 设置 / false 取消，只对 find 命中的文字提交格式修订，"
               + "不改文本内容）、"
               + "footer.set_page_number（页脚页码，format 含 {page}/{pages} 占位符，默认「第 {page} 页」，不占 anchor）、"
-              + "header.set_text（页眉写文本，text 必填、支持 **粗体**/*斜体*/`代码` 行内标记，向页眉追加一段，不占 anchor）、"
+              + "header.set_text（页眉写文本，text 必填、支持 **粗体**/*斜体*/`代码`/<u>下划线</u> 行内标记，向页眉追加一段，不占 anchor）、"
               + "comment.add（批注，anchor+text+author 必传，给整段加范围批注，不改正文）。"
               + "先校验全部 op 再写入：任一 op 非法则整体拒绝、零改动。"
               + "每个段落锚点一批里至多一个改文本 op（tracked.*/replace_text），要改多处请拆两次调用。"

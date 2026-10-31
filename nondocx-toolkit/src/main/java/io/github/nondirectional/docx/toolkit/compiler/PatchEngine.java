@@ -33,8 +33,8 @@ import java.util.Set;
  *   <li>{@code insert}——Markdown 块插入 {@code before}/{@code after} 锚点或文档 {@code start}/{code
  *       end}；含表格块时仅允许 {@code end}（core 无定位插表 API）；
  *   <li>{@code replace_text}——段落内精确子串替换；{@code text} 支持行内标记（{@code **粗**}/{@code *斜*}/{@code
- *       `代码`}，与 create_document/table.set_cell 同一内容语言）：单 run 命中按 span 拆分（前后缀经 {@code copyRun}
- *       继承原样式），跨 run 时整段重建（丢段内直接格式，记 warning）；
+ *       `代码`}/{@code <u>下划线</u>}，与 create_document/table.set_cell 同一内容语言）：单 run 命中按 span 拆分（前后缀经
+ *       {@code copyRun} 继承原样式），跨 run 时整段重建（丢段内直接格式，记 warning）；
  *   <li>{@code delete}——删除段落（删表不在 v2：core 无 API）；
  *   <li>{@code set_style}——套 profile 的 {@code body}/{@code heading} 样式，或显式 {@code align}/{@code
  *       line_spacing}/{@code bold}/{@code italic}（bold/italic 为整段字符格式，可与其余叠加）；
@@ -42,15 +42,15 @@ import java.util.Set;
  *   <li>{@code table.add_row}——末尾加一行（可带初始文本）；
  *   <li>{@code tracked.insert} / {@code tracked.delete} / {@code tracked.replace}——修订模式 （tracked
  *       changes）写作：ins / del / del+ins 配对，{@code author} 必传，{@code text} 支持 {@code **粗**}/{@code
- *       *斜*}/{@code `代码`} 行内标记（多 span 为同一 ins 内多 run，各持 rPr）。替换是最小 diff——只 del「find」范围、ins
- *       紧随其后（core {@code replaceTrackedRange}）；
+ *       *斜*}/{@code `代码`}/{@code <u>下划线</u>} 行内标记（多 span 为同一 ins 内多 run，各持 rPr）。替换是最小 diff——只
+ *       del「find」范围、ins 紧随其后（core {@code replaceTrackedRange}）；
  *   <li>{@code tracked.set_style}——以修订方式（rPrChange）变更<b>既有文字</b>的 bold/italic：{@code anchor}+
  *       {@code find} 定位（多处命中全部处理），{@code bold}/{@code italic} 至少给一个（true 设置 / false 取消）， {@code
  *       author} 必传。目标词与邻文同 run 时先拆 run 再逐 run 提交属性修订（core {@code Run.commitStyleAsTracked}），文本不变；
  *   <li>{@code footer.set_page_number}——页脚追加页码段落，{@code format} 支持 {@code {page}}/{@code {pages}}
  *       占位符（PAGE/NUMPAGES 域，带缓存结果 "1"，非渲染读者也能读到数字）；
  *   <li>{@code header.set_text}——页眉追加一段文本，{@code text} 必填非空、支持行内标记（{@code **粗**}/{@code *斜*}/{@code
- *       `代码`}，与 replace_text 同一内容语言）；追加语义（重复调用追加新段，不替换既有页眉），不占段落锚点；
+ *       `代码`}/{@code <u>下划线</u>}，与 replace_text 同一内容语言）；追加语义（重复调用追加新段，不替换既有页眉）， 不占段落锚点；
  *   <li>{@code comment.add}——给锚点段落加整段范围批注（core {@code Paragraph.addComment}），{@code author}
  *       必传。不改段落文本，不受同锚点改文本独占约束。
  * </ul>
@@ -322,7 +322,8 @@ public final class PatchEngine {
     // text 按行内标记解析（Markdown 是本编译器的统一内容语言，与 create_document/table.set_cell 一致）；
     // 纯文本（无标记）保持原行为不变。
     List<MarkdownDoc.Span> spans = MarkdownParser.parseInline(text);
-    boolean formatted = spans.stream().anyMatch(s -> s.bold() || s.italic() || s.code());
+    boolean formatted =
+        spans.stream().anyMatch(s -> s.bold() || s.italic() || s.code() || s.underline());
     return new PlannedOp(
         "replace_text " + anchor + " 「" + find + "」→「" + text + "」" + (formatted ? "（含格式）" : "")) {
       @Override
@@ -371,7 +372,7 @@ public final class PatchEngine {
 
   /**
    * 单 run 内的带格式替换。源 run 只保留前缀文本；替换片段逐 span、以及命中之间的间隔/后缀文本，均以<b>源 run 的深拷贝</b>承载 （完整 rPr 继承，含
-   * eastAsia 等未建模槽），span 再叠加粗/斜/代码字体。源 run 内多处命中全部处理（非重叠，与 {@code String.replace} 语义一致）。源 run
+   * eastAsia 等未建模槽），span 再叠加粗/斜/下划线/代码字体。源 run 内多处命中全部处理（非重叠，与 {@code String.replace} 语义一致）。源 run
    * 剩空文本时移除。
    *
    * <p>插入顺序陷阱：拷贝必须始终复制源 run——若顺序拷贝「上一份拷贝」，格式会逐份累积（第二份起继承第一份的加粗）。 因此所有 piece 都从源 run 索引拷贝（每次都插在源 run
@@ -416,13 +417,16 @@ public final class PatchEngine {
     }
   }
 
-  /** 逐 span 套行内格式：粗/斜叠加在继承的样式上；代码 span 两槽均改 profile 等宽字体（与 table.set_cell 一致）。 */
+  /** 逐 span 套行内格式：粗/斜/下划线叠加在继承的样式上；代码 span 两槽均改 profile 等宽字体（与 table.set_cell 一致）。 */
   private static void applySpanFormat(Run run, MarkdownDoc.Span span, StyleProfile profile) {
     if (span.bold()) {
       run.bold();
     }
     if (span.italic()) {
       run.italic();
+    }
+    if (span.underline()) {
+      run.underline();
     }
     if (span.code()) {
       DocumentCompiler.applyRunFonts(run, profile.codeFont(), profile.codeFont());
@@ -612,7 +616,8 @@ public final class PatchEngine {
             spans.size() == 1
                 && !spans.get(0).bold()
                 && !spans.get(0).italic()
-                && !spans.get(0).code();
+                && !spans.get(0).code()
+                && !spans.get(0).underline();
         if (plain) {
           cell.text(spans.get(0).text());
         } else {
@@ -628,6 +633,9 @@ public final class PatchEngine {
             }
             if (span.italic()) {
               run.italic();
+            }
+            if (span.underline()) {
+              run.underline();
             }
             if (span.code()) {
               DocumentCompiler.applyRunFonts(run, profile.codeFont(), profile.codeFont());
@@ -692,7 +700,7 @@ public final class PatchEngine {
 
   /**
    * tracked.insert：段末追加一条 ins 修订（位置语义正确——addInsertion 就是段末追加）。 {@code text} 支持行内标记（与 replace_text
-   * 同一内容语言）：多 span 生成同一 {@code <w:ins>} 内的多 run（读侧仍一条 INS），span 逐 run 叠加粗/斜/代码字体。
+   * 同一内容语言）：多 span 生成同一 {@code <w:ins>} 内的多 run（读侧仍一条 INS），span 逐 run 叠加粗/斜/下划线/代码字体。
    */
   private static PlannedOp planTrackedInsert(
       int index, Map<String, Object> op, String anchor, Snapshot snapshot) {
@@ -700,7 +708,8 @@ public final class PatchEngine {
     String text = str(op, "text", index);
     String author = author(op, index);
     List<MarkdownDoc.Span> spans = MarkdownParser.parseInline(text);
-    boolean formatted = spans.stream().anyMatch(s -> s.bold() || s.italic() || s.code());
+    boolean formatted =
+        spans.stream().anyMatch(s -> s.bold() || s.italic() || s.code() || s.underline());
     return new PlannedOp(
         "tracked.insert " + anchor + " +" + text.length() + " 字" + (formatted ? "（含格式）" : "")) {
       @Override
@@ -740,7 +749,8 @@ public final class PatchEngine {
     String text = deleteOnly ? null : str(op, "text", index);
     List<MarkdownDoc.Span> spans = deleteOnly ? null : MarkdownParser.parseInline(text);
     boolean formatted =
-        spans != null && spans.stream().anyMatch(s -> s.bold() || s.italic() || s.code());
+        spans != null
+            && spans.stream().anyMatch(s -> s.bold() || s.italic() || s.code() || s.underline());
     if (!paragraph.text().contains(find)) {
       throw new PatchException(
           "op[" + index + "] 段落 " + anchor + " 文本中找不到「" + find + "」（实际: " + paragraph.text() + "）");
@@ -1051,7 +1061,7 @@ public final class PatchEngine {
 
   /**
    * header.set_text：向默认 section 页眉<b>追加</b>一段文本（不触碰正文段落，与 footer.set_page_number 同型，不占段落锚点）。 {@code
-   * text} 必填非空、按行内标记解析（与 replace_text 同一内容语言）：多 span 逐 run 写入并套粗/斜/代码字体。
+   * text} 必填非空、按行内标记解析（与 replace_text 同一内容语言）：多 span 逐 run 写入并套粗/斜/下划线/代码字体。
    * 追加语义——重复调用追加新段，不替换既有页眉内容（core 无 Header 替换 API，替换留 future）。
    */
   private static PlannedOp planHeaderSetText(int index, Map<String, Object> op) {

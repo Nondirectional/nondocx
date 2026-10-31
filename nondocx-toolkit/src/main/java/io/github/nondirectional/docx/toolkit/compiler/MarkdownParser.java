@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
  * Markdown 子集解析器：Markdown 文本 → {@link MarkdownDoc} IR。
  *
  * <p><b>支持范围（v1）：</b>标题（{@code #}~{@code ######}）、段落、行内 {@code **粗体**}/{@code *斜体*}/{@code
- * `代码`}、无序/有序列表（缩进 2 空格一级）、 管线表格（{@code |---|} 分隔行，{@code \|} 转义）、行尾 {@code
+ * `代码`}/{@code <u>下划线</u>}、无序/有序列表（缩进 2 空格一级）、 管线表格（{@code |---|} 分隔行，{@code \|} 转义）、行尾 {@code
  * {align=center|left|right|both}} 属性、围栏代码块（降级为等宽段落）。
  *
  * <p><b>解析姿态：宽容降级，不拒绝。</b> LLM 产出的 Markdown 一定带瑕疵，解析器的工作是 兜住可识别的部分、把识别不了的按纯文本处理并记
@@ -38,7 +38,7 @@ public final class MarkdownParser {
       Pattern.compile("\\{\\s*align\\s*=\\s*(center|left|right|both)\\s*\\}\\s*$");
   private static final Pattern TRAILING_COMMENT = Pattern.compile("\\s*<!--.*?-->\\s*$");
   private static final Pattern INLINE =
-      Pattern.compile("(\\*\\*.+?\\*\\*|\\*[^*\\n]+?\\*|`[^`\\n]+?`)");
+      Pattern.compile("(\\*\\*.+?\\*\\*|\\*[^*\\n]+?\\*|`[^`\\n]+?`|<u>(.+?)</u>)");
 
   private MarkdownParser() {}
 
@@ -213,7 +213,7 @@ public final class MarkdownParser {
     blocks.add(new Table(header, rows));
   }
 
-  /** 逐格剥行内标记（粗体/斜体/代码），保持单元格纯文本。 */
+  /** 逐格剥行内标记（粗体/斜体/代码/下划线），保持单元格纯文本。 */
   private static List<String> stripCellMarkers(List<String> cells) {
     List<String> stripped = new ArrayList<>();
     for (String cell : cells) {
@@ -265,7 +265,13 @@ public final class MarkdownParser {
 
   // ==================== 行内解析 ====================
 
-  /** 行内解析：切出 code/粗体/斜体片段，其余按纯文本 span。未闭合标记原样保留。 */
+  /**
+   * 行内解析：切出 code/粗体/斜体/下划线片段，其余按纯文本 span。未闭合标记原样保留。
+   *
+   * <p>{@code <u>…</u>} 的内容<b>递归</b>走同一解析器再逐 span 打上下划线——内层的粗/斜/代码照常生效， 下划线取并集。粗/斜 token 的内层含
+   * {@code <u>} 时同样递归（读侧 {@code **<u>x</u>**} 才能还原为粗体+下划线）， 内层不含 {@code <u>} 时仍按 v1
+   * 的字面整体语义处理，不改变既有输入的 span 结构。
+   */
   static List<Span> parseInline(String text) {
     List<Span> spans = new ArrayList<>();
     Matcher matcher = INLINE.matcher(text);
@@ -276,11 +282,15 @@ public final class MarkdownParser {
       }
       String token = matcher.group(1);
       if (token.startsWith("**")) {
-        spans.add(new Span(token.substring(2, token.length() - 2), true, false, false));
+        expandEmphasis(spans, token.substring(2, token.length() - 2), true, false);
       } else if (token.startsWith("`")) {
         spans.add(new Span(token.substring(1, token.length() - 1), false, false, true));
+      } else if (token.startsWith("<u>")) {
+        for (Span inner : parseInline(token.substring(3, token.length() - 4))) {
+          spans.add(inner.withUnderline());
+        }
       } else {
-        spans.add(new Span(token.substring(1, token.length() - 1), false, true, false));
+        expandEmphasis(spans, token.substring(1, token.length() - 1), false, true);
       }
       last = matcher.end();
     }
@@ -291,6 +301,25 @@ public final class MarkdownParser {
       spans.add(Span.text(""));
     }
     return spans;
+  }
+
+  /**
+   * 粗体/斜体 token 的内层展开。
+   *
+   * <p>内层<b>不含</b> {@code <u>} 时整体成一个 span——与 v1 完全一致的「内层其它标记保持字面」语义； 含 {@code <u>} 时递归解析（保证读侧
+   * {@code **<u>x</u>**}/{@code *<u>x</u>*} 能还原出粗/斜+下划线）， 再对内层每个 span 取并集。
+   */
+  private static void expandEmphasis(List<Span> spans, String inner, boolean bold, boolean italic) {
+    List<Span> innerSpans = inner.contains("<u>") ? parseInline(inner) : List.of(Span.text(inner));
+    for (Span span : innerSpans) {
+      spans.add(
+          new Span(
+              span.text(),
+              bold || span.bold(),
+              italic || span.italic(),
+              span.code(),
+              span.underline()));
+    }
   }
 
   /** 把行内标记剥成纯文本（标题用：# **粗体标题** → 粗体标题）。 */

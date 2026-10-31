@@ -10,9 +10,9 @@ import io.github.nondirectional.docx.core.api.text.Run;
 /**
  * 文档 → Markdown 视图：把正文元素按顺序投影成带短 ID 的 Markdown 文本。
  *
- * <p>它是「文档 IR + 编译器」路线的读侧：{@code read_document} 工具用它把整份文档压缩成 一段 LLM
- * 友好的文本——标题层级、粗斜体、列表、表格都保留，每个段落/表格带 {@code <!-- pN -->}/{@code <!-- tN -->} 短 ID 锚点。短 ID 按当前文档顺序编号
- * （p 序号 = 正文段落序，t 序号 = 表格序），<b>文档结构变化后需重新读取</b>——spike 阶段 没有跨版本锚点承诺。
+ * <p>它是「文档 IR + 编译器」路线的读侧：{@code read_document} 工具用它把整份文档压缩成 一段 LLM 友好的文本——标题层级、粗斜体、下划线（{@code
+ * <u>…</u>}）、列表、表格都保留，每个段落/表格带 {@code <!-- pN -->}/{@code <!-- tN -->} 短 ID 锚点。短 ID 按当前文档顺序编号 （p 序号
+ * = 正文段落序，t 序号 = 表格序），<b>文档结构变化后需重新读取</b>——spike 阶段 没有跨版本锚点承诺。
  *
  * <p>与 {@code DocumentViewService} 的分工：视图服务输出结构化 DTO（stats/outline/…）， 本类输出<b>可 round-trip 的
  * Markdown</b>——模型读到什么，就能照着写什么给 {@code create_document}。两者共享「只读、不改文档」的边界。
@@ -204,6 +204,12 @@ public final class MarkdownView {
     }
   }
 
+  /**
+   * 段落 run → 行内标记文本。
+   *
+   * <p>下划线在最内层包 {@code <u>…</u>}，粗/斜再包外层（{@code **<u>x</u>**}、{@code *<u>x</u>*}）——与 {@link
+   * MarkdownParser} 的递归解析互逆，保证「写 → 读 → 再写」的粗体/斜体/下划线组合可还原。文本先 {@link #escapeText} 再拼标签，标签不会被二次转义。
+   */
   private static String renderRuns(Paragraph paragraph) {
     StringBuilder sb = new StringBuilder();
     for (io.github.nondirectional.docx.core.api.InlineElement inline : paragraph.inlineElements()) {
@@ -211,12 +217,13 @@ public final class MarkdownView {
         Run run = (Run) inline;
         String text = escapeText(run.text());
         if (!text.isEmpty()) {
+          String inner = run.isUnderline() ? "<u>" + text + "</u>" : text;
           if (run.isBold()) {
-            sb.append("**").append(text).append("**");
+            sb.append("**").append(inner).append("**");
           } else if (run.isItalic()) {
-            sb.append('*').append(text).append('*');
+            sb.append('*').append(inner).append('*');
           } else {
-            sb.append(text);
+            sb.append(inner);
           }
         }
       }

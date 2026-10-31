@@ -286,6 +286,7 @@ public final class DocumentViewService {
                   truncate(r.text(), query.textTruncate()),
                   r.isBold(),
                   r.isItalic(),
+                  r.isUnderline(),
                   r.font(),
                   r.fontEastAsia(),
                   r.fontSize(),
@@ -568,6 +569,9 @@ public final class DocumentViewService {
           properties.put("location", resolver.describe(r));
           properties.put("bold", r.isBold());
           properties.put("italic", r.isItalic());
+          // 下划线同样是复审要核对的直接格式：内容语言 <u>…</u> 写进去后，
+          // 只读 view_* 是复审唯一观测面，缺这一项会让已正确的下划线被判「未达成」
+          properties.put("underline", r.isUnderline());
           putIfNotNull(properties, "font", r.font());
           // 中文槽与西文槽分离展示：编译器写的是「西文 TNR/Arial + 中文宋体/黑体」双槽，
           // 只暴露 ascii 槽会让读者把已正确设置的中文字体误判成「未设置」

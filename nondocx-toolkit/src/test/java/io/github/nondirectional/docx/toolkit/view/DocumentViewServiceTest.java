@@ -190,6 +190,35 @@ class DocumentViewServiceTest {
     }
   }
 
+  /**
+   * 下划线的复审可观测性：内容语言 {@code <u>…</u>} 写进 run 之后，只读复审（review_intent 只持 view_*）必须能直接读到
+   * underline——否则已正确的下划线会被判「未达成」，退回「逐格式重写」空转（fontEastAsia 同族教训）。
+   */
+  @Test
+  void annotatedAndElementExposeUnderline(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("underline.docx");
+    try (Document doc = Docx.create()) {
+      Paragraph p = doc.addParagraph();
+      p.addRun("正文");
+      p.addRun("下划线").underline();
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      AnnotatedView ann =
+          svc.annotated(doc, "doc-1", 1L, ViewQuery.defaults().withExpandRuns(true));
+      AnnotatedRun plain = ann.paragraphs().get(0).runs().get(0);
+      AnnotatedRun underlined = ann.paragraphs().get(0).runs().get(1);
+      assertThat(plain.underline()).isFalse();
+      assertThat(underlined.underline()).isTrue();
+
+      ElementView element = svc.element(doc, "doc-1", 1L, underlined.ref());
+      assertThat(element.properties()).containsEntry("underline", true);
+      ElementView plainElement = svc.element(doc, "doc-1", 1L, plain.ref());
+      assertThat(plainElement.properties()).containsEntry("underline", false);
+    }
+  }
+
   @Test
   void statsMatchesDocumentStructure(@TempDir Path tmp) throws Exception {
     Path file = buildSampleDoc(tmp);

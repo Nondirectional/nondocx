@@ -150,6 +150,9 @@ public final class DocumentCompiler {
       if (span.italic()) {
         run.italic();
       }
+      if (span.underline()) {
+        run.underline();
+      }
       if (span.code()) {
         if (p.codeFont() != null) {
           applyRunFonts(run, p.codeFont(), p.codeFont());
@@ -176,6 +179,9 @@ public final class DocumentCompiler {
       }
       if (span.italic()) {
         run.italic();
+      }
+      if (span.underline()) {
+        run.underline();
       }
       if (span.code() && p.codeFont() != null) {
         applyRunFonts(run, p.codeFont(), p.codeFont());
