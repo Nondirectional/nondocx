@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查代码风格、内容相等、测试覆盖与禁止模式"}
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "核对 op 与读侧元数据行是否符合写读同批约定"}
+{"file": ".trellis/spec/backend/index.md", "reason": "全包 Quality Check 入口与 POI 包装约束"}
+{"file": ".trellis/tasks/10-31-comments-reply-compiler/research/reply-surface-evidence.md", "reason": "对照现状缺口与计数锁，确认无遗漏触点"}
