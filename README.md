@@ -24,6 +24,13 @@ nondocx 将 POI 冗长的 `XWPF*` API 封装为直观的领域模型
   按 id 查、读 author/text/date/initials + 线程字段（parentId/paraId）；
   `Paragraph.addComment` 给整段加范围批注，`Comments.reply` 对已有批注回复形成
   线程。创作出的批注自动注入现代 Word 兼容元数据（people.xml / paraId / RSID）
+- **面向 LLM Agent 的工具集与文档编译器（nondocx-toolkit）** — 把 core 能力封装为
+  Agent 可调用的工具：细粒度 API 包装面之外，新增实验性「文档编译器」——以
+  Markdown + 样式 profile 描述整份文档，经 `create_document` / `read_document` /
+  `edit_document`（patch 引擎）/ `validate_document` / `fill_template` /
+  `render_preview` 六个入口编译为 docx，排版与兼容性由确定性样式表负责；
+  24 任务 Agent 评测基线 compiler 面 24/24 通过（详见
+  [docs/07](./docs/07-toolkit.md)、[docs/11](./docs/11-agent-authoring-architecture.md)）
 - **可变活对象 + 构建器轨道** — 既可编辑现有文档，也可用 `DocumentBuilder`
   从零构建
 - **页眉页脚创建自带兼容性兜底** — 首次通过 `Section.header()` / `Section.footer()` 创建默认页眉页脚时，若该节尚未显式写入页面设置，库会按需补齐 `A4 + 1 英寸边距`，降低 WPS 对极简 `sectPr` 的显示敏感性
@@ -127,7 +134,7 @@ try (Document doc = Docx.open(Path.of("in.docx"))) {
 <dependency>
     <groupId>io.github.nondirectional</groupId>
     <artifactId>nondocx-core</artifactId>
-    <version>0.0.2</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 
@@ -138,6 +145,15 @@ Apache POI 被传递引入（`compile` 作用域）；消费方无需额外配�
 - **Java 11 或以上**
 - 兼容 Maven 的构建（项目以 Maven 构件形式发布）
 
+## 仓库结构
+
+| 模块 | 定位 |
+|---|---|
+| [`nondocx-core`](./nondocx-core) | 面向人类的 docx 读写库 —— 本 README 的主角 |
+| [`nondocx-toolkit`](./nondocx-toolkit) | Agent × docx：core 封装为 LLM 工具集 + 文档编译器 |
+| [`nondocx-demo`](./nondocx-demo) | 可交互 Web demo：OnlyOffice 实时预览 + 自然语言驱动 Agent 编辑 |
+| [`nondocx-examples`](./nondocx-examples) | 可运行示例 + Agent 评测基线（24 任务评测 CLI 与报告） |
+
 ## 文档
 
 除了本 README，更深入的使用文档在 [`docs/`](./docs/README.md) 目录：
@@ -145,6 +161,7 @@ Apache POI 被传递引入（`compile` 作用域）；消费方无需额外配�
 - [快速开始](./docs/01-quick-start.md) · [架构与核心契约](./docs/02-architecture.md) · [API 速查](./docs/03-api-reference.md)
 - [往返保真与相等性](./docs/04-round-trip-and-equality.md) · [修订（tracked changes）教程](./docs/05-tracked-changes/README.md) · [批注（comments）教程](./docs/06-comments/README.md)
 - [构建器轨道](./docs/06-builder-track.md) · [nondocx-toolkit](./docs/07-toolkit.md) · [异常与 raw 领地](./docs/08-exceptions-and-raw.md) · [FAQ](./docs/09-faq-and-boundaries.md)
+- [OfficeCLI 对比学习清单](./docs/10-officecli-docx-learning-todolist.md) · [Agent 写作架构：从 61 个工具到文档编译器](./docs/11-agent-authoring-architecture.md)
 
 ## 许可
 
