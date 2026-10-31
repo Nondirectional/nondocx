@@ -122,3 +122,28 @@ compiler 面新增第 13 种 op tracked.set_style(v5):以 rPrChange 属性修订
 ### Status
 
 [OK] **Completed**
+
+
+## Session 56: 批注回复 comment.reply 与读侧批注 id/线程关系
+<!-- trellis-session: v=2 fp=fb3c65af6839feb4 -->
+
+**Date**: 2026-10-31
+**Task**: 批注回复 comment.reply 与读侧批注 id/线程关系
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+core 未改；PatchEngine 新增 comment.reply（comment_id 寻址、仅回复根批注、preflight 零写入、dry_run、changed=comment#id）；MarkdownView 批注行带 #id 与 回复#父id，并修复标题段落批注行盲区；提示词/文档/spec 同步；eval baseline 27→28，comment-reply 首跑即过，28/28@4.18（runId 20261031-235355-433）；全量 744 测试绿
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b85de14` | feat(toolkit,demo,examples): comment.reply 批注回复 op 与读侧批注 id/线程关系 |
+| `4c965cd` | docs(07,11),spec(agent-single): comment.reply 与批注回复观测文档 |
+| `ae982d0` | chore(todo): 移除已完成的 #005 |
+| `d601125` | docs(11),spec(agent-single): 记录 comment.reply 28/28 评测结果 |
+
+### Status
+
+[OK] **Completed**
