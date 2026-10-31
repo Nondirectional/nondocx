@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "写读同批 Convention 与 eval 防退化/防恒真要求，检查未提交 diff 是否同批覆盖读写两侧"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "测试断言口径(save+reopen)与代码风格审查依据"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "错误消息规范(中文/PatchException)审查依据"}
+{"file": ".trellis/tasks/10-31-tracked-format-change/research/compiler-eval-research.md", "reason": "核对实现是否命中调研列出的全部落点(op 注册两处/提示词双处/计数锁/文档清单)"}
+{"file": ".trellis/tasks/10-31-tracked-format-change/research/full-core-rprchange-research.md", "reason": "核对 rPrChange 语义边界(旧值树/reject 断连/三态压平)未被违反"}

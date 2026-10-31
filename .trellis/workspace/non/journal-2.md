@@ -74,3 +74,28 @@ compiler 面新增 header.set_text op(第 12 种,追加语义/不占锚点/行�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 54: rPrChange:以修订方式变更既有文字格式 tracked.set_style(无人值守)
+<!-- trellis-session: v=2 fp=1dd0ac242b221dec -->
+
+**Date**: 2026-10-31
+**Task**: rPrChange:以修订方式变更既有文字格式(bold/italic 起步)(无人值守)
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+compiler 面新增第 13 种 op tracked.set_style(v5):以 rPrChange 属性修订变更既有文字 bold/italic(find 定位/三态显式/copyRun 拆 run 后两步式 commitStyleAsTracked,core 零改动,参与同锚点独占);读侧观测写读同批三层(read_document 修订元数据行/view REVISION property 摘要/outline recent[] 取证);eval tracked-bold-phrase 入组(26 条,check 含 RPR_CHANGE 存在且无 DEL 防 tracked.replace 冒充)。全量 mvn test 四模块 718 用例全绿;compiler baseline 26/26 平均 4.23(runId 20261031-092431-976 @0c5de5f),新任务首个 op 一步命中、复审直接引用 rpr_change 证据判达成——§6.16 核心发现:观测证据进复审判位,从 §6.15 的误报自证回路推进到首判即中。capabilityGap=true(full 面 mark_style_change_tracked 按 run_index 定位无 run 拆分,依 bold-existing-phrase 同根因归因,本批未跑 full 面对照)。docs/07/11 §6.16 + spec 同批更新。
+
+无人值守自主决策(D1-D8 详见任务 prd/design):独立 op 命名 tracked.set_style;bold/italic 三态(false=取消 w:val="off");claimAnchor 参与独占;read_document 修订行覆盖全修订类型;core 零改动(summarize 方向性缺口记边界不修);gap flag 依同根因先例归因不跑 full 面;沿用当前分支滚动提交。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0c5de5f` | feat(toolkit,demo,examples): 以修订方式变更既有文字格式的 op(tracked.set_style)与修订观测呈现 |
+| `d1bff46` | docs(07,11),spec(agent-single): tracked.set_style op 文档与修订观测面呈现 |
+
+### Status
+
+[OK] **Completed**
