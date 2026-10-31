@@ -98,45 +98,6 @@
   - 文档：docs/11 新小节 + spec agent-single 结果块；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
   ```
 
-## #005 · Comments.reply 上 compiler 面（2026-10-30）
-
-- 状态：💡 待启动（**休眠**：等「回复批注」真实需求）
-- 项目：core / toolkit
-- 背景：core 有 `Comments.reply` 能力，compiler 面只暴露了 `comment.add` 整段批注；回复既有批注无入口。
-- 目标：
-  1. compiler 面新增 comment.reply op（按批注 id/锚点回复）。
-  2. 读侧观测同步：read_document 批注元数据行展示回复关系（作者 + 层级）。
-- 设计要点：§6.7 原则——写读同批落地；批注 id 的可寻址性需确认（read 侧是否暴露批注 id）；LIFO 读序注意（§6.7 已记录）。
-- 待定问题（无人值守：按各项推荐自主拍板）：
-  1. 回复定位方式：批注 id vs 锚点段落（推荐：批注 id，需先在 read 侧暴露）。
-  2. 是否支持多级回复（推荐：MVP 一级回复，Word 语义本就扁平）。
-- 启动 Prompt：
-  ```
-  # Comments.reply 上 compiler 面
-
-  ## 背景
-  core 有 Comments.reply，compiler 面只有 comment.add 整段批注；回复既有批注无入口。
-
-  ## 目标
-  1. compiler 面新增 comment.reply op（按批注 id 回复）。
-  2. read_document 批注元数据行展示回复关系（作者 + 层级）。
-
-  ## 已讨论的设计方案
-  - §6.7 写读同批原则；read 侧先暴露批注 id（当前元数据行只有 作者/内容）。
-  - PatchEngine op + CompilerTools + 提示词 + eval 任务。
-
-  ## 待定问题（无人值守：按各项推荐自主拍板）
-  1. 定位方式（推荐：批注 id）。
-  2. 多级回复（推荐：MVP 一级）。
-
-  ## 执行要求（无人值守）
-  本次为**无人值守执行**，执行期间用户不在线、不会回答问题。请以此为种子创建 Trellis 任务并进入规划，全程**自主决策、连续推进直到完成**，不要停在「等用户确认/拍板」上：
-  - 待定问题与条目未覆盖的设计/实现分叉：依据项目既有惯例与已拍板决策的精神自行拍板并继续，每个决策及理由写入任务文档（prd/design）。
-  - 与已拍板决策直接冲突：选影响最小的保守方案继续，并在任务文档与最终汇报中显式标注冲突与取舍。
-  - 质量门禁：spotless:apply 后全量 `mvn test` 全绿；eval 前 install 并复跑 baseline 全量（新任务入组更新计数锁），提交附 runId；LIFO 读序断言注意（§6.7）。
-  - 文档：docs/03/07/11 + spec 同步；中文提交、scope 前缀；完成后归档任务并记 journal，最终汇报集中列出全部自主决策点。
-  ```
-
 ## #002 · demo 端到端 LLM 联调冒烟（2026-10-30）
 
 - 状态：💡 待启动（**卡外部条件**：本地无 DASHSCOPE_API_KEY）
