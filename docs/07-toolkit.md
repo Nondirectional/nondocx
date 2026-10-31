@@ -217,16 +217,23 @@ check_quality({
 | 工具 | 作用 |
 |---|---|
 | `create_document` | Markdown 子集 + 样式 profile 一次性编译整份 docx，**替换** doc_id 会话文档（句柄不变、generation+1） |
-| `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页眉/页脚以 `<!-- 页眉: … -->`/`<!-- 页脚: … -->` 元数据行呈现，修订以文档尾 `<!-- 修订 … -->` 元数据行呈现（无修订不输出），与写侧同构（round-trip） |
+| `read_document` | 整篇文档的紧凑 Markdown 视图，行内格式按 `**粗**`/`*斜*`/`<u>下划线</u>` 回显（粗+下划线为 `**<u>…</u>**`，读回可还原），段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页眉/页脚以 `<!-- 页眉: … -->`/`<!-- 页脚: … -->` 元数据行呈现，修订以文档尾 `<!-- 修订 … -->` 元数据行呈现（无修订不输出），与写侧同构（round-trip） |
 | `validate_document` | 复用 10 项质量检查，输出带 `v1/v2` 编号的问题清单 |
 | `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number/header.set_text/comment.add），短 ID 锚点，支持 dry_run |
 | `fill_template` | mustache 子集数据填充：`{{key}}` 值替换（跨 run 命中）、`{{#key}}…{{/key}}` 条件块、表格模板行按列表复制（保留格式） |
 | `render_preview` | LibreOffice headless 渲染 PDF/PNG（只读；soffice 路径经 `NONDOCX_SOFFICE` 配置，png 为首页） |
 
 **Markdown 子集**：`#`~`######` 标题（可带 `{align=center|left|right|both}` 行尾属性）、段落、
-`**粗体**`/`*斜体*`/`` `代码` ``、`- `/`1. ` 列表（缩进 2 空格一级）、`|…|` 表格
+`**粗体**`/`*斜体*`/`` `代码` ``/`<u>下划线</u>`、`- `/`1. ` 列表（缩进 2 空格一级）、`|…|` 表格
 （首行为表头，支持 `\|` 转义）、围栏代码块（降级为等宽段落）。未知语法**宽容降级**为段落
 并记 warnings，不拒绝。
+
+`<u>…</u>` 的边界（与 `**` 同姿态）：内层可再写粗/斜/代码（下划线取并集）；未闭合或孤立的
+`<u>`/`</u>`、空的 `<u></u>` 一律原样保留为文本（`****` 同规则）；不解析同名嵌套
+（`<u><u>x</u></u>` 按最左闭合匹配、第二个 `</u>` 原样留字面）；标题（`#` 行）内不生效——
+标题是单 run 扁平文本，标签被剥掉但不下划线；表格单元格在 `create_document` 里是**纯文本
+通道**（`**` 与 `<u>` 同为剥标记），富文本单元格走 `edit_document` 的 `table.set_cell`。
+字面量 `<u>` 无转义方式（与「字面 `*` 无法转义」同类限制）。
 
 **样式 profile**（v1 内置两个）：
 
@@ -255,6 +262,7 @@ create_document({
 {"op":"insert","anchor":"p3","position":"after","block":"# 小节 {align=center}\n\n正文。"}
 {"op":"replace_text","anchor":"p8","find":"旧文本","text":"新文本"}
 {"op":"replace_text","anchor":"p8","find":"待定","text":"**通过**"}    // 替换后加粗（行内标记）
+{"op":"replace_text","anchor":"p8","find":"逾期率","text":"<u>逾期率</u>"}  // 替换后加下划线（行内标记）
 {"op":"delete","anchor":"p5"}
 {"op":"set_style","anchor":"p8","style":"body"}          // 或 heading；也可只用 align/line_spacing/bold/italic
 {"op":"set_style","anchor":"p8","bold":true}             // 整段字符格式，可与 style/align 叠加
@@ -274,16 +282,16 @@ create_document({
 插入、引用本 patch 前序删除的锚点、同一锚点多个改文本 op——任一失败**整体拒绝、零改动**。
 
 **replace_text 的行内格式**：`text` 与 create_document 正文、table.set_cell 同一内容语言，
-支持 `**粗体**`/`*斜体*`/`` `代码` ``（未闭合标记原样保留）。给既有文字加粗 = 身份替换
-`find=逾期率 text=**逾期率**`。单 run 命中按 span **外科手术式拆分**：前后缀经 core
-`Paragraph.copyRun` 深拷贝源 run（完整 rPr 含 eastAsia 槽继承），替换片段再套粗/斜/代码
+支持 `**粗体**`/`*斜体*`/`` `代码` ``/`<u>下划线</u>`（未闭合标记原样保留）。给既有文字加粗 = 身份替换
+`find=逾期率 text=**逾期率**`；加下划线同理 `text=<u>逾期率</u>`。单 run 命中按 span **外科手术式拆分**：前后缀经 core
+`Paragraph.copyRun` 深拷贝源 run（完整 rPr 含 eastAsia 槽继承），替换片段再套粗/斜/下划线/代码
 字体；跨 run 命中整段重建（丢段内直接格式，记 warning）。纯文本（无标记）行为与 v1
 完全一致。
 
 **tracked.\*（修订模式）**：产出 Word 可审阅的 ins/del 修订（`author` 必传）。`tracked.replace`
 是**最小 diff**——只 del「find」范围、ins 紧随其后（core `Paragraph.replaceTrackedRange`），
 不是整段重建。`find` 多处命中全部替换。`tracked.insert`/`tracked.replace` 的 `text`
-支持行内标记（`**粗**`/`*斜*`/`` `代码` ``，与 replace_text 同一内容语言）：多 span 生成
+支持行内标记（`**粗**`/`*斜*`/`` `代码` ``/`<u>下划线</u>`，与 replace_text 同一内容语言）：多 span 生成
 **同一 `<w:ins>` 内的多 run**（读侧仍一条 INS、文本拼接），每个 run 继承被替换范围首
 run 的 rPr 再按 span 叠加格式。已知语义边界（**live/reopen 不同**，2026-10-30 实证修正）：
 del 文本（delText）**永不**进入 `text()`；ins 文本在 **live 对象**（agent 会话内的
@@ -310,7 +318,7 @@ recent[] 的 bold/italic 取证。已知边界：属性摘要只记属性名不�
 页脚 op（它不占段落锚点）。
 
 **header.set_text（页眉写文本）**：页眉**追加**一个文本段落（不触碰正文），`text` 必填非空，
-支持行内标记（`**粗体**`/`*斜体*`/`` `代码` ``，与 replace_text 同一内容语言）。写默认
+支持行内标记（`**粗体**`/`*斜体*`/`` `代码` ``/`<u>下划线</u>`，与 replace_text 同一内容语言）。写默认
 section 的默认页眉（core `ensureHeader`，不存在则创建）；重复调用追加新段、**不替换**
 既有页眉内容（替换语义留 future）。与页脚 op 同型：不占段落锚点、可与正文 op 同批。
 读侧 `read_document` 以 `<!-- 页眉: … -->` 元数据行呈现（页脚行之前，存在且非空才输出）。

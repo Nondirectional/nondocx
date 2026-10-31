@@ -161,9 +161,9 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 
 `nondocx-examples/.../examples/eval/` 是当前工具面的 headless 评测基线，不是生产代码：
 
-- baseline 26 条（12 初版 + 11 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
+- baseline 27 条（12 初版 + 11 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
   加行/多步组合/模板假值条件/同段双修订/多锚点行距/既有词加粗/修订带格式替换 + 页眉写
-  文本 + 修订格式变更），seed 由
+  文本 + 修订格式变更 + 既有词加下划线），seed 由
   `Docx.create()` 构造，check 只读最终 docx；另有 create 组 5 条（工具面 A/B）；
 - 工具面与 demo 对齐（`current_document` + view/body/table/header/tracker + 只读 `review_intent`），
   但**不加载 6 条 Skill**，以隔离工具面本身；
@@ -175,11 +175,11 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
   （「其余未误加粗」找不到非目标 run 可检）。修法是严格子集断言（存在目标词以外的
   文字 ⇒ 必须存在非粗体 run）。写跨面任务的 check 时问一句：**能力不够的面会用什么
   退化解满足这条断言？**
-- full 面静态缺口任务 flag `capabilityGap=true`（11 条，`EvalTasksTest#
+- full 面静态缺口任务 flag `capabilityGap=true`（12 条，`EvalTasksTest#
   marksKnownCapabilityGapTasks` 锁定）：页脚写/批注/列表/段落删除/真空单元格表格行/
-  模板填充×2/run 拆分/页眉写/修订格式变更（run 拆分同根因，full 面
-  `mark_style_change_tracked` 按 run_index 定位）。flag 只影响报告分类列，compiler 面
-  全过时 inert；
+  模板填充×2/run 拆分/页眉写/修订格式变更/既有词加下划线（run 拆分同根因，full 面
+  `update_run_style` 与 `mark_style_change_tracked` 都按 run 定位、无 run 拆分）。flag 只影响
+  报告分类列，compiler 面全过时 inert；
 - 运行：`mvn -q -pl nondocx-examples -Dexec.mainClass=...EvalMain exec:java`；
   产物在 `target/eval/<runId>/`。
 
@@ -250,7 +250,9 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
 和 `lineSpacing`（>0 时），供复审确认目标容器、对齐与行距。run 详情（`view_element` 与
 `view_annotated` expandRuns）输出 `font`（ascii/西文槽）**和** `fontEastAsia`（中文槽，core
 `Run.fontEastAsia()`）——编译器写的是「西文 TNR/Arial + 中文宋体/黑体」双槽，只暴露 ascii
-槽会把已正确的中文字体误判成「未设置」（heading-font 曾 24 次空转）。
+槽会把已正确的中文字体误判成「未设置」（heading-font 曾 24 次空转）。run 详情同时输出
+`underline`（`Run.isUnderline()`）——`<u>…</u>` 写进去后只读复审只剩 `view_*` 一条观测面，
+缺这一项会把已正确的下划线判「未达成」（与 fontEastAsia 同族）。
 
 **复审盲区已补齐**（2026-10-30 第二批，同日评测三任务复审全部「达成」且给出具体证据）：
 表格详情含 `cellTexts` 矩阵预览（≤6 行、每格截断）+ CELL/REVISION 详情实现；
@@ -381,10 +383,10 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   `removeTr` 删掉影子行。测试必须 **save+reopen 断言**——纯内存断言测不出这类陷阱
   （`TableTest#copyRowToReturnedRowWritesIntoDocumentTree` 锁死）。
 - **replace_text 的内容语言与 run 拆分**（P3，2026-10-30）：`replace_text` 的 `text` 解析
-  Markdown 行内标记（`**粗**`/`*斜*`/`` `代码` ``，未闭合原样保留），与 create_document
+  Markdown 行内标记（`**粗**`/`*斜*`/`` `代码` ``/`<u>下划线</u>`，未闭合原样保留），与 create_document
   正文、table.set_cell 同一内容语言——**全链路唯一按字面处理文本的路径就是 bug**（模型写
   `**…**` 是正确直觉，replace-with-format 的 9 次自愈就是这堵墙）。给既有文字加粗 = 身份
-  替换 `find=X text=**X**`；整段加粗用 `set_style` 的 `bold`/`italic` 布尔（可与
+  替换 `find=X text=**X**`（加下划线同形：`text=<u>X</u>`）；整段加粗用 `set_style` 的 `bold`/`italic` 布尔（可与
   style/align/line_spacing 叠加）。带格式 + 单 run 命中经 core `Paragraph.copyRun` 拆分。
   两个坑：① 拷贝必须**始终复制源 run**，piece 按倒序插在源 run 紧后——顺序复制「上一份
   拷贝」会让格式逐份累积（第二份起继承第一份的加粗，PatchEngineTest 抓过）；② 拷贝承载
@@ -393,7 +395,7 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   创建登记，无缓存错配面），再 `getCTR().set(copy)` 填内容；save+reopen 测试照样锁死。纯
   文本路径（无标记）行为与历史版本一致，有测试锁定。
 - **tracked 行内格式与修订观测**（P3，2026-10-30）：`tracked.insert`/`tracked.replace` 的
-  `text` 同样解析行内标记（内容语言统一，无字面路径残留）。多 span 走 core 多 run 变体
+  `text` 同样解析行内标记（`**粗**`/`*斜*`/`` `代码` ``/`<u>下划线</u>`，内容语言统一，无字面路径残留）。多 span 走 core 多 run 变体
   （`addInsertion(author, texts)` / `replaceTrackedRange(..., texts)`）：**一条 `<w:ins>`
   内每段一个 run**（读侧聚合一条 INS），样式经返回 run 句柄设置。三个坑：①
   `unwrapRunsAndRemove` 的「child.moveXml + toNextSibling」循环在首个 moveXml 后游标
@@ -404,6 +406,17 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   ③ **修订内 run 不被 `runs()` 暴露（N14）→ 修订条目必须自带字符格式证据**：
   outline `recent[]` 与 REVISION 详情恒带 `bold`/`italic`（经 `raw()` 聚合，false 也是
   证据）——复审查不到修订格式就会把已正确的带格式修订误报「未达成」（§6.6 同族教训）。
+- **`<u>` 行内下划线（P3，2026-10-31）**：内容语言补上最后一种缺形态——`<u>…</u>` 在
+  create_document 正文/列表、`replace_text`、`table.set_cell`、`header.set_text`、
+  `tracked.insert`/`tracked.replace` 全路径生效（`MarkdownDoc.Span.underline` + 两处 sink：
+  `DocumentCompiler.fillPara`/`fillListItem` 与 `PatchEngine.applySpanFormat`，`table.set_cell`
+  自带的 span 循环也要同改）。**写读必须同批**：`MarkdownView.renderRuns` 回显 `<u>…</u>`
+  （下划线在内、粗/斜在外 → `**<u>x</u>**`），否则写进去的下划线在 `read_document` 里不可见、
+  复审必然误判「没做」（§6.6/§6.13 同族）。解析契约：内层可再写粗/斜/代码（`withUnderline()`
+  取并集）；未闭合/孤立/空标签原样保留字面；同名嵌套不解析；标题内不生效；create_document 的
+  表格单元格是纯文本通道（`**` 与 `<u>` 同为剥标记，富文本单元格走 `table.set_cell`）。
+  **加行内标记时 `formatted` 判定（`replace_text`/`tracked.insert`/`tracked.replace` 三处 +
+  `table.set_cell` 的 `plain` 判定）必须同步加字段**——漏一处就会把标签当字面写进正文。
 - **render_preview 只读且防环境坑**（P2 收尾）：渲染不改文档、不置 dirty（demo
   `READONLY_TOOL_PREFIXES` 含 `render_`）。soffice 路径经 `NONDOCX_SOFFICE`（默认
   `soffice`）；每次调用独立 `-env:UserInstallation` profile（LibreOffice 同 profile 单实例

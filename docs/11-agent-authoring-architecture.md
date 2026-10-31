@@ -1020,6 +1020,51 @@ run 实际格式呈现；同一 run 重复 commit 追加新 rPrChange（core 语
 
 ---
 
+### 6.17 `<u>` 行内下划线：内容语言补上最后一个缺形态（2026-10-31）
+
+TODO #003 收敛成一句话：**模型在 Word 文档里看到下划线内容，内容语言却没有语法能表达它**。
+core 侧 `Run.underline(boolean)` / `isUnderline()` 早已具备，缺的只是编译器入口。本批补
+`<u>…</u>`，范围严格限制在「行内下划线」——删除线（core 无 strike API，六属性契约要动）、
+颜色（留 `set_style`）、子范围取消加粗都不进标记语言。
+
+- **语法与解析**：`MarkdownParser.INLINE` 末尾追加 `<u>(.+?)</u>`（非贪婪、不含换行）；
+  `parseInline` 递归解析内层、逐 span `withUnderline()`——**并集**语义，`<u>**粗**文</u>`
+  得到「粗+下划线」「下划线」两个 span。粗/斜 token 的内层含 `<u>` 时同样递归
+  （`expandEmphasis`），不含时保持 v1 的「内层其它标记字面」语义（`**a *b* c**` 的 span
+  结构逐一不变）。宽容降级同 `**`：未闭合/孤立/空的标签原样留字面，同名嵌套按最左闭合
+  匹配（第二个 `</u>` 留字面）。
+- **两处 sink 同改**：`DocumentCompiler.fillPara`/`fillListItem` 与
+  `PatchEngine.applySpanFormat`，外加 `table.set_cell` 自带的 span 循环；`replace_text`/
+  `tracked.insert`/`tracked.replace` 的 `formatted` 判定与 `table.set_cell` 的 `plain`
+  判定同步加 `underline`——漏一处就把 `<u>` 当字面写进正文（§6.13「最后一个字面文本路径」
+  的同一类坑）。单 run 拆分沿用 `copyRun` + piece 倒序插入（§6.11 的格式累积坑）；测试取
+  **中段命中**，前后缀两侧都断言「未被顺手加下划线」，并 save+reopen 锁落盘。
+- **写读同批**：`MarkdownView.renderRuns` 先包 `<u>…</u>`、再套粗/斜外层，输出
+  `**<u>x</u>**` / `*<u>x</u>*`，读回还原三个属性（`CompilerPipelineTest` 的
+  write→read→reparse→rewrite 闭环锁死）。不改读侧的话，写进去的下划线在 `read_document`
+  里不可见，复审会把「已做」判成「没做」——§6.6/§6.13 反复踩过的同一堵墙。只读复审的
+  另一条观测面同步补齐：`view_element` run 详情新增 `underline`、`view_annotated`
+  （expandRuns）的 `AnnotatedRun` 加同名字段（fontEastAsia 同族处理：复审只持 `view_*`，
+  缺字段必然误报「未达成」）。
+- **eval**：`underline-existing-phrase` 入组（第 27 条），seed 与 `bold-existing-phrase`
+  同构；check 用严格子集（段内目标词以外存在非下划线 run）+「其余文字未被误加下划线」
+  防「整段加下划线」退化通过。full 面 `update_run_style` 按 run 定位、无 run 拆分，
+  flag `capabilityGap`（与既有词加粗同根因）。
+- **已知边界**：标题（`#` 行）内 `<u>` 不生效（标题是单 run 扁平文本，标签被剥掉但不下划线）；
+  create_document 的表格单元格是纯文本通道（`**` 与 `<u>` 同为剥标记，富文本单元格走
+  `table.set_cell`）；页眉走元数据行 `<!-- 页眉: … -->`，按纯文本呈现（`**` 与 `<u>` 同
+  口径）；字面量 `<u>` 无转义方式（与「字面 `*` 无法转义」同类限制）；修订条目
+  的格式证据仍只有 bold/italic（N14），以修订插入的下划线在修订详情里不可见；
+  `tracked.set_style` 只做 bold/italic，没有「以修订方式加下划线」的 op。
+
+**compiler 面复跑**（runId `20261031-232318-163`，27 条，同模型 temp 0）：**27/27，平均 4.19**
+（§6.16 时 26 条，24/24@4.21 是更早的 24 条口径）。新任务 `underline-existing-phrase`
+**4 次调用一次通过**——模型的首个 op 就是 `replace_text find=逾期率 text=<u>逾期率</u>`，
+没有试 `set_style`、没有整段下划线自愈；26 条既有任务零退化，平均调用数与前批持平。
+`<u>` 的接口形态与 `**` 完全同构，模型不需要学新工具。
+
+---
+
 ## 7. 明确不做什么
 
 - **不继续加工具、加 Skill、加 SubAgent 来补**。复杂度已经超过模型能稳定驾驭的范围。
