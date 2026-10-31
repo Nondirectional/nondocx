@@ -82,10 +82,10 @@ public final class BodyTools extends ToolkitToolContext {
   @ToolDef(
       name = "read_paragraph",
       description =
-          "读取正文多个段落的结构摘要(文本、run 数、是否含超链接、段落对齐)。"
-              + "paragraph_indexes 可混合传段落索引(0 起)或 canonical ParagraphRef 字符串,"
-              + "长度 1 即单次读,可一次读多段。"
-              + "越界索引不中断整批,会在结果里标注。")
+          "读取段落的结构摘要(文本、run 数、是否含超链接、段落对齐)。"
+              + "paragraph_indexes 可混合传正文段落索引(0 起)或 canonical ParagraphRef 字符串;"
+              + "ref 可指向正文、表格单元格、页眉或页脚，返回时会标注位置。"
+              + "长度 1 即单次读,可一次读多段。越界索引不中断整批,会在结果里标注。")
   @ToolCapability(operation = CapabilityOperation.READ, element = "paragraph")
   public String readParagraph(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -130,7 +130,7 @@ public final class BodyTools extends ToolkitToolContext {
             sb.append("错误[ref_type_mismatch]：read_paragraph 只接受 ParagraphRef");
             continue;
           }
-          p = resolver.resolve((ParagraphRef) parsed);
+          p = resolver.resolveAny((ParagraphRef) parsed);
           idx = paragraphIndex(paragraphs, p);
         } else {
           sb.append("错误[invalid_ref]：段落目标必须是索引或 ParagraphRef");
@@ -143,7 +143,11 @@ public final class BodyTools extends ToolkitToolContext {
       ParagraphRef ref = resolver.reference(p);
       int runCount = p.runs().size();
       long hyperlinkCount = hyperlinkCount(p);
-      sb.append("段落 ").append(idx).append('\n');
+      if (idx >= 0) {
+        sb.append("段落 ").append(idx).append('\n');
+      } else {
+        sb.append("位置: ").append(resolver.describe(p)).append('\n');
+      }
       sb.append("ref: ").append(ref.canonical()).append('\n');
       sb.append("文本: ").append(p.text()).append('\n');
       sb.append("对齐: ").append(p.alignment()).append('\n');
@@ -301,6 +305,162 @@ public final class BodyTools extends ToolkitToolContext {
   }
 
   /**
+   * 批量修改正文若干段落的行距（活对象直写，需 save_docx 落盘）。
+   *
+   * <p><b>OOXML → POI → nondocx 三层</b>：行距写在段落属性 {@code <w:pPr>/<w:spacing>} 的 {@code w:line}（配合
+   * {@code w:lineRule}）上，以单倍行高的倍数表示。POI 暴露为 {@code XWPFParagraph#setSpacingBetween}；nondocx 用
+   * {@link Paragraph#lineSpacing(double)} 收口。
+   *
+   * <p><b>body-only</b>：复用 {@link #resolveParagraphTarget}，只接受正文段落 ref/索引； 页眉、页脚、表格单元格段落 ref
+   * 会返回明确「仅支持正文」错误，避免静默改错目标。
+   */
+  @ToolDef(
+      name = "update_paragraph_spacing",
+      description =
+          "批量修改正文若干段落的行距(改完需 save_docx 落盘)。edits 是对象数组,每个对象含 "
+              + "canonical ParagraphRef 字段 ref,或 paragraph_index(int,正文段落索引 0 起);"
+              + "另含 line_spacing(number,单倍行高倍数,如 1.5=1.5 倍行距),必须大于 0。"
+              + "ref 与索引同时提供时必须指向同一段。部分失败不中断,返回每条成功/失败明细。"
+              + "可选 expected_generation 校验文档代次防止旧快照改新状态;"
+              + "可选 on_error(continue=失败不中断默认,stop=遇首条失败即停)。")
+  @ToolCapability(operation = CapabilityOperation.UPDATE, element = "paragraph")
+  public String updateParagraphSpacing(
+      @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
+          String docId,
+      @ToolParam(
+              name = "edits",
+              description =
+                  "对象数组,每个对象含 ref(string)或 paragraph_index(int),以及 line_spacing(number),"
+                      + "如 [{\"paragraph_index\":0,\"line_spacing\":1.5}]")
+          @NestedParamCapability(path = "edits.ref", type = ParamType.REF)
+          @NestedParamCapability(path = "edits.paragraph_index", type = ParamType.INTEGER)
+          @NestedParamCapability(path = "edits.line_spacing", type = ParamType.NUMBER)
+          List<Map<String, Object>> edits,
+      @ToolParam(
+              name = "on_error",
+              description = "continue=失败不中断(默认),stop=遇首条失败即停",
+              required = false)
+          @ParamCapability(
+              type = ParamType.ENUM,
+              enumValues = {"continue", "stop"})
+          String onError,
+      @ToolParam(
+              name = "expected_generation",
+              description = "可选。调用方持有的 session generation,与当前不符则拒绝写入(防止旧快照修改新状态)。不传则跳过校验。",
+              required = false)
+          @ParamCapability(type = ParamType.INTEGER)
+          Integer expectedGeneration) {
+    Document doc = document(docId);
+    if (doc == null) {
+      return renderDocNotFound(docId);
+    }
+    if (!checkExpectedGeneration(docId, expectedGeneration)) {
+      long current = generations.getOrDefault(docId, 1L);
+      return renderGenerationMismatch(expectedGeneration, current);
+    }
+    boolean stopOnError = "stop".equalsIgnoreCase(onError);
+    var paragraphs = doc.paragraphs();
+    List<Object> list = coerceList(edits);
+    if (list.isEmpty()) {
+      ToolResult<Void> result =
+          ToolResult.fail(ToolResultCode.INVALID_ARGUMENT, "edits 为空", "至少传一条修改");
+      return ToolResultRenderer.render(result);
+    }
+    StringBuilder sb = new StringBuilder();
+    int ok = 0;
+    int fail = 0;
+    int skipped = 0;
+    List<String> changedRefs = new ArrayList<>();
+    for (int i = 0; i < list.size(); i++) {
+      if (i > 0) {
+        sb.append('\n');
+      }
+      Object item = list.get(i);
+      String tag = "[" + i + "] ";
+      if (!(item instanceof Map)) {
+        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
+        fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
+        continue;
+      }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> m = (Map<String, Object>) item;
+      ParagraphTarget target;
+      double lineSpacing;
+      try {
+        target = resolveParagraphTarget(docId, paragraphs, m);
+        lineSpacing = parseLineSpacing(m.get("line_spacing"));
+      } catch (RuntimeException e) {
+        sb.append(tag).append(renderError(e));
+        fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
+        continue;
+      }
+      try {
+        target.paragraph.lineSpacing(lineSpacing);
+      } catch (RuntimeException e) {
+        sb.append(tag).append("错误:").append(rootMessage(e));
+        fail++;
+        if (stopOnError) {
+          skipped = list.size() - i - 1;
+          break;
+        }
+        continue;
+      }
+      sb.append(tag)
+          .append("段落 ")
+          .append(target.paragraphIndex)
+          .append(" 行距 → ")
+          .append(lineSpacing)
+          .append(" ref=")
+          .append(target.ref.canonical())
+          .append(" ✓");
+      changedRefs.add(target.ref.canonical());
+      ok++;
+    }
+    sb.append("\n成功 ").append(ok).append(" 条,失败 ").append(fail).append(" 条");
+    int matchedCount = ok + fail;
+    ToolResult<List<String>> result =
+        fail > 0
+            ? ToolResult.partial(
+                ToolResultCode.PARTIAL_FAILURE,
+                changedRefs,
+                sb.toString(),
+                null,
+                matchedCount,
+                ok,
+                stopOnError ? skipped : null)
+            : ToolResult.ok(changedRefs, sb.toString(), matchedCount, ok, changedRefs);
+    return ToolResultRenderer.render(result);
+  }
+
+  private static double parseLineSpacing(Object raw) {
+    if (!(raw instanceof Number) && !(raw instanceof String)) {
+      throw new IllegalArgumentException("line_spacing 必须是数值");
+    }
+    double value;
+    if (raw instanceof Number) {
+      value = ((Number) raw).doubleValue();
+    } else {
+      try {
+        value = Double.parseDouble(((String) raw).trim());
+      } catch (NumberFormatException e) {
+        throw new IllegalArgumentException("line_spacing 不是合法数值:\"" + raw + "\"");
+      }
+    }
+    if (!Double.isFinite(value) || value <= 0) {
+      throw new IllegalArgumentException("line_spacing 必须是大于 0 的有限数值，实际 " + value);
+    }
+    return value;
+  }
+
+  /**
    * 批量读取正文若干 run 的文本与样式摘要。
    *
    * <p><b>批量语义。</b> 入参是对象数组 {@code runs}。每个对象优先传 canonical {@code RunRef} 字段 {@code ref}；旧调用方仍可传
@@ -309,10 +469,10 @@ public final class BodyTools extends ToolkitToolContext {
   @ToolDef(
       name = "read_run",
       description =
-          "批量读取正文若干 run 的文本与样式摘要。"
-              + "runs 是对象数组,每个对象可传 canonical RunRef 字段 ref,或传"
-              + " paragraph_index(int,段落索引 0 起)+run_index(int,run 索引 0 起,不含超链接)。"
-              + "ref 与索引同时提供时必须指向同一 run。"
+          "批量读取 run 的文本与样式摘要。runs 是对象数组:"
+              + "ref 可传正文、表格单元格、页眉或页脚的 canonical RunRef;"
+              + "或传 paragraph_index(int,正文段落索引 0 起)+run_index(int,run 索引 0 起,不含超链接)。"
+              + "ref 与索引同时提供时必须指向同一 run;索引仅用于正文。"
               + "单个对象用长度 1 的数组。越界坐标不中断,会在结果里标注。")
   @ToolCapability(operation = CapabilityOperation.READ, element = "run")
   public String readRun(
@@ -353,17 +513,21 @@ public final class BodyTools extends ToolkitToolContext {
       Map<String, Object> m = (Map<String, Object>) item;
       RunTarget target;
       try {
-        target = resolveRunTarget(docId, paragraphs, m);
+        target =
+            m.containsKey("ref")
+                ? resolveRunTargetForRead(docId, m)
+                : resolveRunTarget(docId, paragraphs, m);
       } catch (RuntimeException e) {
         sb.append(tag).append(renderError(e));
         continue;
       }
-      sb.append(tag)
-          .append("段落 ")
-          .append(target.paragraphIndex)
-          .append(" run ")
-          .append(target.runIndex)
-          .append(" ref=")
+      sb.append(tag);
+      if (target.paragraphIndex >= 0) {
+        sb.append("段落 ").append(target.paragraphIndex).append(" run ").append(target.runIndex);
+      } else {
+        sb.append("位置: ").append(elementResolver(docId).describe(target.run));
+      }
+      sb.append(" ref=")
           .append(target.ref.canonical())
           .append("\n文本: ")
           .append(target.run.text())
@@ -542,12 +706,21 @@ public final class BodyTools extends ToolkitToolContext {
             io.github.nondirectional.docx.toolkit.ref.RefResolutionCode.REF_TYPE_MISMATCH,
             "该操作只接受 ParagraphRef");
       }
-      Paragraph paragraph = resolver.resolve((ParagraphRef) parsed);
+      Paragraph paragraph;
+      try {
+        paragraph = resolver.resolve((ParagraphRef) parsed);
+      } catch (RefResolutionException e) {
+        try {
+          Paragraph any = resolver.resolveAny((ParagraphRef) parsed);
+          throw new IllegalArgumentException(
+              "ParagraphRef 位于 " + resolver.describe(any) + "，当前写工具仅支持正文段落");
+        } catch (RefResolutionException ignored) {
+          throw e;
+        }
+      }
       int currentIndex = paragraphIndex(paragraphs, paragraph);
       if (currentIndex < 0) {
-        throw new RefResolutionException(
-            io.github.nondirectional.docx.toolkit.ref.RefResolutionCode.DOCUMENT_MISMATCH,
-            "ParagraphRef 不属于正文段落");
+        throw new IllegalArgumentException("ParagraphRef 不属于正文段落，当前写工具仅支持正文");
       }
       if (payload.containsKey("paragraph_index")
           && getInt(payload, "paragraph_index") != currentIndex) {
@@ -563,6 +736,55 @@ public final class BodyTools extends ToolkitToolContext {
     }
     Paragraph paragraph = paragraphs.get(index);
     return new ParagraphTarget(paragraph, index, resolver.reference(paragraph));
+  }
+
+  /**
+   * 只读路径的 run ref 解析：允许正文/表格/页眉/页脚。
+   *
+   * <p>写路径仍使用 {@link #resolveRunTarget}，只接受正文；这里把两条路径分开，避免读能力 意外扩大写范围。
+   */
+  private RunTarget resolveRunTargetForRead(String docId, Map<String, Object> payload) {
+    ElementResolver resolver = elementResolver(docId);
+    ElementRef parsed = ElementRefs.parse(getStr(payload, "ref"));
+    if (!(parsed instanceof RunRef)) {
+      throw new RefResolutionException(
+          io.github.nondirectional.docx.toolkit.ref.RefResolutionCode.REF_TYPE_MISMATCH,
+          "该操作只接受 RunRef");
+    }
+    Run run = resolver.resolve((RunRef) parsed);
+    int paragraphIndex = -1;
+    int runIndex = -1;
+    List<Paragraph> body = document(docId).paragraphs();
+    for (int p = 0; p < body.size(); p++) {
+      List<Run> runs = body.get(p).runs();
+      for (int r = 0; r < runs.size(); r++) {
+        if (runs.get(r).raw() == run.raw()) {
+          paragraphIndex = p;
+          runIndex = r;
+          break;
+        }
+      }
+      if (paragraphIndex >= 0) {
+        break;
+      }
+    }
+    if (payload.containsKey("paragraph_index") || payload.containsKey("run_index")) {
+      if (paragraphIndex < 0) {
+        throw new IllegalArgumentException("paragraph_index/run_index 仅用于正文 run；页眉/页脚请只传 ref");
+      }
+      if (payload.containsKey("paragraph_index")
+          && getInt(payload, "paragraph_index") != paragraphIndex) {
+        throw new RefResolutionException(
+            io.github.nondirectional.docx.toolkit.ref.RefResolutionCode.STALE_REF,
+            "ref 与 paragraph_index 指向不同段落");
+      }
+      if (payload.containsKey("run_index") && getInt(payload, "run_index") != runIndex) {
+        throw new RefResolutionException(
+            io.github.nondirectional.docx.toolkit.ref.RefResolutionCode.STALE_REF,
+            "ref 与 run_index 指向不同 run");
+      }
+    }
+    return new RunTarget(run, paragraphIndex, runIndex, resolver.reference(run));
   }
 
   private RunTarget resolveRunTarget(
@@ -594,9 +816,7 @@ public final class BodyTools extends ToolkitToolContext {
           }
         }
       }
-      throw new RefResolutionException(
-          io.github.nondirectional.docx.toolkit.ref.RefResolutionCode.DOCUMENT_MISMATCH,
-          "RunRef 不属于正文 run");
+      throw new IllegalArgumentException("RunRef 位于 " + resolver.describe(run) + "，当前写工具仅支持正文 run");
     }
     int paragraphIndex = getInt(payload, "paragraph_index");
     if (outOfBounds(paragraphIndex, paragraphs.size())) {

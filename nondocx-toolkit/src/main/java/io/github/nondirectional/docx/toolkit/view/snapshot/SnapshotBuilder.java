@@ -49,6 +49,12 @@ public final class SnapshotBuilder {
   /** 表格采样的最大行数（首行优先）。 */
   private static final int TABLE_SAMPLE_ROWS = 1;
 
+  /** 修订摘要携带的最近明细条数上限。 */
+  private static final int RECENT_REVISIONS_MAX = 5;
+
+  /** 修订内容片段最大长度。 */
+  private static final int RECENT_SNIPPET_MAX = 40;
+
   private final ReferenceContext referenceContext;
 
   public SnapshotBuilder() {
@@ -73,7 +79,7 @@ public final class SnapshotBuilder {
     ElementResolver resolver =
         referenceContext.resolver(new DocumentRef(conversationId, sessionGeneration), doc);
     BodyPreviews body = buildBodyPreviews(doc, resolver);
-    RevisionSummary revision = buildRevision(doc);
+    RevisionSummary revision = buildRevision(doc, resolver);
     QualitySummary quality = new QualitySummary(0, 0, List.of());
 
     Instant sourceLastModified = readLastModified(sourcePath);
@@ -180,22 +186,106 @@ public final class SnapshotBuilder {
     return samples;
   }
 
-  private RevisionSummary buildRevision(Document doc) {
+  private RevisionSummary buildRevision(Document doc, ElementResolver resolver) {
     try {
       TrackedChanges tc = doc.trackedChanges();
       boolean enabled = tc.enabled();
       var changes = tc.list();
       int total = changes.size();
       Map<String, Integer> byType = new HashMap<>();
+      Map<String, Integer> byAuthor = new HashMap<>();
+      List<RevisionSummary.Entry> recent = new ArrayList<>();
       for (var ch : changes) {
         TrackedChangeFamily family = ch.family();
         String key = family == null ? "unknown" : family.name().toLowerCase();
         byType.merge(key, 1, Integer::sum);
+        String author = ch.author() == null ? "unknown" : ch.author();
+        byAuthor.merge(author, 1, Integer::sum);
+        if (recent.size() < RECENT_REVISIONS_MAX) {
+          // 属性类修订（rPrChange）的 bold/italic 证据在 newSummary 本地名里（raw() 对 PROPERTY
+          // 家族抛异常，anyRunStyled 够不着）；已知边界：summarize 只看本地名，取消加粗（w:val="off"）
+          // 也报 true——复审核对方向要看 run 实际属性呈现
+          boolean propertyBold = false;
+          boolean propertyItalic = false;
+          if (ch.details()
+              instanceof io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) {
+            String newSummary =
+                ((io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) ch.details())
+                    .newSummary();
+            propertyBold = hasLocalName(newSummary, "b");
+            propertyItalic = hasLocalName(newSummary, "i");
+          }
+          // ref 用完整 canonical（可直通 view_element 查详情），不是裸修订 id
+          recent.add(
+              new RevisionSummary.Entry(
+                  resolver.reference(ch).canonical(),
+                  ch.type() == null ? "unknown" : ch.type().name().toLowerCase(),
+                  author,
+                  changeSnippet(ch),
+                  propertyBold || anyRunStyled(ch, true),
+                  propertyItalic || anyRunStyled(ch, false)));
+        }
       }
-      return new RevisionSummary(enabled, total, byType);
+      return new RevisionSummary(enabled, total, byType, byAuthor, recent);
     } catch (RuntimeException ignored) {
-      return new RevisionSummary(false, 0, Map.of());
+      return new RevisionSummary(false, 0, Map.of(), Map.of(), List.of());
     }
+  }
+
+  /**
+   * 修订内任一 run 是否带粗体/斜体：经 raw() 读 ins/del 包装内的 CTR rPr—— 修订内 run 不被 paragraph.runs() 暴露（N14），run
+   * 级视图够不着，带格式修订的证据必须挂在修订条目上。
+   */
+  private static boolean anyRunStyled(
+      io.github.nondirectional.docx.core.api.track.TrackedChange change, boolean bold) {
+    try {
+      for (var ctr : change.raw().getRList()) {
+        var rpr = ctr.getRPr();
+        if (rpr == null) {
+          continue;
+        }
+        int count = bold ? rpr.sizeOfBArray() : rpr.sizeOfIArray();
+        if (count > 0) {
+          return true;
+        }
+      }
+    } catch (RuntimeException ignored) {
+      // 非文本类修订等读不到 run 的场景按「无格式」上报
+    }
+    return false;
+  }
+
+  /** 修订内容片段：文本类修订给改动的文本，属性类给新旧摘要，其他家族给家族描述。 */
+  private static String changeSnippet(
+      io.github.nondirectional.docx.core.api.track.TrackedChange change) {
+    var details = change.details();
+    if (details instanceof io.github.nondirectional.docx.core.api.track.TextChangeDetails) {
+      String text =
+          ((io.github.nondirectional.docx.core.api.track.TextChangeDetails) details).text();
+      return truncate(text == null ? "" : text, RECENT_SNIPPET_MAX);
+    }
+    if (details instanceof io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) {
+      io.github.nondirectional.docx.core.api.track.PropertyChangeDetails property =
+          (io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) details;
+      return truncate(
+          property.kind() + " 新" + property.newSummary() + " 旧" + property.oldSummary(),
+          RECENT_SNIPPET_MAX);
+    }
+    return change.family() == null ? "" : change.family().name().toLowerCase();
+  }
+
+  /**
+   * 判断 summarize 摘要（如 {@code [b,i]}）是否含指定本地名——按逗号分 token 精确匹配， 避免 {@code contains("b")} 误中 {@code
+   * bCs} 等 b 前缀本地名。
+   */
+  private static boolean hasLocalName(String summary, String localName) {
+    String body = summary.replaceAll("\\[|\\]", "");
+    for (String token : body.split(",")) {
+      if (localName.equals(token)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ==================== 辅助 ====================

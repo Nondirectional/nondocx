@@ -8,6 +8,7 @@ import io.github.nondirectional.docx.core.api.track.ChangeDetails;
 import io.github.nondirectional.docx.core.api.track.PropertyChangeDetails;
 import io.github.nondirectional.docx.core.api.track.TextChangeDetails;
 import io.github.nondirectional.docx.core.api.track.TrackedChange;
+import io.github.nondirectional.docx.core.api.track.TrackedChangeType;
 import io.github.nondirectional.docx.core.api.track.TrackedChanges;
 import io.github.nondirectional.docx.toolkit.capability.CapabilityOperation;
 import io.github.nondirectional.docx.toolkit.capability.ParamCapability;
@@ -217,6 +218,8 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
           "批量处理修订(ids 可传 list_tracked_changes 返回的 RevisionRef 或兼容 stable id)。"
               + "action 支持 ACCEPT/REJECT;"
               + "target 支持 TEXT_OR_MOVE/PROPERTY/CELL。部分失败不中断,返回每条成功/失败明细。"
+              + "move 成对修订应用一半即整对完成:ids 同时含 move_to 与 move_from 时,"
+              + "先成功的一端已联动两端,另一端随后报找不到属预期(失败行附成对说明,仍计失败并返回 PARTIAL_FAILURE)。"
               + "on_error=stop 时遇首条失败即停;expected_generation 防止旧快照修改新状态。")
   @ToolCapability(operation = CapabilityOperation.UPDATE, element = "tracked_change")
   public String applyTrackedChanges(
@@ -499,6 +502,10 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
    * <p><b>为何可安全逐条循环(id 不漂移)。</b> 探针验证:修订 id 是路径坐标编码(如 {@code cell_ins:body0.table0.row0.cell0:1}),
    * accept/reject 一条后,其余修订的 id 不变——即使 cellDel 的 accept 会移除整个单元格,剩余修订的坐标与 w:id 也不受影响。 故无需排序、去重或重新
    * list。某条抛异常(family 不符/id 不存在)记错误不中断(collect-errors)。 {@code stopOnError=true} 时遇首条失败即停。
+   *
+   * <p><b>move 成对修订的失败行说明(只影响文案,不改行为)。</b> core 对 move 类 accept 一端即联动两端,故 ids 同时含 {@code
+   * move_to}/{@code move_from} 时,先成功的一端已令整对完成,另一端随后按 id 再应用会因修订已消失而报「找不到 id」。此为成对
+   * 语义的预期表现:失败行在「对端已在本轮成功应用」时追加成对说明;<b>ok/fail 计数、PARTIAL_FAILURE 触发、异常类型零变化</b>。
    */
   private String applyRevisionsByIds(
       String docId,
@@ -521,6 +528,9 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
     int ok = 0;
     int fail = 0;
     int stoppedAt = -1;
+    // 本轮成功应用的 move 端 id(按端分桶):用于失败行的成对说明(见方法 Javadoc)。
+    java.util.Set<String> appliedMoveFrom = new java.util.HashSet<>();
+    java.util.Set<String> appliedMoveTo = new java.util.HashSet<>();
     for (int i = 0; i < list.size(); i++) {
       if (i > 0) {
         sb.append('\n');
@@ -540,6 +550,11 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
             .append(ref.canonical())
             .append(" ✓");
         ok++;
+        if (change.type() == TrackedChangeType.MOVE_FROM) {
+          appliedMoveFrom.add(change.id());
+        } else if (change.type() == TrackedChangeType.MOVE_TO) {
+          appliedMoveTo.add(change.id());
+        }
       } catch (RefResolutionException e) {
         sb.append("[").append(i).append("] ").append(e.render());
         fail++;
@@ -555,6 +570,7 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
             .append(": 错误(")
             .append(rootMessage(e))
             .append(")");
+        appendMovePairNoteIfApplied(sb, input, appliedMoveFrom, appliedMoveTo);
         fail++;
         if (stopOnError) {
           stoppedAt = i;
@@ -577,6 +593,23 @@ public final class TrackedChangeQueryTools extends ToolkitToolContext {
                 skipped > 0 ? skipped : null)
             : ToolResult.ok(ok, sb.toString(), matchedCount, ok, null);
     return ToolResultRenderer.render(result);
+  }
+
+  /**
+   * 失败行的 move 成对说明:当失败 input 以 {@code move_from:}/{@code move_to:} 开头、且对端(相反前缀的 move
+   * 修订)已在本轮成功应用时,追加成对语义说明。仅追加文案,不改变任何计数与返回码。
+   */
+  private static void appendMovePairNoteIfApplied(
+      StringBuilder sb,
+      String input,
+      java.util.Set<String> appliedMoveFrom,
+      java.util.Set<String> appliedMoveTo) {
+    boolean counterpartApplied =
+        input.startsWith("move_from:") && !appliedMoveTo.isEmpty()
+            || input.startsWith("move_to:") && !appliedMoveFrom.isEmpty();
+    if (counterpartApplied) {
+      sb.append("(move 成对修订,应用一半即整对完成,该端已随配对端应用,属预期)");
+    }
   }
 
   private TrackedChange resolveRevisionInput(String docId, Document doc, String input) {

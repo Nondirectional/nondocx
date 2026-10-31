@@ -156,3 +156,291 @@ tools.registerSubAgent("review_intent", "...")
 ## Gotcha: AgentEvent.Complete 是唯一的循环结束钩子
 
 nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainCallback` 只有单次 LLM/工具调用粒度回调，无循环结束事件。唯一能拿到"agent 循环结束"信号的是 `run(msg, Consumer<AgentEvent>)` 流式重载里的 `AgentEvent.Complete`。`maxIterations` 耗尽（默认 `graceTurns=3`）也会发 `Complete`，因此 flush 天然覆盖超时路径。**非流式 `run(msg)` 重载不发 Complete**——demo 必须用流式重载。
+
+## Convention: Agent 评测基线（headless）
+
+`nondocx-examples/.../examples/eval/` 是当前工具面的 headless 评测基线，不是生产代码：
+
+- baseline 28 条（12 初版 + 12 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
+  加行/多步组合/模板假值条件/同段双修订/多锚点行距/既有词加粗/修订带格式替换 + 页眉写
+  文本 + 修订格式变更 + 既有词加下划线 + 批注回复），seed 由
+  `Docx.create()` 构造，check 只读最终 docx；另有 create 组 5 条（工具面 A/B）；
+- 工具面与 demo 对齐（`current_document` + view/body/table/header/tracker + 只读 `review_intent`），
+  但**不加载 6 条 Skill**，以隔离工具面本身；
+- 保存仍由应用层强制（`EvalRunner` 在 `Agent.run` 返回后调用 `save_docx`），不暴露给模型；
+- `EvalTasksTest#everyTaskFailsAtLeastOneCheckOnUnmodifiedSeed` 是防恒真 check 的硬约束：
+  每条任务在未修改 seed 上必须至少失败一次；
+- **check 还要防退化通过**（2026-10-30 教训）：通过条件必须排除「能力弱的面用退化方式
+  满足字面断言」——bold-existing-phrase 曾被 full 面「整段唯一 run 全加粗」空洞通过
+  （「其余未误加粗」找不到非目标 run 可检）。修法是严格子集断言（存在目标词以外的
+  文字 ⇒ 必须存在非粗体 run）。写跨面任务的 check 时问一句：**能力不够的面会用什么
+  退化解满足这条断言？**
+- full 面静态缺口任务 flag `capabilityGap=true`（13 条，`EvalTasksTest#
+  marksKnownCapabilityGapTasks` 锁定）：页脚写/批注创建/批注回复/列表/段落删除/真空单元格表格行/
+  模板填充×2/run 拆分/页眉写/修订格式变更/既有词加下划线（run 拆分同根因，full 面
+  `update_run_style` 与 `mark_style_change_tracked` 都按 run 定位、无 run 拆分）。flag 只影响
+  报告分类列，compiler 面全过时 inert；
+- 运行：`mvn -q -pl nondocx-examples -Dexec.mainClass=...EvalMain exec:java`；
+  产物在 `target/eval/<runId>/`。
+
+**已知限制**：当前 `chain 0.11.0` 的 VLLM streaming provider 未返回 usage，报告 token 记为 0；
+这是 provider 限制，不是评测回归。升级 provider 后自动恢复。
+
+**2026-10-29 v1 结果**：8/10 通过，平均 6.8 次工具调用；2 条失败均为已知能力缺口
+（正文行距无工具、页脚只读）。同日修复正文行距工具 + header/footer 只读 ref 解析后，
+`body-font-line-spacing` 复跑通过；页脚 PAGE 域写入仍为缺口。
+详见任务 `10-29-agent-eval-baseline/baseline-summary.md`。
+
+**2026-10-30 compiler 面（8 工具）**：22/22，平均 4.68（runId `20261030-113314-518`）。
+P3 扩展 10 条首跑全过；歧义指代/范围限定各 4 次，同段双修订（独占拒绝→拆分）6 次。
+**2026-10-30 行内格式补齐后**：23/23，平均 4.26（runId `20261030-124819-241`）；
+replace-with-format 9→4 次（`text=**…**` 一步命中），`validate_document` 全程 0 调用。
+**2026-10-30 tracked 行内格式后（终版）**：24/24，平均 4.21（runId `20261030-152310-495`）；
+tracked-replace-format 首个 op 即正确，复审引用修订条目的 bold 证据判「达成」。
+**2026-10-30 full 面对齐复跑**：14/23，平均 11.83（runId `20261030-125616-728`，
+bold check 加严口径）——8 个失败全部是静态能力缺口（页脚写/批注/列表/段落删除/
+真空单元格/模板/run 拆分），零「任务可做但做砸」；4 任务撞 24 轮上限。原十任务
+9/10、平均 7.0（612 时 6.2）：观测面富化不改变 full 面 baseline。已知边界（2026-10-31
+更新）：页眉写 compiler 面已补 `header.set_text`（本条记录时为「两面皆无」）；full 面
+写工具 ref 仍只解析正文，页眉写仍为 full 面缺口。
+**2026-10-30 full 面 24 任务口径**：14/24，平均 9.88（runId `20261030-220341-436`）——
+9 条缺口 flag 任务如期失败（通过集与 728 完全一致，零回归）；tracked-replace-format
+是全链首个「可过而未过」：模型走「target_text 外科 del + 段尾 bold ins」（ins 无位置
+参数），复审与 live 读侧都看不到位置错误（可观测性缺口伪装成能力缺口，docs/11 §6.14）；
+整 run 替换 workaround（update_run_style 加粗源 run → replace_run_tracked 继承 rPr）
+由 toolkit `TrackedReplaceFormatWorkaroundTest` 实证可过全部 check——行为失败，不 flag。
+另踩实：move 对按 id accept 后 live view 抛 XmlValueDisconnectedException（落盘完好，
+TODO #009）。**评测任务考察工具选择本身——prompt 不得提示用哪个工具。**
+**2026-10-31 页眉写 op 后**：25/25，平均 4.28（runId `20261031-021426-557` @80aa220，
+compiler 面 8 工具）——header-write-text 首个 op 一步命中（行内标记直入 text）；
+review_intent 复审一次「未达成」误报后模型经 read_document 页眉元数据行自证收尾、
+零重复写入（写读同批读侧观测把复审误报闭环，docs/11 §6.15）。full 面对照
+（runId `20261031-021922-108`）：11/25 受模型服务 502 干扰（8 任务 calls=0 未调通），
+通过集与 §6.14 完全兼容、零能力回归；header-write-text 干净归因 check_failed 撞
+24 轮（页眉写物理不可达），capabilityGap flag 成立（第 10 条 gap 任务）。
+**2026-10-31 格式变更修订 op 后**：26/26，平均 4.23（runId `20261031-092431-976` @0c5de5f，
+compiler 面 8 工具）——tracked-bold-phrase 首个 op 一步命中（`tracked.set_style
+find=逾期率 bold=true`），review_intent 复审直接引用 rpr_change 证据（作者+RUN_PROPERTIES
+新[b]/旧[]）判「达成」、无误报（PROPERTY 修订证据进复审查看面，比 §6.15 自证回路进一步，
+docs/11 §6.16）；bold-existing-phrase 5 次、tracked-replace-format 4 次不变，零回归。
+full 面本批未复跑：tracked-bold-phrase 的 gap flag 依据 bold-existing-phrase 同根因结构性
+归因（mark_style_change_tracked 按 run_index 定位、无 run 拆分）。
+**2026-10-31 批注回复 op 后**：28/28，平均 4.18（runId `20261031-235355-433`，compiler 面
+8 工具）——comment-reply 首跑即过（current_document → read_document → `comment.reply
+comment_id=0` → review 达成，4 次调用），27 条既有任务零退化；模型把读侧 `#0` 原样用作
+`comment_id`，寻址链一次命中。token 列仍 0（chain provider 已知限制）。
+
+## Convention: ref 的容器边界（读/写分离）
+
+`ElementResolver` 有两个段落解析入口，**不得混用**：
+
+- `resolve(ParagraphRef)`：只扫正文 `document.paragraphs()`，是写工具的唯一边界。
+- `resolveAny(ParagraphRef)`：扫正文 + 表格单元格 + 页眉 + 页脚，**只允许只读路径**
+  （`view_element` / `read_paragraph`）使用。
+
+`read_run` 的 `ref` 路径可解析页眉/页脚/表格 run（只读）；`paragraph_index + run_index`
+仍只解释为正文。写工具（`replace_run_text` / `update_run_style` /
+`update_paragraph_alignment` / `update_paragraph_spacing`）遇到页眉/页脚/表格 ref 时
+必须返回明确「仅支持正文」错误，不能静默按正文索引写入。
+
+**为什么**：页脚 ref 若被写工具当成正文，会出现「工具返回成功、实际改了正文」的静默
+错目标。2026-10-29 的页脚评测复跑观察到：页脚 ref 被拒绝后，模型退回
+`replace_run_text(paragraph_index=0)`，把正文改成「第 页」；评测的「正文不被误改」
+check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，后续需要显式 `scope`/容器
+校验或 IR patch。
+
+`view_element` 的 paragraph 详情输出 `location`（如 `页脚 section=0 variant=default 段落 0`）、
+`alignment`（**恒出现**，未设置=left；命名与 `{align=…}` 写侧记号一致 left/center/right/both）
+和 `lineSpacing`（>0 时），供复审确认目标容器、对齐与行距。run 详情（`view_element` 与
+`view_annotated` expandRuns）输出 `font`（ascii/西文槽）**和** `fontEastAsia`（中文槽，core
+`Run.fontEastAsia()`）——编译器写的是「西文 TNR/Arial + 中文宋体/黑体」双槽，只暴露 ascii
+槽会把已正确的中文字体误判成「未设置」（heading-font 曾 24 次空转）。run 详情同时输出
+`underline`（`Run.isUnderline()`）——`<u>…</u>` 写进去后只读复审只剩 `view_*` 一条观测面，
+缺这一项会把已正确的下划线判「未达成」（与 fontEastAsia 同族）。
+
+**复审盲区已补齐**（2026-10-30 第二批，同日评测三任务复审全部「达成」且给出具体证据）：
+表格详情含 `cellTexts` 矩阵预览（≤6 行、每格截断）+ CELL/REVISION 详情实现；
+`view_outline` 修订概览带 `countByAuthor` 与 `recent` 明细（ref/type/author/片段，ref 可直通
+`view_element`）；`view_stats` 带 `footerText` 预览（截断 120，无页脚为 null）。
+**只富化既有工具输出，不增工具数**——full 58 / compiler 6 基线不动。
+第三批（同日，随 `comment.add`）补批注观测：段落详情 `comments` 数组（恒出现，空=无）、
+`view_stats` `commentCount`、`view_outline` 批注概览
+`CommentOverview{total,countByAuthor,recent[{paragraph,author,snippet}]}`（与修订概览同型）。
+
+> **属性可见性是复审的地基**（2026-10-30 教训）：复审 SubAgent 只能依据工具**可见**的属性下结论，
+> 「详情里没有 alignment」会被它解读成「未设置对齐」——`insert-centered-title` 曾因此空转 24 次
+> （主模型第 2 次调用就已正确，8 次 review 全部误报「未居中」）。给复审需要核对的属性
+> （对齐/行距/标题级别/中文字体/单元格内容/修订作者/页脚文本）加观测面时，**恒出现**优于
+> 「设置才出现」：不给「属性缺失=？」留推断空间。
+
+## Convention: 编译器工具面（compiler surface，实验性）
+
+「文档 IR + 编译器」路线（`docs/11` §5 P1）落成了第 9 组工具 `CompilerTools`
+（`create_document` / `read_document` / `validate_document`，能力清单 EXPERIMENTAL 级）。
+工具面约定：
+
+- **会话换血不换柄**：`create_document` 经 `ToolkitToolContext.replaceSessionDocument`
+  替换 docId 背后的 Document（与 `SessionTools.reopen` 同一路径）：句柄不变、generation+1、
+  旧元素引用失效。失败路径（解析/编译/profile 错误）**不触碰会话**。
+- **demo/eval 的 full 面不 scan `compiler`**（保持 58 入口基线可对比）；compiler 面由
+  应用层显式组装：`current_document` + `compiler` 四工具（create/read/validate/edit）
+  + 只读 `review_intent` = 6 入口。
+- **demo 默认 compiler 面**（2026-10-30 起）：`AgentBridge.buildToolRegistry(surface,…)`
+  按面装配（compiler = documentTools + `toolkit.compiler`；full = 原六组 scan），
+  `NONDOCX_AGENT_SURFACE=full` 回退。**配套必须随面切换**：system prompt
+  （`systemPromptFor`）与 Skill 策略（`skillRegistryFor`——full 面 Skill 教的是
+  compiler 面不存在的工具，compiler 面必须空 `SkillRegistry`）。复审 SubAgent 两面共用
+  （仅 `toolkit.view`，物理保证不变）。`validate_document` 归只读前缀（质量检查不置
+  dirty，纯咨询轮不触发落盘）。测试 `SurfaceSwitchTest` 锁定双面装配。
+- **eastAsia 字体槽分离是编译器独有兜底**：core 公开 API `font()` 走 POI 四槽同写
+  （ascii/hAnsi/cs/eastAsia 同名）；规范的中文排版需要「西文 TNR + 中文宋体」分离。
+  编译器经 `raw()` 只覆写 eastAsia 槽（`DocumentCompiler.applyRunFonts` 是唯一用点，
+  core 提供公开分离 API 前不要在其它工具类复制此逻辑）。
+- **评测 A/B**：`EvalMain --surface full|compiler --group baseline|create`；create 组
+  （5 条从零建文档任务）两面通用，是「调用数 10+ → 2~3」假设的判定口径。
+  `EvalRunnerTest#compilerSurfaceExposesFiveEntriesOnly` 锁死 5 入口数。
+- **read/write 同构**：`read_document` 输出的 Markdown（短 ID 锚点是 HTML 注释）可原样
+  再作为 `create_document` 输入——解析器把 `<!-- … -->` 当元数据剥掉，round-trip 不产生
+  脏块。改输出格式时保持这一性质（`CompilerPipelineTest#markdownViewRoundTripsCompiledDocument`）。
+- **edit_document 原子性**（P2）：`PatchEngine` 先 preflight 全部 op（锚点存在/参数合法/
+  find 在文中/行列在界/表格块仅 end/前序删除的锚点不得复用/批注 id 存在且是根批注），任一失败抛
+  `PatchException` 且**零写入**；执行期不应有可预期失败。锚点编号与 `read_document`
+  同源（`pN`/`tN`），插入块复用 Markdown 解析器。执行期意外异常按「可能部分应用」上报，
+  不得伪装成功——`PatchEngineTest#atomicPreflightFailureLeavesDocumentUntouched` 锁死零写入。
+- **同锚点改文本独占**（P2 续）：`tracked.*` 与 `replace_text` 每批 ops 里对同一段落锚点
+  至多一条（第二个认领者整体拒绝，提示拆两次 `edit_document`）。原因：tracked del 会把
+  被删文本从 `text()` 移走、ins 文本对 POI 读侧不可见（`w:ins` 内 run 不被
+  `XWPFParagraph.getRuns()` 暴露），修订偏移必须按**执行时活文本**从右到左计算——
+  同锚点多条会互相污染。
+- **tracked.replace 是最小 diff**（P2 续）：core `Paragraph.replaceTrackedRange` 逐 run 切片
+  del「find」范围 + ins 紧随其后（core 唯一的「定位 ins」下沉点在
+  `TrackedChangeNodes.addInsertionAfter`——`addInsertion` 只能段末追加，直接组合会把 ins
+  放到句号后）。XmlBeans 陷阱：`moveXml` 移动过的节点句柄会断连，靠 id 重查活句柄
+  （`delById`/`insertedRunByRevisionId`）；accept/reject 在 POI 缓存之下改动，测试断言
+  文本必须 save+reopen 再读（同批 tracked op 断言修订本身不受影响）。
+- **页脚页码域必须带缓存结果**（P2 续）：纯指令域（begin/instr/end 三 run）的
+  `footer.text()` 读出「第  页」无数字——所有 POI 系读者都看不到域值。core
+  `Paragraph.addSimpleField(instruction, cachedResult)` 写五 run 形态
+  （begin/instr/**separate/result**/end），result 是普通 `w:t` run（返回它，可链式设样式），
+  Word/WPS 打开时重算。`footer.set_page_number` op 的 format 支持 `{page}`/`{pages}` 占位符，
+  缓存值固定 "1"（多页文档里每页真值只有渲染引擎知道）。
+- **read_document 的页脚元数据行**（P2 续）：`MarkdownView` 在正文后输出
+  `<!-- 页脚: … -->`（存在且非空才输出）——页码写入后模型能读到核对；注释形态保
+  round-trip（`CompilerPipelineTest#markdownViewShowsFooterAsMetadataAndKeepsRoundTrip`）。
+- **header.set_text 页眉写 op**（v4，2026-10-31）：与 `footer.set_page_number` 同型——
+  dispatch 不认领锚点、plan 签名无 anchor/snapshot、`changed` 报 `"header"` 字面量，
+  **不占段落锚点**、可与正文 op 同批。`text` 必填非空（trim 后空白即 preflight 拒绝，
+  零写入），行内标记复用 `MarkdownParser.parseInline` 全标记集 + `applySpanFormat`
+  （逐 span `addRun`，内容语言与正文统一）。**追加语义**：`ensureHeader().addParagraph()`
+  向默认 section 页眉追加一段，重复调用追加新段、不替换既有内容（替换语义留 future）；
+  core 零新增（N5：写侧 `ensureHeader` 创建入口既有，`addParagraph` 返回普通 `Paragraph`）。
+  已知边界：只写默认 section（多 section/变体留 future），无页码占位符（页码进页眉留
+  future）。
+- **read_document 的页眉元数据行**（v4，2026-10-31）：与页脚行同族惯例——
+  `<!-- 页眉: … -->` 输出在**页脚行之前**（与页面物理顺序一致），存在且非空才输出、
+  多行转 `" / "`、截断时不输出；读侧走 `doc.header()` 只读**绝不创建**（N5 读写分离，
+  读视图不得触碰创建路径）；round-trip 由
+  `CompilerPipelineTest#markdownViewShowsHeaderAsMetadataAndKeepsRoundTrip` 锁定。
+  写读同批落地（§6.6/§6.13 教训：只有写侧 op 没有读侧观测，复审会误报「未达成」）。
+- **tracked.set_style 格式变更修订 op**（v5，2026-10-31）：对既有文字的**格式变更本身算
+  修订**（rPrChange 属性修订，非 tracked.replace 的 del+ins）——`find` 精确子串定位
+  （多处命中全部处理，从右到左），`bold`/`italic` 三态显式（true 设置/false 取消
+  `w:val="off"`/缺省不动，至少给一个），`author` 必传。core 零改动（`Run
+  .commitStyleAsTracked` 两步式契约既有）：**快照必须在 run 拆分后取**（`copyRun` 拷贝
+  继承源 run 完整 rPr，拆分后快照=源样式）→ 改格式 → commit。拆 run 复用 replace_text
+  的倒序插入技法（顺序拷贝「上一份拷贝」格式逐份累积，PatchEngineTest 抓过）。**参与**
+  同锚点独占（虽不改 `text()`，但拆 run 重建段落 run 结构，同批改文本 op 的定位可能失效
+  ——保守与 tracked 族同列；comment.add 的「不改文本不独占」先例不适用于会重建结构的 op）。
+  读侧三处写读同批：MarkdownView 文档尾 `<!-- 修订#N: … -->` 元数据行（全修订类型，
+  PROPERTY 类带新旧属性摘要，无修订零输出）、view REVISION 详情 property 摘要（口径与
+  `TrackedChangeQueryTools.appendDetails` 一致）、outline recent[] 对 RPR_CHANGE 的
+  bold/italic/snippet 取证（从 newSummary 按 token 精确匹配派生，`bCs` 不误中 `b`）。
+  已知边界：`PropertyChangeDetails.summarize` 只记属性名不记方向（取消加粗的新摘要同为
+  `[b]`），方向证据看 run 实际格式；同一 run 重复 commit 会追加新 rPrChange（core 语义，
+  op 不去重）。
+- **read_document 的修订元数据行**（v5，2026-10-31）：与页眉/页脚/批注元数据行同族——
+  文档尾（页脚行之后）输出 `<!-- 修订 N 条 -->` + 每条 `<!-- 修订#id: TYPE author=… -->`
+  （TEXT 类带截断 snippet、PROPERTY 类带 `属性=RUN_PROPERTIES 新[b] 旧[]`），无修订
+  **零输出**（零噪声）；round-trip 整行注释剥离；枚举失败防御性只丢观测行（与
+  SnapshotBuilder 既有 catch 手法一致）。
+- **comment.add 与批注观测**（v3，2026-10-30）：`comment.add`（`anchor+text+author` 必传）
+  委托 core `Paragraph.addComment` 整段范围批注。批注**不改段落文本**，不参与同锚点
+  改文本独占（`claimAnchor` 只管 tracked.\*/`replace_text`）——可与 `replace_text` 同批
+  作用于同段。comment→paragraph 映射的唯一公共入口是 core `Paragraph.comments()`
+  （活对象语义；POI CTP 子树扫描下沉 `CommentNodes.commentsAnchoredIn`）。已知读侧语义：
+  `addComment` 把 `commentRangeStart` 插在段首，同段多条按 XML 出现序读取是**后写先出**
+  （LIFO）——断言顺序时注意。新增「作者署名标记」类能力时写读必须同批落地：只有写侧
+  op 没有读侧观测，复审会把已正确的文档误报「未达成」（§6.6 同族教训）。
+- **read_document 的批注元数据行**（v3；v6 起带 id 与线程关系）：`MarkdownView` 在被评段落行后输出整行
+  `<!-- 批注 pN #id [作者]: 内容 -->`（每条一行），**标题段落同样输出**（早期标题分支提前 return，
+  把挂在标题上的批注吞掉了——观测盲区已修）。`#id` 是 `comment.reply` 的寻址键；回复批注在 `#id`
+  之后、`[作者]` 之前插 `回复#父id`，父行在前、回复行紧随（回复锚点紧贴父批注 start）。round-trip 由
+  「解析器跳过整行注释」保证（`CompilerPipelineTest#markdownViewShowsCommentAsMetadataAndKeepsRoundTrip`、
+  `#markdownViewShowsReplyThreadWithParentIdAndKeepsRoundTrip`、`#markdownViewShowsCommentOnHeadingParagraph`）。
+- **comment.reply 批注回复 op**（v6，2026-10-31）：按**批注 id** 寻址（`comment_id` = 读侧批注行的 `#N`，
+  容忍前导 `#`），`text`/`author` 必传；与 `footer.set_page_number`/`header.set_text` 同型——**不需要
+  anchor、不占段落锚点、可与正文 op 同批**，也不改正文、不受同锚点改文本独占约束。preflight（零写入）：
+  id 归一化后为空、`Comments.get(id)` 未命中、目标本身是回复（**MVP 只允许一级回复**，拒绝时给出根批注 id）
+  都整体拒绝。执行期调 core `Comments.reply`，`changed` 记 `comment#<id>`。理由：core 早有 reply 能力，只加
+  写侧不补读侧观测，复审会把已写入的回复误判「没回复」（§6.6 同族）。多级回复与表格单元格内批注通道留 future。
+- **fill_template 的重写策略**（P2 收尾，2026-10-30）：跨 run 占位符按 `paragraph.text()`
+  合并命中后，重写用「首 run 承载全文、其余 run 清空」——**不要**删光重建单 run：重建要克隆
+  样式，而 `Run.font()` 写侧是四槽同写，会把西文字体名写进 eastAsia 槽污染中文。表格模板行
+  复制必须走 core `Table.copyRowTo`。缺 key 的占位符**保留原样 + warning**（模型可补数据
+  重试），不做 preflight 拒绝——宽容降级优于静默清空。
+- **POI 5.3 表行缓存的脱链陷阱**（P2 收尾，字节码验证）：`XWPFTable.addRow(row,pos)` 把传入
+  wrapper 塞进 `tableRows` 缓存，却把内容**复制**进自建的新 tr——传入脱链 copy 时，经返回行的
+  写入落进不在文档树里的对象，**内存读正确、落盘 XML 原样**（fill_template 首版 eval 踩中；
+  `getRows()` 无缓存重建路径）。`copyRowTo` 用**影子行技法**破局：手动 `insertNewTr` 得到树内
+  元素并填充 → 传包树内元素的 wrapper 给 `addRow`（缓存正确、XML 多出一行复制内容）→
+  `removeTr` 删掉影子行。测试必须 **save+reopen 断言**——纯内存断言测不出这类陷阱
+  （`TableTest#copyRowToReturnedRowWritesIntoDocumentTree` 锁死）。
+- **replace_text 的内容语言与 run 拆分**（P3，2026-10-30）：`replace_text` 的 `text` 解析
+  Markdown 行内标记（`**粗**`/`*斜*`/`` `代码` ``/`<u>下划线</u>`，未闭合原样保留），与 create_document
+  正文、table.set_cell 同一内容语言——**全链路唯一按字面处理文本的路径就是 bug**（模型写
+  `**…**` 是正确直觉，replace-with-format 的 9 次自愈就是这堵墙）。给既有文字加粗 = 身份
+  替换 `find=X text=**X**`（加下划线同形：`text=<u>X</u>`）；整段加粗用 `set_style` 的 `bold`/`italic` 布尔（可与
+  style/align/line_spacing 叠加）。带格式 + 单 run 命中经 core `Paragraph.copyRun` 拆分。
+  两个坑：① 拷贝必须**始终复制源 run**，piece 按倒序插在源 run 紧后——顺序复制「上一份
+  拷贝」会让格式逐份累积（第二份起继承第一份的加粗，PatchEngineTest 抓过）；② 拷贝承载
+  完整 rPr（含 eastAsia 等未建模槽），**不要**用 `RunStyle` 快照重建（`font()` 只覆盖 ascii
+  槽会丢中文）。`copyRun` 比 `copyRowTo` 稳：走 POI 自己的 `insertNewRun`（元素与包装同源
+  创建登记，无缓存错配面），再 `getCTR().set(copy)` 填内容；save+reopen 测试照样锁死。纯
+  文本路径（无标记）行为与历史版本一致，有测试锁定。
+- **tracked 行内格式与修订观测**（P3，2026-10-30）：`tracked.insert`/`tracked.replace` 的
+  `text` 同样解析行内标记（`**粗**`/`*斜*`/`` `代码` ``/`<u>下划线</u>`，内容语言统一，无字面路径残留）。多 span 走 core 多 run 变体
+  （`addInsertion(author, texts)` / `replaceTrackedRange(..., texts)`）：**一条 `<w:ins>`
+  内每段一个 run**（读侧聚合一条 INS），样式经返回 run 句柄设置。三个坑：①
+  `unwrapRunsAndRemove` 的「child.moveXml + toNextSibling」循环在首个 moveXml 后游标
+  失效——多 run ins 的后续 run 随 wrapper 被删（accept 丢文本），修法是 run 引用快照 +
+  逐 run 独立 cursor；② **`text()` 的 live/reopen 语义不同**：del 文本永不进 `text()`，
+  ins 文本 live 不可见（iruns 构造于段落创建，手术新增 ins 不入列）、save+reopen 后进入
+  （iruns 重建自 XML）——eval 断言按 reopen 口径，agent 会话内 read_document 是 live 口径；
+  ③ **修订内 run 不被 `runs()` 暴露（N14）→ 修订条目必须自带字符格式证据**：
+  outline `recent[]` 与 REVISION 详情恒带 `bold`/`italic`（经 `raw()` 聚合，false 也是
+  证据）——复审查不到修订格式就会把已正确的带格式修订误报「未达成」（§6.6 同族教训）。
+- **`<u>` 行内下划线（P3，2026-10-31）**：内容语言补上最后一种缺形态——`<u>…</u>` 在
+  create_document 正文/列表、`replace_text`、`table.set_cell`、`header.set_text`、
+  `tracked.insert`/`tracked.replace` 全路径生效（`MarkdownDoc.Span.underline` + 两处 sink：
+  `DocumentCompiler.fillPara`/`fillListItem` 与 `PatchEngine.applySpanFormat`，`table.set_cell`
+  自带的 span 循环也要同改）。**写读必须同批**：`MarkdownView.renderRuns` 回显 `<u>…</u>`
+  （下划线在内、粗/斜在外 → `**<u>x</u>**`），否则写进去的下划线在 `read_document` 里不可见、
+  复审必然误判「没做」（§6.6/§6.13 同族）。解析契约：内层可再写粗/斜/代码（`withUnderline()`
+  取并集）；未闭合/孤立/空标签原样保留字面；同名嵌套不解析；标题内不生效；create_document 的
+  表格单元格是纯文本通道（`**` 与 `<u>` 同为剥标记，富文本单元格走 `table.set_cell`）。
+  **加行内标记时 `formatted` 判定（`replace_text`/`tracked.insert`/`tracked.replace` 三处 +
+  `table.set_cell` 的 `plain` 判定）必须同步加字段**——漏一处就会把标签当字面写进正文。
+- **render_preview 只读且防环境坑**（P2 收尾）：渲染不改文档、不置 dirty（demo
+  `READONLY_TOOL_PREFIXES` 含 `render_`）。soffice 路径经 `NONDOCX_SOFFICE`（默认
+  `soffice`）；每次调用独立 `-env:UserInstallation` profile（LibreOffice 同 profile 单实例
+  锁，并发静默失败）；超时销毁进程。集成测试用 `assumeTrue(soffice 存在)`——无
+  LibreOffice 的 CI 跳过而不是红。
+- **compiler 面是 8 入口**（P2 收尾起）：current_document + create/read/validate/edit +
+  fill_template + render_preview + review_intent。eval（`EvalRunnerTest`）与 demo
+  （`SurfaceSwitchTest`）双锁死；full 面 58 不变（不 scan compiler，A/B 基线保持）。
+- **质量 post-condition（P2 收尾）**：create/edit/fill 三个写工具的成功路径自动跑 10 项
+  检查，失败项放 `data.qualityIssues`、message 追加摘要；非阻塞（写入已发生，检查纯读）；
+  dry_run 不跑；检查异常按「无信号」吞掉。**`toc` 建议项不进 post-condition**（内容完整性
+  建议非写质量信号，恒触发即噪音）。seed 未排版的 cjk-indent 类警告保留但摘要标「提示性」，
+  提示词同步声明「无需为 qualityIssues 追加修改」——防警告修复循环（模型看到警告就修
+  用户没要的排版）。新增写工具时同样接 post-condition。

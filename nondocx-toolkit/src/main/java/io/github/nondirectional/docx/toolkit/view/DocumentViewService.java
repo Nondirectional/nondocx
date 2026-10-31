@@ -2,29 +2,38 @@ package io.github.nondirectional.docx.toolkit.view;
 
 import io.github.nondirectional.docx.core.api.BodyElement;
 import io.github.nondirectional.docx.core.api.Document;
+import io.github.nondirectional.docx.core.api.header.Footer;
+import io.github.nondirectional.docx.core.api.header.Header;
 import io.github.nondirectional.docx.core.api.table.Table;
 import io.github.nondirectional.docx.core.api.text.Paragraph;
 import io.github.nondirectional.docx.core.api.text.Run;
 import io.github.nondirectional.docx.toolkit.QualityCheckTools;
 import io.github.nondirectional.docx.toolkit.QualityCheckTools.CheckResult;
+import io.github.nondirectional.docx.toolkit.ref.CellRef;
 import io.github.nondirectional.docx.toolkit.ref.DocumentRef;
 import io.github.nondirectional.docx.toolkit.ref.ElementKind;
 import io.github.nondirectional.docx.toolkit.ref.ElementRef;
 import io.github.nondirectional.docx.toolkit.ref.ElementRefs;
 import io.github.nondirectional.docx.toolkit.ref.ElementResolver;
+import io.github.nondirectional.docx.toolkit.ref.HeaderFooterRef;
 import io.github.nondirectional.docx.toolkit.ref.ParagraphRef;
+import io.github.nondirectional.docx.toolkit.ref.RefResolutionException;
 import io.github.nondirectional.docx.toolkit.ref.ReferenceContext;
+import io.github.nondirectional.docx.toolkit.ref.RevisionRef;
 import io.github.nondirectional.docx.toolkit.ref.RunRef;
 import io.github.nondirectional.docx.toolkit.ref.TableRef;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedParagraph;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedRun;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedView;
+import io.github.nondirectional.docx.toolkit.view.dto.CommentEntry;
+import io.github.nondirectional.docx.toolkit.view.dto.CommentOverview;
 import io.github.nondirectional.docx.toolkit.view.dto.ElementView;
 import io.github.nondirectional.docx.toolkit.view.dto.FontStat;
 import io.github.nondirectional.docx.toolkit.view.dto.IssueEntry;
 import io.github.nondirectional.docx.toolkit.view.dto.IssuesView;
 import io.github.nondirectional.docx.toolkit.view.dto.OutlineEntry;
 import io.github.nondirectional.docx.toolkit.view.dto.OutlineView;
+import io.github.nondirectional.docx.toolkit.view.dto.RevisionEntry;
 import io.github.nondirectional.docx.toolkit.view.dto.RevisionOverview;
 import io.github.nondirectional.docx.toolkit.view.dto.StatsView;
 import io.github.nondirectional.docx.toolkit.view.dto.TextEntry;
@@ -67,6 +76,21 @@ import java.util.Map;
  * ElementResolver}，保证可被 {@link #element} 解析。
  */
 public final class DocumentViewService {
+
+  /** view_element 表格详情的 cellTexts 矩阵最大行数（超出标「…」）。 */
+  private static final int TABLE_ELEMENT_ROWS_MAX = 6;
+
+  /** cellTexts 矩阵里单个单元格文本的截断长度。 */
+  private static final int TABLE_ELEMENT_CELL_MAX = 24;
+
+  /** stats 页脚文本预览的截断长度。 */
+  private static final int FOOTER_PREVIEW_MAX = 120;
+
+  /** outline 批注概览 recent 的最大条数。 */
+  private static final int RECENT_COMMENTS_MAX = 5;
+
+  /** outline 批注概览 snippet 的截断长度（与修订 recent 片段同档）。 */
+  private static final int COMMENT_SNIPPET_MAX = 40;
 
   private final ReferenceContext referenceContext;
   private final QualityCheckTools qualityCheckTools;
@@ -127,6 +151,15 @@ public final class DocumentViewService {
             snapshot.createdAt().toString(),
             truncated,
             totalCount);
+    List<RevisionEntry> recent =
+        rev.recent().stream()
+            .map(
+                e ->
+                    new RevisionEntry(
+                        e.ref(), e.type(), e.author(), e.snippet(), e.bold(), e.italic()))
+            .collect(java.util.stream.Collectors.toList());
+    ElementResolver commentResolver =
+        referenceContext.resolver(new DocumentRef(docId, generation), doc);
     return new OutlineView(
         meta,
         entries,
@@ -134,7 +167,62 @@ public final class DocumentViewService {
         ov.hasHeader(),
         ov.hasFooter(),
         doc.sections().size(),
-        new RevisionOverview(rev.trackingEnabled(), rev.totalCount(), rev.countByType()));
+        new RevisionOverview(
+            rev.trackingEnabled(),
+            rev.totalCount(),
+            rev.countByType(),
+            rev.countByAuthor(),
+            recent),
+        buildCommentOverview(doc, commentResolver));
+  }
+
+  /**
+   * 构建批注概览：总数/按作者计数用文档级 {@code doc.comments().list()}（含锚在单元格内段落的批注）， recent 明细带锚定段落 ref（顶层段落一遍
+   * {@code Paragraph.comments()} 建 id→ref 映射）。
+   *
+   * <p>与修订概览同型：批注创作（{@code comment.add}）落地后复审要能从只读视图核对「作者/内容/挂哪段」， 否则会像修订作者盲区一样把已正确的文档误报「未达成」。
+   */
+  private static CommentOverview buildCommentOverview(Document doc, ElementResolver resolver) {
+    List<io.github.nondirectional.docx.core.api.comment.Comment> all;
+    try {
+      all = doc.comments().list();
+    } catch (RuntimeException e) {
+      all = List.of();
+    }
+    Map<String, Integer> countByAuthor = new LinkedHashMap<>();
+    for (io.github.nondirectional.docx.core.api.comment.Comment c : all) {
+      countByAuthor.merge(c.author(), 1, Integer::sum);
+    }
+    Map<String, String> anchorRefById = new HashMap<>();
+    for (BodyElement be : doc.bodyElements()) {
+      if (!(be instanceof Paragraph)) {
+        continue;
+      }
+      Paragraph p = (Paragraph) be;
+      try {
+        List<io.github.nondirectional.docx.core.api.comment.Comment> anchored = p.comments();
+        if (!anchored.isEmpty()) {
+          String ref = resolver.reference(p).canonical();
+          for (io.github.nondirectional.docx.core.api.comment.Comment c : anchored) {
+            anchorRefById.putIfAbsent(c.id(), ref);
+          }
+        }
+      } catch (RuntimeException ignored) {
+        // 单段解析失败跳过，不让批注概览拖垮整个 outline
+      }
+    }
+    List<CommentEntry> recent = new ArrayList<>();
+    for (io.github.nondirectional.docx.core.api.comment.Comment c : all) {
+      if (recent.size() >= RECENT_COMMENTS_MAX) {
+        break;
+      }
+      recent.add(
+          new CommentEntry(
+              anchorRefById.get(c.id()),
+              c.author(),
+              truncate(c.text() == null ? "" : c.text(), COMMENT_SNIPPET_MAX)));
+    }
+    return new CommentOverview(all.size(), countByAuthor, recent);
   }
 
   // ==================== text ====================
@@ -198,7 +286,9 @@ public final class DocumentViewService {
                   truncate(r.text(), query.textTruncate()),
                   r.isBold(),
                   r.isItalic(),
+                  r.isUnderline(),
                   r.font(),
+                  r.fontEastAsia(),
                   r.fontSize(),
                   r.color()));
         }
@@ -276,11 +366,41 @@ public final class DocumentViewService {
         doc.sections().size(),
         doc.bodyElements().size(),
         ov.trackedChangeCount(),
+        commentCount(doc),
         ov.hasToc(),
         ov.hasHeader(),
         ov.hasFooter(),
+        footerTextPreview(doc),
         fonts,
         fontSizes);
+  }
+
+  /** 页脚文本预览：无页脚/空页脚为 null；截断到 {@value #FOOTER_PREVIEW_MAX} 字符。 */
+  private static String footerTextPreview(Document doc) {
+    try {
+      Footer footer = doc.footer();
+      if (footer == null) {
+        return null;
+      }
+      String text = footer.text();
+      if (text == null || text.isBlank()) {
+        return null;
+      }
+      return text.length() <= FOOTER_PREVIEW_MAX
+          ? text.trim()
+          : text.substring(0, FOOTER_PREVIEW_MAX);
+    } catch (RuntimeException ignored) {
+      return null;
+    }
+  }
+
+  /** 批注总数（文档级，恒出现——0=无）；core 读取异常时退回 0，不阻塞 stats。 */
+  private static int commentCount(Document doc) {
+    try {
+      return doc.comments().list().size();
+    } catch (RuntimeException ignored) {
+      return 0;
+    }
   }
 
   // ==================== issues ====================
@@ -327,7 +447,8 @@ public final class DocumentViewService {
   /**
    * 单元素详情视图：按 canonical ref 获取一个元素的结构化详情。
    *
-   * <p>第一版支持 paragraph/table/run；其余类型返回 kind + ref + 空 properties。ref 解析失败时抛 {@link
+   * <p>支持 paragraph/table/run/header_footer；段落与 run 详情带 location，页眉/页脚 part 返回文本与段落数。其余类型返回 kind +
+   * ref + 空 properties。ref 解析失败时抛 {@link
    * io.github.nondirectional.docx.toolkit.ref.RefResolutionException}，由调用方（ViewTools）捕获转为
    * ToolResult。
    */
@@ -339,13 +460,33 @@ public final class DocumentViewService {
     switch (ref.kind()) {
       case PARAGRAPH:
         {
-          Paragraph p = resolver.resolve((ParagraphRef) ref);
+          Paragraph p = resolver.resolveAny((ParagraphRef) ref);
           properties.put("text", p.text());
+          properties.put("location", resolver.describe(p));
+          // 对齐恒出现（未设置=left）：只读复审靠元素详情核对「居中标题」类要求，
+          // 属性缺失会被误读成「未设置」。命名与 {align=…} 写侧记号一致（left/center/right/both），
+          // 让读者能把 alignment:"center" 与 {align=center} 对上。
+          properties.put("alignment", alignmentName(p.alignment()));
+          double lineSpacing = p.lineSpacing();
+          if (lineSpacing > 0) {
+            properties.put("lineSpacing", lineSpacing);
+          }
           Integer hl = p.heading() == null ? null : p.heading().ordinal() + 1;
           if (hl != null) {
             properties.put("headingLevel", hl);
           }
           properties.put("listItem", p.listLevel() != null);
+          // 批注恒出现（空数组=无）：复审核对「这段挂了哪些批注」的直接证据；
+          // 属性缺失会被读成「未知/未设置」，与 alignment 恒出现同理
+          List<Map<String, Object>> comments = new ArrayList<>();
+          for (io.github.nondirectional.docx.core.api.comment.Comment c : p.comments()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", c.id());
+            entry.put("author", c.author());
+            entry.put("text", c.text());
+            comments.add(entry);
+          }
+          properties.put("comments", comments);
           break;
         }
       case TABLE:
@@ -353,17 +494,106 @@ public final class DocumentViewService {
           Table t = resolver.resolve((TableRef) ref);
           properties.put("rowCount", t.rows().size());
           properties.put("columnCount", t.rows().isEmpty() ? 0 : t.rows().get(0).cells().size());
+          // 单元格文本矩阵预览（≤6 行，每格截断）——只读复审核对「某格改成了什么」的依据；
+          // 只给行列数时复审无法确认单元格内容（table-cell-edit 曾因此误报）
+          List<List<String>> cellTexts = new ArrayList<>();
+          int rowsShown = Math.min(t.rows().size(), TABLE_ELEMENT_ROWS_MAX);
+          for (int r = 0; r < rowsShown; r++) {
+            List<String> rowTexts = new ArrayList<>();
+            for (io.github.nondirectional.docx.core.api.table.Cell c : t.rows().get(r).cells()) {
+              rowTexts.add(truncate(c.text(), TABLE_ELEMENT_CELL_MAX));
+            }
+            cellTexts.add(rowTexts);
+          }
+          if (t.rows().size() > rowsShown) {
+            cellTexts.add(List.of("…（共 " + t.rows().size() + " 行）"));
+          }
+          properties.put("cellTexts", cellTexts);
+          break;
+        }
+      case CELL:
+        {
+          io.github.nondirectional.docx.core.api.table.Cell c = resolver.resolve((CellRef) ref);
+          properties.put("text", c.text());
+          break;
+        }
+      case REVISION:
+        {
+          io.github.nondirectional.docx.core.api.track.TrackedChange change =
+              resolver.resolve((RevisionRef) ref);
+          properties.put("type", change.type() == null ? null : change.type().name().toLowerCase());
+          properties.put("author", change.author());
+          properties.put("date", change.date() == null ? null : change.date().toString());
+          var details = change.details();
+          if (details instanceof io.github.nondirectional.docx.core.api.track.TextChangeDetails) {
+            properties.put(
+                "text",
+                ((io.github.nondirectional.docx.core.api.track.TextChangeDetails) details).text());
+            // 带格式修订的证据：修订内 run 不被 paragraph.runs() 暴露（N14），
+            // run 级视图够不着——复审核对「以修订加粗/倾斜」只能看这里（恒出现）
+            boolean bold = false;
+            boolean italic = false;
+            try {
+              for (var ctr : change.raw().getRList()) {
+                if (ctr.getRPr() != null) {
+                  bold |= ctr.getRPr().sizeOfBArray() > 0;
+                  italic |= ctr.getRPr().sizeOfIArray() > 0;
+                }
+              }
+            } catch (RuntimeException ignored) {
+              // 读不到 run 的修订按无格式上报
+            }
+            properties.put("bold", bold);
+            properties.put("italic", italic);
+          } else if (details
+              instanceof io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) {
+            // 属性类修订（rPrChange）的格式变更证据：kind + 新/旧摘要，口径与 list_tracked_changes 的
+            // property=RUN_PROPERTIES(新 [b]/旧 []) 对齐。summarize 只含本地名，设置/取消方向不可区分（已知边界）
+            io.github.nondirectional.docx.core.api.track.PropertyChangeDetails property =
+                (io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) details;
+            properties.put(
+                "property",
+                property.kind()
+                    + "(新 "
+                    + property.newSummary()
+                    + "/旧 "
+                    + property.oldSummary()
+                    + ")");
+          }
           break;
         }
       case RUN:
         {
           Run r = resolver.resolve((RunRef) ref);
           properties.put("text", r.text());
+          properties.put("location", resolver.describe(r));
           properties.put("bold", r.isBold());
           properties.put("italic", r.isItalic());
+          // 下划线同样是复审要核对的直接格式：内容语言 <u>…</u> 写进去后，
+          // 只读 view_* 是复审唯一观测面，缺这一项会让已正确的下划线被判「未达成」
+          properties.put("underline", r.isUnderline());
           putIfNotNull(properties, "font", r.font());
+          // 中文槽与西文槽分离展示：编译器写的是「西文 TNR/Arial + 中文宋体/黑体」双槽，
+          // 只暴露 ascii 槽会让读者把已正确设置的中文字体误判成「未设置」
+          putIfNotNull(properties, "fontEastAsia", r.fontEastAsia());
           putIfNotNull(properties, "fontSize", r.fontSize());
           putIfNotNull(properties, "color", r.color());
+          break;
+        }
+      case HEADER_FOOTER:
+        {
+          HeaderFooterRef hf = (HeaderFooterRef) ref;
+          try {
+            Header header = resolver.resolveHeader(hf);
+            properties.put("part", "header");
+            properties.put("text", header.text());
+            properties.put("paragraphCount", header.paragraphs().size());
+          } catch (RefResolutionException ignored) {
+            Footer footer = resolver.resolveFooter(hf);
+            properties.put("part", "footer");
+            properties.put("text", footer.text());
+            properties.put("paragraphCount", footer.paragraphs().size());
+          }
           break;
         }
       default:
@@ -452,6 +682,27 @@ public final class DocumentViewService {
   private static String truncate(String s, int max) {
     if (s == null) return "";
     return s.length() <= max ? s : s.substring(0, max);
+  }
+
+  /**
+   * 对齐的稳定小写名，与 Markdown 写侧的 {@code {align=…}} 记号一致（left/center/right/both）。
+   *
+   * <p>view_element 的段落详情用它暴露 alignment——读者（含只读复审 SubAgent）需要能把读到的值与 写侧记号直接对上，不复用 enum
+   * 名（JUSTIFY）以免两套叫法。
+   */
+  private static String alignmentName(
+      io.github.nondirectional.docx.core.api.style.Alignment alignment) {
+    switch (alignment) {
+      case CENTER:
+        return "center";
+      case RIGHT:
+        return "right";
+      case JUSTIFY:
+        return "both";
+      case LEFT:
+      default:
+        return "left";
+    }
   }
 
   private static String tablePreviewText(TablePreview tp) {

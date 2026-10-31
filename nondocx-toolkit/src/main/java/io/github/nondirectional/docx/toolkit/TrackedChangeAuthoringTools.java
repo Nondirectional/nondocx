@@ -382,8 +382,9 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
    * <p>OOXML 没有「替换」元素——替换就是紧挨着的 {@code <w:del>}(旧文本)+{@code <w:ins>}(新文本)。新 run 复制旧 run 的样式,
    * 贴近「改字但保留格式」的直觉。
    *
-   * <p><b>索引不漂移 + 快照去重</b>(同 {@link #deleteRunTracked}):{@code replaceTracked} 后 POI 仍把 run 计入
-   * {@code runs()}, 故索引稳定;但 wrapper 会失效,重复替换同一 wrapper 会抛异常。故先快照、identity 去重、再逐个替换。
+   * <p><b>快照解析 + 坐标去重</b>(同 {@link #deleteRunTracked} 的快照计划结构):core 会在 {@code replaceTracked} 内部的
+   * XML 手术后按需重建 POI 段落缓存,使 {@code runs()} 反映真实 XML(del/ins 包装内 run 计入)——执行中途再按坐标解析 目标会漂移。故先把全部
+   * edits 按调用时的文档状态解析成目标 wrapper + 旧文本快照,坐标去重后再逐条执行。
    *
    * <p><b>失败语义:collect-errors。</b>
    */
@@ -438,110 +439,124 @@ public final class TrackedChangeAuthoringTools extends ToolkitToolContext {
     if (list.isEmpty()) {
       return renderInvalidArgument("edits 为空");
     }
-    // 先把每条解析成 (para,run,newText) 或错误标记,再交给共享执行框架。
-    // 这里复用 applyRunTrackedBatch 的核心思路,但需要 newText;为避免过度抽象,就地实现(结构与共享方法一致)。
+    // ---- 快照解析阶段:全部 edits 按调用时的文档状态解析(目标 wrapper + 旧文本),先于任何执行。
+    // core 会在 replaceTracked 的 XML 手术后按需重建 POI 段落缓存,runs() 随真实 XML 变化
+    // (del/ins 包装内 run 计入),执行中途再按坐标解析会漂移;快照解析后坐标与旧文本锚定在
+    // 调用时状态(与 delete_run_tracked 的快照计划结构一致)。
     var paragraphs = doc.paragraphs();
     boolean stopOnError = "stop".equalsIgnoreCase(onError);
-    StringBuilder sb = new StringBuilder();
-    int ok = 0;
-    int fail = 0;
-    int skipped = 0;
+    int n = list.size();
+    ReplacePlan[] plans = new ReplacePlan[n];
     // 按坐标去重:同一 (paragraphIndex, runIndex) 只替换一次。runs().get(i) 每次返回新包装,
     // 不能 identity 比较,改用坐标字符串。重复 replaceTracked 同一 run 会抛 XmlValueDisconnectedException。
     Set<String> seen = new HashSet<>();
-    for (int i = 0; i < list.size(); i++) {
-      if (i > 0) {
-        sb.append('\n');
-      }
-      String tag = "[" + i + "] ";
+    Map<Integer, List<Run>> runsByParagraph = new HashMap<>();
+    for (int i = 0; i < n; i++) {
+      ReplacePlan plan = new ReplacePlan();
+      plans[i] = plan;
       Object item = list.get(i);
       if (!(item instanceof Map)) {
-        sb.append(tag).append("错误:该条不是对象(").append(item).append(")");
-        fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
+        plan.error = "该条不是对象(" + item + ")";
         continue;
       }
       @SuppressWarnings("unchecked")
       Map<String, Object> m = (Map<String, Object>) item;
-      int paragraphIndex;
-      int runIndex;
-      String newText;
       try {
-        paragraphIndex = getInt(m, "paragraph_index");
-        runIndex = getInt(m, "run_index");
-        newText = getStr(m, "new_text");
+        plan.paragraphIndex = getInt(m, "paragraph_index");
+        plan.runIndex = getInt(m, "run_index");
+        plan.newText = getStr(m, "new_text");
       } catch (RuntimeException e) {
-        sb.append(tag).append("错误:").append(e.getMessage());
-        fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
+        plan.error = e.getMessage();
         continue;
       }
-      if (outOfBounds(paragraphIndex, paragraphs.size())) {
-        sb.append(tag).append(indexError("段落索引", paragraphIndex, paragraphs.size()));
-        fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
+      if (outOfBounds(plan.paragraphIndex, paragraphs.size())) {
+        plan.error = indexError("段落索引", plan.paragraphIndex, paragraphs.size());
         continue;
       }
-      var runs = paragraphs.get(paragraphIndex).runs();
-      if (outOfBounds(runIndex, runs.size())) {
-        sb.append(tag).append(indexError("run 索引", runIndex, runs.size()));
-        fail++;
-        if (stopOnError) {
-          skipped = list.size() - i - 1;
-          break;
-        }
+      List<Run> runs =
+          runsByParagraph.computeIfAbsent(
+              plan.paragraphIndex, ignored -> paragraphs.get(plan.paragraphIndex).runs());
+      if (outOfBounds(plan.runIndex, runs.size())) {
+        plan.error = indexError("run 索引", plan.runIndex, runs.size());
         continue;
       }
-      String coord = paragraphIndex + ":" + runIndex;
+      String coord = plan.paragraphIndex + ":" + plan.runIndex;
       if (!seen.add(coord)) {
+        plan.duplicated = true;
+        continue;
+      }
+      plan.target = runs.get(plan.runIndex);
+      plan.oldText = plan.target.text();
+    }
+    // ---- 执行 + 渲染阶段:按输入顺序逐条执行,错误/跳过计数与 on_error=stop 语义与快照前一致。
+    StringBuilder sb = new StringBuilder();
+    int ok = 0;
+    int fail = 0;
+    int skipped = 0;
+    for (int i = 0; i < n; i++) {
+      if (i > 0) {
+        sb.append('\n');
+      }
+      String tag = "[" + i + "] ";
+      ReplacePlan plan = plans[i];
+      if (plan.error != null) {
+        sb.append(tag).append("错误:").append(plan.error);
+        fail++;
+        if (stopOnError) {
+          skipped = n - i - 1;
+          break;
+        }
+        continue;
+      }
+      if (plan.duplicated) {
         // 同一坐标已在本批替换过——再替换会抛 XmlValueDisconnectedException,跳过并提示。
         sb.append(tag)
             .append("跳过:段落 ")
-            .append(paragraphIndex)
+            .append(plan.paragraphIndex)
             .append(" run ")
-            .append(runIndex)
+            .append(plan.runIndex)
             .append(" 在本批已处理");
         fail++;
         if (stopOnError) {
-          skipped = list.size() - i - 1;
+          skipped = n - i - 1;
           break;
         }
         continue;
       }
-      Run target = runs.get(runIndex);
       try {
-        String oldText = target.text();
-        target.replaceTracked(author, newText);
+        plan.target.replaceTracked(author, plan.newText);
         sb.append(tag)
             .append("段落 ")
-            .append(paragraphIndex)
+            .append(plan.paragraphIndex)
             .append(" run ")
-            .append(runIndex)
+            .append(plan.runIndex)
             .append(" 替换:\"")
-            .append(oldText)
+            .append(plan.oldText)
             .append("\" → \"")
-            .append(newText)
+            .append(plan.newText)
             .append("\"(del+ins) ✓");
         ok++;
       } catch (RuntimeException e) {
         sb.append(tag).append("错误:").append(rootMessage(e));
         fail++;
         if (stopOnError) {
-          skipped = list.size() - i - 1;
+          skipped = n - i - 1;
           break;
         }
       }
     }
     return renderBatchSummary(sb, ok, fail, skipped);
+  }
+
+  /** replace_run_tracked 的快照解析结果(目标 wrapper 与旧文本在执行前锚定)。 */
+  private static final class ReplacePlan {
+    int paragraphIndex = -1;
+    int runIndex = -1;
+    String newText;
+    Run target;
+    String oldText;
+    String error;
+    boolean duplicated;
   }
 
   /**

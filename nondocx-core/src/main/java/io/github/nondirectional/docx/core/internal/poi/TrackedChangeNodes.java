@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.xmlbeans.XmlCursor;
+import org.apache.xmlbeans.XmlObject;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBody;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRunTrackChange;
@@ -32,8 +33,8 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTText;
  *   <li>{@link #isEnabled(XWPFDocument)} / {@link #setEnabled(XWPFDocument, boolean)} —— 读写 {@code
  *       settings.xml} 的 {@code <w:trackChanges/>} 开关。
  *   <li>{@link #collect(XWPFDocument)} —— 按文档顺序枚举正文里的修订节点,解析为 {@link TrackedChange} 领域视图。
- *   <li>{@link #acceptText(CTRunTrackChange)} / {@link #rejectText(CTRunTrackChange)} ——
- *       对文本类修订做破坏性应用或撤销。
+ *   <li>{@link #acceptText(XWPFDocument, CTRunTrackChange)} / {@link #rejectText(XWPFDocument,
+ *       CTRunTrackChange)} —— 对文本类修订做破坏性应用或撤销。
  *   <li>{@link #addInsertion} / {@link #addDeletion} / {@link #nextRevisionId} —— 创作文本类 tracked
  *       修订节点。
  * </ol>
@@ -159,16 +160,21 @@ public final class TrackedChangeNodes {
    * <p>调用方负责在调用前确认 {@code node} 的 type 属于本子任务范围(文本类);否则应改抛 {@code
    * UnsupportedFeatureException},而不是调用本方法。
    *
+   * <p>手术后经 {@code XWPFParagraphCacheBridge} 按需修复所在段落的 POI 包装缓存(包装在文档打开时已 存在时,其内 run
+   * 已入缓存,unwrap/remove 会断连句柄,不修复则 live 读必崩)。
+   *
+   * @param document 修订所在文档(手术后定位受影响段落用;不能为 {@code null})
    * @param node 要 accept 的修订节点(不能为 {@code null})
    */
-  public static void acceptText(CTRunTrackChange node) {
+  public static void acceptText(XWPFDocument document, CTRunTrackChange node) {
+    java.util.Objects.requireNonNull(document, "document");
     java.util.Objects.requireNonNull(node, "node");
     String local = localName(node);
     if ("ins".equals(local) || "moveTo".equals(local)) {
-      unwrapRunsAndRemove(node);
+      unwrapRunsAndRemove(document, node);
     } else {
       // del / moveFrom:accept 即删除生效,整个包装移除
-      removeNode(node);
+      removeNode(document, node);
     }
   }
 
@@ -182,17 +188,21 @@ public final class TrackedChangeNodes {
    *   <li>{@code del} / {@code moveFrom}:拆除包装,并把内部 {@code delText} 恢复为普通 {@code t}(删除被撤销,原文本回正文)。
    * </ul>
    *
+   * <p>手术后经 {@code XWPFParagraphCacheBridge} 按需修复所在段落的 POI 包装缓存(同 {@link #acceptText})。
+   *
+   * @param document 修订所在文档(手术后定位受影响段落用;不能为 {@code null})
    * @param node 要 reject 的修订节点(不能为 {@code null})
    */
-  public static void rejectText(CTRunTrackChange node) {
+  public static void rejectText(XWPFDocument document, CTRunTrackChange node) {
+    java.util.Objects.requireNonNull(document, "document");
     java.util.Objects.requireNonNull(node, "node");
     String local = localName(node);
     if ("ins".equals(local) || "moveTo".equals(local)) {
-      removeNode(node);
+      removeNode(document, node);
     } else {
       // del / moveFrom:reject 即删除被撤销,恢复正文
-      restoreDelTextToT(node);
-      unwrapRunsAndRemove(node);
+      restoreDelTextToT(document, node);
+      unwrapRunsAndRemove(document, node);
     }
   }
 
@@ -206,14 +216,21 @@ public final class TrackedChangeNodes {
     }
   }
 
-  /** 删除整个节点(连同其子树)。用于 reject ins / accept del。 */
-  private static void removeNode(CTRunTrackChange node) {
+  /**
+   * 删除整个节点(连同其子树)。用于 reject ins / accept del。
+   *
+   * <p>删除会让「文档打开时已入 POI 段落缓存」的包装内 run 句柄断连,故手术后按需重建所在段落的缓存。
+   */
+  private static void removeNode(XWPFDocument document, CTRunTrackChange node) {
+    // 手术前捕获所在段落(删除后节点断连,无法再上溯)
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP owner = ownerParagraphCtp(node);
     XmlCursor c = node.newCursor();
     try {
       c.removeXml();
     } finally {
       c.dispose();
     }
+    refreshOwnerParagraph(document, owner);
   }
 
   /**
@@ -221,26 +238,37 @@ public final class TrackedChangeNodes {
    *
    * <p>用于 accept ins / accept moveTo。{@code moveXml(anchor)} 把 cursor 指向的节点移到 {@code anchor} 之前,并 让
    * cursor 自动指向下一个兄弟(因此 {@code toNextSibling()} 继续推进而不重复)。
+   *
+   * <p>moveXml/removeXml 会让「文档打开时已入 POI 段落缓存」的包装内 run 句柄断连,故手术后按需重建所在段落的缓存; 本会话新建的包装(run
+   * 不在缓存)无断连,重建不触发。
    */
-  private static void unwrapRunsAndRemove(CTRunTrackChange wrapper) {
+  private static void unwrapRunsAndRemove(XWPFDocument document, CTRunTrackChange wrapper) {
+    // 手术前捕获所在段落(迁移+删除后 wrapper 断连,无法再上溯)
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP owner = ownerParagraphCtp(wrapper);
     XmlCursor anchor = wrapper.newCursor();
     try {
-      XmlCursor child = wrapper.newCursor();
-      try {
-        if (child.toFirstChild()) {
-          do {
-            if ("r".equals(child.getName().getLocalPart())) {
-              child.moveXml(anchor);
-            }
-          } while (child.toNextSibling());
+      // 逐 run 独立 cursor 迁移。原实现的「child.moveXml + toNextSibling」循环在首个 moveXml 后
+      // 游标失效(toNextSibling 提前结束),多 run ins 的后续 run 会留在 wrapper 内随 removeXml
+      // 一起被删——单 run 时代码路径从未暴露该 bug(2026-10-30 多 run ins 测试踩实)。
+      // 先快照 run 引用再逐个迁移(getRArray 是活视图,边迁边读会漂移);迁移后顺序由
+      // TrackedAuthoringTest/PatchEngineTest 的 accept 断言锁定。
+      java.util.List<CTR> runs = new java.util.ArrayList<>(wrapper.sizeOfRArray());
+      for (int i = 0; i < wrapper.sizeOfRArray(); i++) {
+        runs.add(wrapper.getRArray(i));
+      }
+      for (CTR run : runs) {
+        XmlCursor rc = run.newCursor();
+        try {
+          rc.moveXml(anchor);
+        } finally {
+          rc.dispose();
         }
-      } finally {
-        child.dispose();
       }
       anchor.removeXml();
     } finally {
       anchor.dispose();
     }
+    refreshOwnerParagraph(document, owner);
   }
 
   /**
@@ -248,8 +276,10 @@ public final class TrackedChangeNodes {
    *
    * <p>用于 reject del / reject moveFrom。{@code delText} 与 {@code t} 在 OOXML 里是不同元素(本地名 {@code
    * delText} vs {@code t}),仅靠 moveXml 无法完成类型转换,因此先读出文本、删旧 {@code delText}、再新建 {@code t}。
+   *
+   * <p>类型转换本身是原地操作、不产生断连;尾部刷新属 reject 分支的防御性修复(若所在段缓存此前已被别的手术悬空,顺手修好)。
    */
-  private static void restoreDelTextToT(CTRunTrackChange wrapper) {
+  private static void restoreDelTextToT(XWPFDocument document, CTRunTrackChange wrapper) {
     for (CTR r : wrapper.getRList()) {
       for (int i = r.sizeOfDelTextArray() - 1; i >= 0; i--) {
         CTText source = r.getDelTextArray(i);
@@ -263,6 +293,86 @@ public final class TrackedChangeNodes {
         }
       }
     }
+    refreshOwnerParagraph(document, ownerParagraphCtp(wrapper));
+  }
+
+  // ---------- 手术后 POI 段落包装缓存修复 ----------
+
+  /**
+   * 从手术节点上溯取其所在段落的 {@code CTP};父不是段落(畸形结构)时返回 {@code null}。
+   *
+   * <p>必须在手术(moveXml/removeXml)之前调用——断连后的节点无法再向上导航。
+   */
+  private static org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP ownerParagraphCtp(
+      XmlObject node) {
+    XmlCursor c = node.newCursor();
+    try {
+      if (!c.toParent() || c.getName() == null || !"p".equals(c.getName().getLocalPart())) {
+        return null;
+      }
+      XmlObject parent = c.getObject();
+      return parent instanceof org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP
+          ? (org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP) parent
+          : null;
+    } finally {
+      c.dispose();
+    }
+  }
+
+  /**
+   * 定位 {@code owner} 对应的 {@code XWPFParagraph} 并按需重建其 POI 包装缓存。
+   *
+   * <p>回查兜底:遍历 body 直属段落 + 表格单元格段落(含嵌套表,按 {@code getCTP()} 引用比对)。accept/reject 只能命中 body
+   * 可达的修订,页眉页脚不在查找范围;找不到(如段落已随手术消失)时静默跳过,不抛。
+   */
+  private static void refreshOwnerParagraph(
+      XWPFDocument document, org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP owner) {
+    if (owner == null) {
+      return;
+    }
+    org.apache.poi.xwpf.usermodel.XWPFParagraph paragraph = findParagraph(document, owner);
+    if (paragraph != null) {
+      org.apache.poi.xwpf.usermodel.XWPFParagraphCacheBridge.refreshIfDisconnected(paragraph);
+    }
+  }
+
+  /** 在 body 直属段落 + 表格(含嵌套)单元格段落里按 {@code getCTP()} 引用比对定位段落。 */
+  private static org.apache.poi.xwpf.usermodel.XWPFParagraph findParagraph(
+      XWPFDocument document, org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP ctp) {
+    for (org.apache.poi.xwpf.usermodel.XWPFParagraph p : document.getParagraphs()) {
+      if (p.getCTP() == ctp) {
+        return p;
+      }
+    }
+    for (org.apache.poi.xwpf.usermodel.XWPFTable table : document.getTables()) {
+      org.apache.poi.xwpf.usermodel.XWPFParagraph found = findParagraphInTable(table, ctp);
+      if (found != null) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  /** {@link #findParagraph} 的表格分支:单元格段落 + 嵌套表递归。 */
+  private static org.apache.poi.xwpf.usermodel.XWPFParagraph findParagraphInTable(
+      org.apache.poi.xwpf.usermodel.XWPFTable table,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP ctp) {
+    for (org.apache.poi.xwpf.usermodel.XWPFTableRow row : table.getRows()) {
+      for (org.apache.poi.xwpf.usermodel.XWPFTableCell cell : row.getTableCells()) {
+        for (org.apache.poi.xwpf.usermodel.XWPFParagraph p : cell.getParagraphs()) {
+          if (p.getCTP() == ctp) {
+            return p;
+          }
+        }
+        for (org.apache.poi.xwpf.usermodel.XWPFTable nested : cell.getTables()) {
+          org.apache.poi.xwpf.usermodel.XWPFParagraph found = findParagraphInTable(nested, ctp);
+          if (found != null) {
+            return found;
+          }
+        }
+      }
+    }
+    return null;
   }
 
   // ---------- 破坏性写:文本类 authoring ----------
@@ -292,8 +402,25 @@ public final class TrackedChangeNodes {
       String author,
       java.util.Calendar date,
       java.math.BigInteger revisionId) {
+    return addInsertion(paragraph, java.util.List.of(text), author, date, revisionId);
+  }
+
+  /**
+   * 在段落末尾创建一条 tracked insertion(插入)修订,内含<b>每段文本一个 run</b>(共 N 个)。
+   *
+   * <p>与单文本版同一 OOXML 形态,只是 {@code <w:ins>} 内有多个 {@code <w:r>}——读侧 {@code collect} 按 ins 节点聚合文本,仍是一条
+   * INS 修订;样式按 run 独立(为带格式插入 服务:粗体段/普通段各自持 {@code rPr})。
+   *
+   * @param texts 每个元素一个 run 的文本(不能为 {@code null};列表非空且元素均非 {@code null})
+   */
+  public static CTRunTrackChange addInsertion(
+      org.apache.poi.xwpf.usermodel.XWPFParagraph paragraph,
+      java.util.List<String> texts,
+      String author,
+      java.util.Calendar date,
+      java.math.BigInteger revisionId) {
     java.util.Objects.requireNonNull(paragraph, "paragraph");
-    java.util.Objects.requireNonNull(text, "text");
+    requireTexts(texts);
     java.util.Objects.requireNonNull(author, "author");
     java.util.Objects.requireNonNull(date, "date");
     java.util.Objects.requireNonNull(revisionId, "revisionId");
@@ -302,10 +429,23 @@ public final class TrackedChangeNodes {
     ins.setId(revisionId);
     ins.setAuthor(author);
     ins.setDate(date);
-    CTR r = ins.addNewR();
-    CTText t = r.addNewT();
-    t.setStringValue(text);
+    for (String text : texts) {
+      CTR r = ins.addNewR();
+      CTText t = r.addNewT();
+      t.setStringValue(text);
+    }
     return ins;
+  }
+
+  /** 多 run 文本段的公共校验:列表非空、元素非 null(空串由上层 API 语义决定,这里不拦)。 */
+  private static void requireTexts(java.util.List<String> texts) {
+    java.util.Objects.requireNonNull(texts, "texts");
+    if (texts.isEmpty()) {
+      throw new IllegalArgumentException("texts 不能为空列表");
+    }
+    for (String text : texts) {
+      java.util.Objects.requireNonNull(text, "texts 元素");
+    }
   }
 
   /**
@@ -316,6 +456,13 @@ public final class TrackedChangeNodes {
    *
    * <p>迁移用 {@link XmlCursor}:把 {@code <w:del>} cursor 下移到结束 token({@code toEndToken} 指向其内部末尾),再
    * {@code moveXml} 目标 run 至该位置——这样 run 成为 {@code <w:del>} 的子节点。详见 N14。
+   *
+   * <p><b>手术后缓存修复。</b> {@code moveXml} 迁移的是段落<b>直接子</b> run——它已在 POI 段落缓存里被包成 {@code XWPFRun}(open
+   * 时固化,或 {@code createRun} 时登记),迁入 {@code <w:del>} 的瞬间其句柄即断连,此后 live 读该段落必抛 {@code
+   * XmlValueDisconnectedException}。故本方法尾部对所在段落调用 {@code
+   * XWPFParagraphCacheBridge.refreshIfDisconnected}(按需重建,与本类 move/accept/reject 手术点同一修复)。重建后 {@code
+   * getText()} 跳过 delText,live 读值与 save+reopen 口径一致。deleteTrackedRange/replaceTrackedRange 走
+   * detached 副本 + {@code replacePlainTextRunViews} 整体重建,不经本方法,无此问题。
    *
    * @param paragraph 目标 run 所在段落的 POI 句柄(不能为 {@code null})
    * @param targetRun 要标记删除的目标 run 的底层 {@code CTR}(不能为 {@code null})
@@ -357,6 +504,8 @@ public final class TrackedChangeNodes {
       delCur.dispose();
       runCur.dispose();
     }
+    // 手术后修复 POI 段落包装缓存:被迁走的直接子 run 在缓存里的旧句柄已断连(见方法 Javadoc)。
+    org.apache.poi.xwpf.usermodel.XWPFParagraphCacheBridge.refreshIfDisconnected(paragraph);
     return del;
   }
 
@@ -493,6 +642,86 @@ public final class TrackedChangeNodes {
   public static void validateDeletionSlice(CTR targetRun) {
     java.util.Objects.requireNonNull(targetRun, "targetRun");
     requirePlainTextRun(targetRun);
+  }
+
+  /**
+   * 在段落内<b>指定锚点节点之后</b>（而不是段落末尾）创建一条 tracked insertion，内含一个承载 {@code text} 的 run。
+   *
+   * <p>它是「范围替换」({@code Paragraph.replaceTrackedRange})的定位插入下沉：{@link #addInsertion} 只能把 {@code
+   * <w:ins>} 追加到段落末尾，而替换需要 ins 紧跟在被替换范围的 {@code <w:del>} 之后。实现上先在段末建 ins，再用 {@link XmlCursor}
+   * 把它移到锚点的结束 token 之后（moveXml 把节点放到 cursor 位置之前，故先 {@code toEndToken()} 再 {@code toNextToken()}
+   * 即「锚点之后、锚点下一兄弟之前」）。
+   *
+   * <p>{@code styleSource} 非空时，新 run 复制它的完整 {@code rPr}（「替换保留格式」语义）；传 {@code null} 则新 run
+   * 无样式起步。调用方需自行推进 {@code nextRevisionId}。
+   *
+   * <p>内部 API——仅供 core 活对象调用；调用方保证锚点属于该段落且已完成 author/text 校验。
+   *
+   * <p><b>返回值陷阱。</b> ins 建立后会被 {@code moveXml} 移动定位，返回的句柄可能已断连（XmlBeans 既有行为）—— 只能立即读元数据；
+   * 需要稳定句柄的调用方应记下 {@code revisionId}，事后按 id 重新查询。
+   *
+   * @param paragraph 目标段落的底层 CTP（不能为 {@code null}）
+   * @param anchor 定位锚点（通常是范围替换里最右侧的 {@code <w:del>}；不能为 {@code null}）
+   * @param styleSource 新 run 的样式来源（可 {@code null}）
+   * @param text 插入的文本（不能为 {@code null}）
+   * @param author 修订作者（不能为 {@code null}）
+   * @param date 修订时间（不能为 {@code null}）
+   * @param revisionId 底层 OOXML {@code w:id}（不能为 {@code null}）
+   * @return 新建的 {@code <w:ins>} 节点
+   */
+  public static CTRunTrackChange addInsertionAfter(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP paragraph,
+      XmlObject anchor,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr styleSource,
+      String text,
+      String author,
+      java.util.Calendar date,
+      java.math.BigInteger revisionId) {
+    return addInsertionAfter(
+        paragraph, anchor, styleSource, java.util.List.of(text), author, date, revisionId);
+  }
+
+  /**
+   * {@link #addInsertionAfter(CTP, XmlObject, CTRPr, String, String, Calendar, BigInteger)} 的多 run
+   * 版:一条 {@code <w:ins>} 内每段文本一个 run(共 N 个),<b>每个</b> run 都复制 {@code styleSource} 的完整 {@code
+   * rPr}(与单文本版同语义);调用方随后可对个别 run 叠加粗/斜等格式。
+   */
+  public static CTRunTrackChange addInsertionAfter(
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP paragraph,
+      XmlObject anchor,
+      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr styleSource,
+      java.util.List<String> texts,
+      String author,
+      java.util.Calendar date,
+      java.math.BigInteger revisionId) {
+    java.util.Objects.requireNonNull(paragraph, "paragraph");
+    java.util.Objects.requireNonNull(anchor, "anchor");
+    requireTexts(texts);
+    java.util.Objects.requireNonNull(author, "author");
+    java.util.Objects.requireNonNull(date, "date");
+    java.util.Objects.requireNonNull(revisionId, "revisionId");
+    CTRunTrackChange ins = paragraph.addNewIns();
+    ins.setId(revisionId);
+    ins.setAuthor(author);
+    ins.setDate(date);
+    for (String text : texts) {
+      CTR r = ins.addNewR();
+      if (styleSource != null) {
+        r.setRPr((org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr) styleSource.copy());
+      }
+      setTextValue(r.addNewT(), text);
+    }
+    XmlCursor anchorCur = anchor.newCursor();
+    XmlCursor insCur = ins.newCursor();
+    try {
+      anchorCur.toEndToken();
+      anchorCur.toNextToken();
+      insCur.moveXml(anchorCur);
+    } finally {
+      anchorCur.dispose();
+      insCur.dispose();
+    }
+    return ins;
   }
 
   /** 复制原 run 的属性并在段落末尾创建一条纯文本 run。 */
@@ -692,9 +921,14 @@ public final class TrackedChangeNodes {
    *
    * <p>需分配 6 个 {@code w:id}(rangeStart/End ×2 + moveFrom/moveTo),全走 {@link #nextRevisionId} 递增。
    *
+   * <p><b>手术后缓存修复。</b> 源段直接子 run 被 {@code moveXml} 迁入 {@code moveFrom} 的瞬间,POI 段落缓存 (open 时固化)里的旧
+   * {@code XWPFRun} 句柄即断连——此后 live 读源段必抛 {@code
+   * XmlValueDisconnectedException}。故本方法尾部对源段(必断连,重建)与目标段(moveTo 内 run 是新建、 不在缓存,防御性同检)调用 {@code
+   * XWPFParagraphCacheBridge.refreshIfDisconnected}。
+   *
    * @param document 所属文档(分配 {@code w:id})
-   * @param source 源段落的 {@code CTP}(不能为 {@code null})
-   * @param target 目标段落的 {@code CTP}(不能为 {@code null})
+   * @param sourceParagraph 源段落的 POI 句柄(手术链下传,手术后修复其包装缓存;不能为 {@code null})
+   * @param targetParagraph 目标段落的 POI 句柄(手术链下传,防御性同检;不能为 {@code null})
    * @param runs 要移动的源 runs(不能为 {@code null} 或空;每个 run 的文本会被转 delText)
    * @param author 修订作者(不能为 {@code null})
    * @param date 修订时间(不能为 {@code null})
@@ -702,20 +936,22 @@ public final class TrackedChangeNodes {
    */
   public static List<org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR> moveRuns(
       XWPFDocument document,
-      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP source,
-      org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP target,
+      org.apache.poi.xwpf.usermodel.XWPFParagraph sourceParagraph,
+      org.apache.poi.xwpf.usermodel.XWPFParagraph targetParagraph,
       List<org.openxmlformats.schemas.wordprocessingml.x2006.main.CTR> runs,
       String author,
       java.util.Calendar date) {
     java.util.Objects.requireNonNull(document, "document");
-    java.util.Objects.requireNonNull(source, "source");
-    java.util.Objects.requireNonNull(target, "target");
+    java.util.Objects.requireNonNull(sourceParagraph, "sourceParagraph");
+    java.util.Objects.requireNonNull(targetParagraph, "targetParagraph");
     java.util.Objects.requireNonNull(runs, "runs");
     java.util.Objects.requireNonNull(author, "author");
     java.util.Objects.requireNonNull(date, "date");
     if (runs.isEmpty()) {
       throw new IllegalArgumentException("runs 不能为空");
     }
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP source = sourceParagraph.getCTP();
+    org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP target = targetParagraph.getCTP();
     java.math.BigInteger baseId = nextRevisionId(document);
     String moveName = "_move_" + baseId;
 
@@ -787,6 +1023,11 @@ public final class TrackedChangeNodes {
     org.openxmlformats.schemas.wordprocessingml.x2006.main.CTMarkupRange toEnd =
         target.addNewMoveToRangeEnd();
     toEnd.setId(baseId.add(java.math.BigInteger.valueOf(5)));
+    // ---- 手术后修复 POI 段落包装缓存(live 会话崩溃的根因修复) ----
+    // 源段:直接子 run 被 moveXml 迁入 moveFrom,open 时固化的 XWPFRun 句柄断连,必须重建;
+    // 目标段:moveTo 内 run 是新建(不在缓存),防御性同检(通常无断连、不动)。
+    org.apache.poi.xwpf.usermodel.XWPFParagraphCacheBridge.refreshIfDisconnected(sourceParagraph);
+    org.apache.poi.xwpf.usermodel.XWPFParagraphCacheBridge.refreshIfDisconnected(targetParagraph);
     return moved;
   }
 

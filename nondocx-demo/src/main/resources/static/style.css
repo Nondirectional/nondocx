@@ -47,6 +47,16 @@ html, body {
   color: #1f2329;
 }
 
+/* Agent 工具面标记（compiler/full），来自 /api/status */
+.surface-chip {
+  color: #8a8f99;
+  font-size: 11px;
+  border: 1px solid #e2e4ea;
+  border-radius: 8px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
 .doc-name {
   color: #8a8f99;
   font-size: 12px;

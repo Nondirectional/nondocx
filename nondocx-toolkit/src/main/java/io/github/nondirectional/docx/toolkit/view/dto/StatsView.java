@@ -17,9 +17,11 @@ public final class StatsView {
   private final int sectionCount;
   private final int bodyElementCount;
   private final int trackedChangeCount;
+  private final int commentCount;
   private final boolean hasToc;
   private final boolean hasHeader;
   private final boolean hasFooter;
+  private final String footerText;
   private final List<FontStat> fonts;
   private final List<Integer> fontSizes;
 
@@ -31,9 +33,11 @@ public final class StatsView {
       int sectionCount,
       int bodyElementCount,
       int trackedChangeCount,
+      int commentCount,
       boolean hasToc,
       boolean hasHeader,
       boolean hasFooter,
+      String footerText,
       List<FontStat> fonts,
       List<Integer> fontSizes) {
     this.meta = Objects.requireNonNull(meta, "meta 不能为空");
@@ -43,9 +47,11 @@ public final class StatsView {
     this.sectionCount = sectionCount;
     this.bodyElementCount = bodyElementCount;
     this.trackedChangeCount = trackedChangeCount;
+    this.commentCount = commentCount;
     this.hasToc = hasToc;
     this.hasHeader = hasHeader;
     this.hasFooter = hasFooter;
+    this.footerText = footerText;
     this.fonts = List.copyOf(fonts);
     this.fontSizes = List.copyOf(fontSizes);
   }
@@ -78,6 +84,16 @@ public final class StatsView {
     return trackedChangeCount;
   }
 
+  /**
+   * 批注总数（文档级，恒出现——0=无批注）。
+   *
+   * <p>与 {@code trackedChangeCount} 对称的「快存在信号」：复审先看计数再决定是否深查 {@code view_element} 段落详情/outline
+   * 批注概览。
+   */
+  public int commentCount() {
+    return commentCount;
+  }
+
   public boolean hasToc() {
     return hasToc;
   }
@@ -88,6 +104,16 @@ public final class StatsView {
 
   public boolean hasFooter() {
     return hasFooter;
+  }
+
+  /**
+   * 页脚文本预览（截断）；无页脚为 {@code null}。
+   *
+   * <p>只给 {@code hasFooter} 布尔时复审核对不了「页脚里写了什么」（footer-page-number 曾因此 复审「无法确认」）；深查仍走 {@code
+   * view_element} 的 header_footer ref 路径。
+   */
+  public String footerText() {
+    return footerText;
   }
 
   public List<FontStat> fonts() {
@@ -109,9 +135,11 @@ public final class StatsView {
         && sectionCount == that.sectionCount
         && bodyElementCount == that.bodyElementCount
         && trackedChangeCount == that.trackedChangeCount
+        && commentCount == that.commentCount
         && hasToc == that.hasToc
         && hasHeader == that.hasHeader
         && hasFooter == that.hasFooter
+        && Objects.equals(footerText, that.footerText)
         && meta.equals(that.meta)
         && fonts.equals(that.fonts)
         && fontSizes.equals(that.fontSizes);
@@ -127,9 +155,11 @@ public final class StatsView {
         sectionCount,
         bodyElementCount,
         trackedChangeCount,
+        commentCount,
         hasToc,
         hasHeader,
         hasFooter,
+        footerText,
         fonts,
         fontSizes);
   }

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "检查评测 Agent 是否复用了正确的单 Agent 保存/复审契约"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查测试/命名/格式/中文注释"}

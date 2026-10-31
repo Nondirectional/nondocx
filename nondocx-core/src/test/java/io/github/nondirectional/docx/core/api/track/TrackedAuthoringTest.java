@@ -66,6 +66,96 @@ class TrackedAuthoringTest {
     }
   }
 
+  /**
+   * 多段文本 addInsertion:一条 {@code <w:ins>} 内每段一个 run,读侧聚合为一条 INS(文本拼接); 个别 run 可独立设样式,save+reopen 后
+   * rPr 存活(经 raw() 读 ins 内 run)。
+   */
+  @Test
+  void addInsertionMultipleTextsOneRevisionWithPerRunStyle(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("author-ins-multi.docx");
+    try (Document doc = Docx.open(newDoc())) {
+      List<Run> inserted = doc.paragraph(0).addInsertion("non", List.of("加粗段", "普通段"));
+      assertThat(inserted).hasSize(2);
+      inserted.get(0).bold();
+      // 一条 INS 修订,文本按段序拼接
+      assertThat(doc.trackedChanges().list()).hasSize(1);
+      assertThat(((TextChangeDetails) doc.trackedChanges().list().get(0).details()).text())
+          .isEqualTo("加粗段普通段");
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      List<TrackedChange> list = doc.trackedChanges().list();
+      assertThat(list).hasSize(1);
+      assertThat(list.get(0).type()).isEqualTo(TrackedChangeType.INS);
+      assertThat(((TextChangeDetails) list.get(0).details()).text()).isEqualTo("加粗段普通段");
+      // ins 内 run 不被 getRuns() 暴露,经 raw() 断言首个 run 粗体、次个非粗体
+      var rList = list.get(0).raw().getRList();
+      assertThat(rList).hasSize(2);
+      assertThat(rList.get(0).getRPr().sizeOfBArray()).isEqualTo(1);
+      assertThat(rList.get(1).isSetRPr() ? rList.get(1).getRPr().sizeOfBArray() : 0).isZero();
+    }
+  }
+
+  /** 多段文本入参校验:空列表 / 空串元素整体拒绝。 */
+  @Test
+  void addInsertionMultipleTextsRejectsEmptyListAndElements() throws Exception {
+    try (Document doc = Docx.open(newDoc())) {
+      assertThatThrownBy(() -> doc.paragraph(0).addInsertion("non", List.of()))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("空列表");
+      assertThatThrownBy(() -> doc.paragraph(0).addInsertion("non", List.of("a", "")))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("空串");
+      assertThat(doc.trackedChanges().list()).isEmpty();
+    }
+  }
+
+  /**
+   * 多段文本 replaceTrackedRange:一条 INS(多 run),每个 run 继承范围内首个 run 的完整 rPr, 再按段叠加样式;save+reopen 后
+   * DEL+INS 各一条、粗体落盘。
+   */
+  @Test
+  void replaceTrackedRangeMultipleTextsInheritsStylePerRun(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("author-range-replace-multi-run.docx");
+    try (Document doc = Docx.open(newDoc())) {
+      Paragraph paragraph = doc.paragraph(0);
+      paragraph.addRun("结论：待定。").italic();
+      List<Run> inserted = paragraph.replaceTrackedRange("non", 3, 5, List.of("通过", "（修订版）"));
+      assertThat(inserted).hasSize(2);
+      // 样式来源 = 范围内首个 run(italic)——每个 run 都继承
+      assertThat(inserted.get(0).isItalic()).isTrue();
+      assertThat(inserted.get(1).isItalic()).isTrue();
+      inserted.get(0).bold();
+      assertThat(doc.trackedChanges().list())
+          .extracting(TrackedChange::type)
+          .containsExactlyInAnyOrder(TrackedChangeType.DEL, TrackedChangeType.INS);
+      // 读侧语义锁定(2026-10-30 eval 实证修正):live 对象的 text() 不含 ins 内新文本
+      // (POI getText 按 iruns 走,XML 手术新增的 ins 不入 live iruns);reopen 后 iruns 重建自
+      // XML,text() 便包含 ins 文本(见下方断言)。live/reopen 的 runs() 视图也不一致(live 含
+      // del/ins 内 run,reopen 只含直接 run)——那是 replacePlainTextRunViews 的既有形态差异,
+      // 不在此锁定;样式设置走创作 API 返回的 run 句柄,不依赖 runs() 视图。
+      assertThat(paragraph.text()).isEqualTo("结论：。");
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      List<TrackedChange> list = doc.trackedChanges().list();
+      assertThat(list).hasSize(2);
+      // reopen 后 iruns 重建自 XML,ins 内 run 入 iruns——text() 因此包含 ins 文本
+      // (live 与 reopen 的 text() 语义不同;eval 读 reopen 后文档,按此口径断言)。
+      // del 文本永不进 text()。runs() 仍不暴露 ins run(N14:run 级工具够不着)。
+      assertThat(doc.paragraph(0).text()).isEqualTo("结论：通过（修订版）。");
+      TrackedChange ins =
+          list.stream().filter(c -> c.type() == TrackedChangeType.INS).findFirst().orElseThrow();
+      assertThat(((TextChangeDetails) ins.details()).text()).isEqualTo("通过（修订版）");
+      var rList = ins.raw().getRList();
+      assertThat(rList).hasSize(2);
+      // save+reopen:粗体落盘,且次 run 保留源样式(italic)未被粗体污染
+      assertThat(rList.get(0).getRPr().sizeOfBArray()).isEqualTo(1);
+      assertThat(rList.get(1).getRPr().sizeOfBArray()).isZero();
+      assertThat(rList.get(1).getRPr().sizeOfIArray()).isEqualTo(1);
+    }
+  }
+
   /** addDeletion 把既有 run 标记为删除,能被 list() 读回为 del。 */
   @Test
   void addDeletionMarksExistingRun(@TempDir Path tmp) throws Exception {
@@ -205,6 +295,104 @@ class TrackedAuthoringTest {
     }
     try (Document doc = Docx.open(file)) {
       assertThat(doc.paragraph(0).text()).isEqualTo("甲乙");
+    }
+  }
+
+  /** 范围替换：ins 紧跟 del 之后（原位），accept 后得到替换文本，reject 后恢复原文。 */
+  @Test
+  void replaceTrackedRangePositionsInsertionAfterDeletion(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("author-range-replace.docx");
+    try (Document doc = Docx.open(newDoc())) {
+      Paragraph paragraph = doc.paragraph(0);
+      paragraph.addRun("合同金额为一百万元。").bold();
+      Run inserted = paragraph.replaceTrackedRange("审查员", 5, 9, "两百万元");
+      assertThat(inserted.text()).isEqualTo("两百万元");
+      assertThat(inserted.isBold()).isTrue(); // 复制范围内首个 run 的样式
+      // text() 的 POI 盲区：del 已发生（文本消失）、ins 不可见（POI 不暴露 ins 内 run）
+      assertThat(paragraph.text()).isEqualTo("合同金额为。");
+      // 结构：前缀 r → del(一百万元) → ins(两百万元) → 后缀 r，ins 在原位而非段末
+      assertThat(childLocalNames(paragraph.raw().getCTP())).containsExactly("r", "del", "ins", "r");
+      assertThat(paragraph.raw().getCTP().getDelList()).hasSize(1);
+      assertThat(
+              paragraph
+                  .raw()
+                  .getCTP()
+                  .getDelList()
+                  .get(0)
+                  .getRList()
+                  .get(0)
+                  .getDelTextArray(0)
+                  .getStringValue())
+          .isEqualTo("一百万元");
+      assertThat(
+              paragraph
+                  .raw()
+                  .getCTP()
+                  .getInsList()
+                  .get(0)
+                  .getRList()
+                  .get(0)
+                  .getTArray(0)
+                  .getStringValue())
+          .isEqualTo("两百万元");
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      List<TrackedChange> list = doc.trackedChanges().list();
+      assertThat(list).hasSize(2);
+      assertThat(list).extracting(TrackedChange::author).containsOnly("审查员");
+      assertThat(list)
+          .extracting(TrackedChange::type)
+          .containsExactlyInAnyOrder(TrackedChangeType.DEL, TrackedChangeType.INS);
+      assertThat(doc.trackedChanges().acceptAll()).isEqualTo(2);
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThat(doc.paragraph(0).text()).isEqualTo("合同金额为两百万元。");
+    }
+  }
+
+  /** 跨 run 范围替换：ins 落在<b>最右</b> del 之后（即被替换范围原位末尾），样式取首个被切 run。 */
+  @Test
+  void replaceTrackedRangeAcrossRunsInsertsAfterRightmostDel(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("author-range-replace-multi.docx");
+    try (Document doc = Docx.open(newDoc())) {
+      Paragraph paragraph = doc.paragraph(0);
+      paragraph.addRun("甲目标").bold();
+      paragraph.addRun("中间");
+      paragraph.addRun("目标乙").underline();
+      Run inserted = paragraph.replaceTrackedRange("non", 1, 7, "新");
+      assertThat(inserted.isBold()).isTrue(); // 样式来源 = 范围内首个 run（bold）
+      assertThat(childLocalNames(paragraph.raw().getCTP()))
+          .containsExactly("r", "del", "del", "del", "ins", "r");
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThat(doc.trackedChanges().acceptAll()).isEqualTo(4);
+      doc.save(file);
+    }
+    try (Document doc = Docx.open(file)) {
+      assertThat(doc.paragraph(0).text()).isEqualTo("甲新乙");
+    }
+  }
+
+  /** 范围替换的入参校验：空串新文本、非法范围、空白作者都拒绝且零改动。 */
+  @Test
+  void replaceTrackedRangeValidatesArgumentsWithoutMutation() throws Exception {
+    try (Document doc = Docx.open(newDoc())) {
+      Paragraph paragraph = doc.paragraph(0);
+      paragraph.addRun("合同金额为一百万元。");
+      assertThatThrownBy(() -> paragraph.replaceTrackedRange("non", 5, 9, ""))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("deleteTrackedRange");
+      assertThatThrownBy(() -> paragraph.replaceTrackedRange("non", 9, 5, "新"))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> paragraph.replaceTrackedRange("  ", 5, 9, "新"))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> paragraph.replaceTrackedRange("non", 5, 100, "新"))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThat(doc.trackedChanges().list()).isEmpty();
+      assertThat(paragraph.text()).isEqualTo("合同金额为一百万元。");
     }
   }
 

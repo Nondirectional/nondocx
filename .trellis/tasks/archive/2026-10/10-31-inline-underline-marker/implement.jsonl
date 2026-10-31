@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "compiler 内容语言（行内标记）契约、run 拆分路径与写读同批要求"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "测试风格、禁用模式与质量门禁"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "run/段落包装的 POI 行为陷阱，save+reopen 断言要求"}

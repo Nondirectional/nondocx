@@ -33,6 +33,9 @@ public enum ParamType {
   /** 对象数组（如 edits，子字段由 NestedParamCapability 声明）。 */
   OBJECT_ARRAY("object_array"),
 
+  /** 动态键值对象（如 fill_template 的 data——键由模板占位符决定，不作嵌套字段声明）。 */
+  OBJECT("object"),
+
   /** 文件路径。 */
   PATH("path");
 

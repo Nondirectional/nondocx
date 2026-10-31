@@ -225,6 +225,36 @@ public abstract class ToolkitToolContext {
     return expectedGeneration.longValue() == current;
   }
 
+  // ==================== 会话换血（docId 不变，Document 替换） ====================
+  //
+  // reopen（从磁盘重开）与 create_document（编译新文档替换）共享同一条会话换血逻辑：
+  // docId 句柄对外稳定，generation 递增使旧元素引用失效，旧 Document 关闭。
+
+  /**
+   * 用一份新 Document 替换会话中该 docId 的文档，<b>docId 保持不变</b>。
+   *
+   * <p>语义：关闭并丢弃内存里的旧文档，generation 递增以使 {@link ReferenceContext} 中该文档的旧元素引用失效。供 {@code
+   * SessionTools.reopen}（磁盘重开）与 {@code CompilerTools.createDocument}（编译替换）共用——两者都是「同一个会话句柄背后换一份文档」。
+   *
+   * @param docId 文档句柄（保持不变）
+   * @param fresh 新的活文档（不能为 {@code null}；调用方应先成功构造它，失败路径不触碰会话）
+   */
+  final void replaceSessionDocument(String docId, Document fresh) {
+    if (fresh == null) {
+      throw new IllegalArgumentException("fresh 文档不能为 null");
+    }
+    Document old = sessions.put(docId, fresh);
+    generations.merge(docId, 1L, Long::sum);
+    references.invalidate(docId);
+    if (old != null) {
+      try {
+        old.close();
+      } catch (RuntimeException ignored) {
+        // 旧文档关闭失败不影响换血语义：sessions/generation/refs 已更新
+      }
+    }
+  }
+
   // ==================== 无状态纯函数（入参归一化 / 边界 / 异常） ====================
   //
   // 背景:nonchain 0.8.4 把 LLM 传来的 JSON 数组还原成 ArrayList<LinkedHashMap>,

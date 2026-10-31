@@ -21,6 +21,8 @@
 | 07 | [nondocx-toolkit](./07-toolkit.md) | 把 docx 能力暴露给 LLM Agent 的六组工具 |
 | 08 | [异常与 `raw()` 领地](./08-exceptions-and-raw.md) | `DocxException` 层级、POI 异常何处不包装 |
 | 09 | [FAQ 与已知边界](./09-faq-and-boundaries.md) | TOC 只读、WPS 兼容、id 跨 save 不稳定 …… |
+| 10 | [OfficeCLI DOCX 可学习项](./10-officecli-docx-learning-todolist.md) | 与 OfficeCLI 对比后的能力 TODO 清单 |
+| 11 | [Agent 写作架构建议](./11-agent-authoring-architecture.md) | 从「61 个工具」转向「文档 IR + 编译器」的复盘与路线 |
 
 ---
 
@@ -38,8 +40,8 @@
 批注没有 accept/reject（不是修订），故创作篇把单条创作与回复线程合并。
 
 **🤖 路线 C —— 我要接 Agent**
-`07-toolkit` 看工具集设计，`nondocx-examples/agent/` 是可运行示例，
-TC 相关工具配合 `05-tracked-changes/` 一起看。
+`07-toolkit` 看工具集设计，`11-agent-authoring-architecture` 看 Agent 写作架构的复盘与下一步，
+`nondocx-examples/agent/` 是可运行示例，TC 相关工具配合 `05-tracked-changes/` 一起看。
 
 ---
 

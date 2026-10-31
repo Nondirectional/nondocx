@@ -6,6 +6,7 @@ import io.github.nondirectional.docx.core.api.header.Header;
 import io.github.nondirectional.docx.core.api.header.HeaderFooterVariant;
 import io.github.nondirectional.docx.core.api.section.Section;
 import io.github.nondirectional.docx.core.api.table.Cell;
+import io.github.nondirectional.docx.core.api.table.Row;
 import io.github.nondirectional.docx.core.api.table.Table;
 import io.github.nondirectional.docx.core.api.text.Paragraph;
 import io.github.nondirectional.docx.core.api.text.Run;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -94,11 +96,11 @@ public final class ElementResolver {
     return new RevisionRef(documentRef, RefStability.SESSION, id);
   }
 
-  /** 解析段落引用。 */
+  /** 解析正文段落引用（写工具使用；不解析表格/页眉/页脚）。 */
   public Paragraph resolve(ParagraphRef ref) {
     validateDocument(ref);
     if (ref.stability() == RefStability.PERSISTENT) {
-      return resolvePersistentParagraph(ref);
+      return resolvePersistentParagraph(ref, document.paragraphs());
     }
     validateGeneration(ref);
     RegisteredElement registered = requireRegistered(ref);
@@ -108,6 +110,105 @@ public final class ElementResolver {
       }
     }
     throw error(RefResolutionCode.ELEMENT_REMOVED, "段落引用 " + ref.canonical() + " 的目标已从文档中删除");
+  }
+
+  /**
+   * 解析任意容器中的段落引用（只读路径使用）。
+   *
+   * <p>与 {@link #resolve(ParagraphRef)} 的区别：本方法扫描正文、表格单元格、页眉、页脚。 写工具仍必须使用 {@link
+   * #resolve(ParagraphRef)}，避免一个页脚 ref 被静默当成正文写入。
+   */
+  public Paragraph resolveAny(ParagraphRef ref) {
+    validateDocument(ref);
+    if (ref.stability() == RefStability.PERSISTENT) {
+      return resolvePersistentParagraph(ref, allParagraphs());
+    }
+    validateGeneration(ref);
+    RegisteredElement registered = requireRegistered(ref);
+    for (Paragraph paragraph : allParagraphs()) {
+      if (paragraph.raw() == registered.identity) {
+        return paragraph;
+      }
+    }
+    throw error(RefResolutionCode.ELEMENT_REMOVED, "段落引用 " + ref.canonical() + " 的目标已从文档中删除");
+  }
+
+  /** 返回段落的人可读位置；找不到返回「未知位置」。 */
+  public String describe(Paragraph paragraph) {
+    List<Paragraph> body = document.paragraphs();
+    for (int i = 0; i < body.size(); i++) {
+      if (body.get(i).raw() == paragraph.raw()) {
+        return "正文段落 " + i;
+      }
+    }
+    List<Table> tables = document.tables();
+    for (int t = 0; t < tables.size(); t++) {
+      List<Row> rows = tables.get(t).rows();
+      for (int r = 0; r < rows.size(); r++) {
+        List<Cell> cells = rows.get(r).cells();
+        for (int c = 0; c < cells.size(); c++) {
+          List<Paragraph> paragraphs = cells.get(c).paragraphs();
+          for (int p = 0; p < paragraphs.size(); p++) {
+            if (paragraphs.get(p).raw() == paragraph.raw()) {
+              return "表格(" + t + "," + r + "," + c + ") 段落 " + p;
+            }
+          }
+        }
+      }
+    }
+    List<Section> sections = document.sections();
+    for (int s = 0; s < sections.size(); s++) {
+      for (HeaderFooterVariant variant : HeaderFooterVariant.values()) {
+        Header header = sections.get(s).header(variant);
+        if (header != null) {
+          String location = describeInPart(header.paragraphs(), paragraph, "页眉", s, variant);
+          if (location != null) {
+            return location;
+          }
+        }
+        Footer footer = sections.get(s).footer(variant);
+        if (footer != null) {
+          String location = describeInPart(footer.paragraphs(), paragraph, "页脚", s, variant);
+          if (location != null) {
+            return location;
+          }
+        }
+      }
+    }
+    return "未知位置";
+  }
+
+  /** 返回 run 的人可读位置；找不到返回「未知位置」。 */
+  public String describe(Run run) {
+    for (Paragraph paragraph : allParagraphs()) {
+      List<Run> runs = paragraph.runs();
+      for (int i = 0; i < runs.size(); i++) {
+        if (runs.get(i).raw() == run.raw()) {
+          return describe(paragraph) + " run " + i;
+        }
+      }
+    }
+    return "未知位置";
+  }
+
+  private static String describeInPart(
+      List<Paragraph> paragraphs,
+      Paragraph target,
+      String partName,
+      int sectionIndex,
+      HeaderFooterVariant variant) {
+    for (int i = 0; i < paragraphs.size(); i++) {
+      if (paragraphs.get(i).raw() == target.raw()) {
+        return partName
+            + " section="
+            + sectionIndex
+            + " variant="
+            + variant.name().toLowerCase(Locale.ROOT)
+            + " 段落 "
+            + i;
+      }
+    }
+    return null;
   }
 
   /** 解析表格引用。 */
@@ -200,9 +301,9 @@ public final class ElementResolver {
     }
   }
 
-  private Paragraph resolvePersistentParagraph(ParagraphRef ref) {
+  private Paragraph resolvePersistentParagraph(ParagraphRef ref, List<Paragraph> candidates) {
     Paragraph match = null;
-    for (Paragraph paragraph : document.paragraphs()) {
+    for (Paragraph paragraph : candidates) {
       if (!ref.elementId().equals(ParagraphIds.read(paragraph.raw()))) {
         continue;
       }

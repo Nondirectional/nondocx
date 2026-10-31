@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "compiler op 惯例(同锚点独占/错误消息教学/写读同批 Convention:329,336-337)、eval 基线惯例(prompt 不得提工具/防恒真防退化:160-210)"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "N15(rPrChange 读+accept/reject 方案C)/N17(commitStyleAsTracked/CTRPrOriginal 防递归/nextRevisionId 用 wId)/N25(§6.13 live-reopen 语义)"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "测试要求(save+reopen 断言/round-trip)与 fluent mutator 代码风格"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "DocxException 体系与中文错误消息规范(PatchEngine preflight 消息遵循)"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "toolkit/compiler 包内代码落位规范"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "op 跨 CompilerTools/PatchEngine/core/观测面多层改动思考清单"}
+{"file": ".trellis/tasks/10-31-tracked-format-change/research/compiler-eval-research.md", "reason": "compiler 面 op 链路/header.set_text 改动模板/eval 入组 6 处清单/docs 结构"}
+{"file": ".trellis/tasks/10-31-tracked-format-change/research/full-core-rprchange-research.md", "reason": "commitStyleAsTracked 契约/观测面现状与缺口/bold-italic 序列化实测/id-author-date 基建"}

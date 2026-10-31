@@ -67,6 +67,7 @@ Document fresh = Docx.create();
 | `inlineElements()` 👁 | **结构真相**：按阅读顺序返回 run/超链接/图片（图片算 `Image` 不算 `Run`） |
 | `runs()` / `run(int i)` 👁 | 纯 run 的筛选视图 |
 | `addRun()` / `addRun(text)` ✏️🔄 | 末尾追加空 run / 带文本 run |
+| `copyRun(int i)` ✏️🔄 | 在第 i 个 run 紧后插入其**深拷贝**（完整 `<w:r>` 含 rPr 与未建模槽如 eastAsia 字体）；拆分带格式 run 的外科手术原语，返回活对象 |
 | `addHyperlink(text, url)` ✏️🔄 | 追加超链接 |
 | `addImage(bytes, type, wPx, hPx)` ✏️🔄 | 追加内联图片（像素 → EMU 内部转换） |
 | `removeInlineElement(int i)` ✏️ | 删第 i 个内联元素 |
@@ -87,14 +88,17 @@ Document fresh = Docx.create();
 | 方法 | 教程位置 |
 |---|---|
 | `addInsertion(author, text)` ✏️🔄 | [05/04](./05-tracked-changes/04-authoring.md) |
+| `addInsertion(author, texts)` ✏️🔄 | 多 run 变体：一条 `<w:ins>` 内每段文本一个 run（读侧仍一条 INS），返回全部 run 可逐个设样式 |
 | `addDeletion(author, targetRun)` ✏️🔄 | 同上 |
 | `moveRunsFrom(author, sourceParagraph, runs)` ✏️ | 同上 |
+| `deleteTrackedRange(author, start, end)` / `replaceTrackedRange(author, start, end, text)` / `replaceTrackedRange(author, start, end, texts)` ✏️🔄 | 范围删除 / 范围替换（ins 紧随最后一个 del，样式取范围内首个 run）；多段文本变体每个 run 继承源 rPr |
 
 ### 批注（comments）创作
 
 | 方法 | 教程位置 |
 |---|---|
 | `addComment(author, text)` ✏️ | [06/03](./06-comments/03-authoring.md)（整段范围批注，返回 `Comment`） |
+| `comments()` 👁 | 锚定在本段的批注列表（comment→paragraph 映射，活对象语义） |
 
 > 长度单位：twips（`indent`、Section 的 `margins`）。1 inch = 1440 twips。字号 `fontSize` 用磅。
 
@@ -139,6 +143,7 @@ Document fresh = Docx.create();
 |---|---|
 | `rows()` / `row(int i)` 👁 | 行视图 |
 | `addRow()` ✏️🔄 | 追加空行 |
+| `copyRowTo(int src, int target)` ✏️🔄 | 定位插入源行深拷贝（保留底纹/边框/行属性；fill_template 重复行基建） |
 | `removeRow(int i)` ✏️ | 删行 |
 | `row(Consumer<Row> config)` ✏️🔄 | 声明式追加行（builder 风格） |
 
@@ -254,6 +259,7 @@ Document fresh = Docx.create();
 | `doc.comments().list()` / `get(id)` 👁 | 只读枚举（body 顺序）/ 按 id 命中 |
 | `doc.comments().reply(parentId, author, text)` ✏️ | 回复（形成线程），返回 `Comment` |
 | `paragraph.addComment(author, text)` ✏️ | 创作（整段范围），返回 `Comment` |
+| `paragraph.comments()` 👁 | 锚定在本段的批注（与 `addComment` 读写对称） |
 | `comment.id()` / `author()` / `text()` 👁 | 基础元数据（id 跨会话稳定） |
 | `comment.date()` / `initials()` 👁 | 时间 / 缩写（可能 null / 空串） |
 | `comment.parentId()` 👁 | `Optional<String>`，回复批注指向父 id |

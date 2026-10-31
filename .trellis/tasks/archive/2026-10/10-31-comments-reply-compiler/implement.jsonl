@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "后端总规范：holding wrapper、无缓存、中文对外、WPS 兼容等全局约束"}
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "compiler 面 op 的写读同批约定、comment.add 先例、元数据行同族规范"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "无 Lombok、内容相等、测试与禁止模式；新增 op/测试需遵守"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨 core/toolkit/eval/docs 四层的契约同步检查清单"}
+{"file": ".trellis/tasks/10-31-comments-reply-compiler/research/reply-surface-evidence.md", "reason": "现状证据：core 已就绪、写侧/读侧缺口、eval 计数锁与提示词触点"}

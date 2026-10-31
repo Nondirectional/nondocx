@@ -3,7 +3,7 @@ package io.github.nondirectional.docx.toolkit.view.dto;
 import java.util.Objects;
 
 /**
- * annotated 视图的 run 级明细：文本 + 直接格式（bold/italic/font/size/color）+ canonical ref。
+ * annotated 视图的 run 级明细：文本 + 直接格式（bold/italic/underline/font/size/color）+ canonical ref。
  *
  * <p><b>浅层先行（P0-04 D1）</b>：只给 run 直接格式，不解析样式链来源（direct/style/docDefaults/theme）。
  * effective-format-source 留 P1-02。
@@ -12,7 +12,9 @@ import java.util.Objects;
  * @param text run 文本（截断）
  * @param bold 是否加粗
  * @param italic 是否斜体
- * @param font 字体名（可能为 null）
+ * @param underline 是否带下划线（内容语言 {@code <u>…</u>} 的落点，只读复审靠它核对「加下划线」类要求）
+ * @param font 字体名（ascii/西文槽，可能为 null）
+ * @param fontEastAsia 中文字体槽名（可能为 null；与 font 分离供读者核对「西文 + 中文」双槽排版）
  * @param fontSize 字号 pt（可能为 null）
  * @param color 颜色 hex（可能为 null）
  */
@@ -22,7 +24,9 @@ public final class AnnotatedRun {
   private final String text;
   private final boolean bold;
   private final boolean italic;
+  private final boolean underline;
   private final String font;
+  private final String fontEastAsia;
   private final Integer fontSize;
   private final String color;
 
@@ -31,14 +35,18 @@ public final class AnnotatedRun {
       String text,
       boolean bold,
       boolean italic,
+      boolean underline,
       String font,
+      String fontEastAsia,
       Integer fontSize,
       String color) {
     this.ref = Objects.requireNonNull(ref, "ref 不能为空");
     this.text = Objects.requireNonNull(text, "text 不能为空");
     this.bold = bold;
     this.italic = italic;
+    this.underline = underline;
     this.font = font;
+    this.fontEastAsia = fontEastAsia;
     this.fontSize = fontSize;
     this.color = color;
   }
@@ -59,8 +67,18 @@ public final class AnnotatedRun {
     return italic;
   }
 
+  /** 是否带下划线；内容语言 {@code <u>…</u>} 的读侧落点。 */
+  public boolean underline() {
+    return underline;
+  }
+
   public String font() {
     return font;
+  }
+
+  /** eastAsia（中文）字体槽名；未设置为 {@code null}。编译器的槽分离排版（西文 TNR + 中文宋体）需要它才可核对。 */
+  public String fontEastAsia() {
+    return fontEastAsia;
   }
 
   public Integer fontSize() {
@@ -78,15 +96,17 @@ public final class AnnotatedRun {
     AnnotatedRun that = (AnnotatedRun) o;
     return bold == that.bold
         && italic == that.italic
+        && underline == that.underline
         && ref.equals(that.ref)
         && text.equals(that.text)
         && Objects.equals(font, that.font)
+        && Objects.equals(fontEastAsia, that.fontEastAsia)
         && Objects.equals(fontSize, that.fontSize)
         && Objects.equals(color, that.color);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(ref, text, bold, italic, font, fontSize, color);
+    return Objects.hash(ref, text, bold, italic, underline, font, fontEastAsia, fontSize, color);
   }
 }

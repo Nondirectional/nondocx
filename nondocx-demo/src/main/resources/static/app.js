@@ -796,7 +796,14 @@ fetch('/api/status')
   .then((r) => r.json())
   .then((data) => {
     if (!data.agentEnabled) {
+      const reason = data.agentDisabledReason || '未配置 DASHSCOPE_API_KEY';
+      const span = document.getElementById('agent-disabled-reason');
+      if (span) span.textContent = reason;
       document.getElementById('api-key-banner').hidden = false;
+    }
+    const chip = document.getElementById('surface-chip');
+    if (chip && data.surface) {
+      chip.textContent = '工具面 ' + data.surface;
     }
   })
   .catch((e) => console.warn('检查状态失败', e));

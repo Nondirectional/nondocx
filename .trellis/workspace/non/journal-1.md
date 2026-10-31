@@ -1527,3 +1527,469 @@ Demo 前端改为统一 SSE/JSONL reducer 和按批次时间线，展示授权�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: Agent 评测基线 + 正文行距与 header/footer ref 修复
+<!-- trellis-session: v=2 fp=8ffa3cdf6a1d22ec -->
+
+**Date**: 2026-10-29
+**Task**: Agent 评测基线 + 正文行距与 header/footer ref 修复
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+nondocx-examples 新增 10 条任务评测基线（v1: 8/10, 平均 6.8 次调用）；随后修复两个 P0：BodyTools 新增 update_paragraph_spacing、ElementResolver 新增 resolveAny/description 打通页眉页脚 ref 只读解析，写工具对非正文 ref 明确拒绝。复跑 9/10（平均 6.2 次），正文行距任务通过；页脚 PAGE 域写入仍为已知缺口。manifest 61→62 工具。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `67d89e3` | feat(toolkit): update_paragraph_spacing 正文行距工具 + header/footer ref 只读解析打通 |
+| `bdeee48` | test(examples): Agent 评测基线（10 条任务 + 评测 CLI + 报告） |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 38: 任务 B：文档 IR 编译器 spike（P1）+ 评测 A/B
+<!-- trellis-session: v=2 fp=343556f6d06c65ec -->
+
+**Date**: 2026-10-29
+**Task**: 任务 B：文档 IR 编译器 spike（P1）+ 评测 A/B
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+A/B 实测（qwen3.8-27b，create 组 5 条）：compiler 面 5 工具 5/5 通过、平均 5.6 次调用、零无效；full 面 1/5、23.0 次。full 面失败为真实缺口（无列表创建、无正文缩进）+ 多步超载。实测修正：POI setFontFamily 四槽同写，编译器 raw() 的价值是 eastAsia 分离。坑：-pl 不带 -am 用旧本地 jar，改 toolkit 后须先 install
+
+### Main Changes
+
+- nondocx-toolkit 新增 compiler 包（MarkdownParser/MarkdownDoc/StyleProfile/DocumentCompiler/MarkdownView）与第 9 组工具 CompilerTools（create/read/validate_document，能力清单 62→65）；会话换血原语下沉 ToolkitToolContext.replaceSessionDocument；评测新增 create 任务组与 --surface/--group 开关
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2271ba0` | feat(toolkit): 文档 IR 编译器 spike——Markdown 子集 + 样式 profile 编译为 docx |
+
+### Testing
+
+- [OK] toolkit 210 全绿（新增 CompilerPipelineTest 8 + CompilerToolsTest 4）；examples 19 全绿（create 组防恒真 + compiler 面 5 入口锁死）；spotless 绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- P2：edit_document patch 引擎 / fill_template / render_preview；compiler 面接入 demo 待用户决定
+
+
+## Session 39: demo 模型配置修复 + edit_document patch 引擎（P2）+ 评测 A/B
+<!-- trellis-session: v=2 fp=0ef718b8a196c487 -->
+
+**Date**: 2026-10-30
+**Task**: demo 模型配置修复 + edit_document patch 引擎（P2）+ 评测 A/B
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+A/B：baseline 组 compiler 面 8/10（2 条=预告缺口：修订/页脚 op），可做任务 8/8；批量替换 4 次调用。三个真 bug 由 trace 抓出修复。POI setFontFamily 四槽同写的实测修正延续到字体 check 口径（读 eastAsia 槽对两面都成立）
+
+### Main Changes
+
+- 3：demo 新增 LlmConfig（NONDOCX_LLM_BASE_URL/NONDOCX_LLM_MODEL + 启动 GET /models 校验，禁用原因透传日志/状态API/前端）。1：PatchEngine 六 op 原子 patch + edit_document 工具（清单 65→66，compiler 面 5→6）；块编译下沉 DocumentCompiler；trace 驱动修表格分隔行/单元格标记/字体 check eastAsia 口径
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `780f3a2` | fix(demo): 模型配置改环境变量 + 启动校验，根治写死 qwen3-14b 的 404 |
+| `421de01` | feat(toolkit): edit_document patch 引擎——compiler 面补齐编辑能力（P2） |
+
+### Testing
+
+- [OK] toolkit 224 + examples 19 + demo 40 全绿；原子性/dry-run/各 op 行为有 PatchEngineTest 12 条锁死；LlmConfigTest 本地 HttpServer 锁三种校验结果
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- P2 续：修订/批注/页脚 op；demo 是否切 compiler 面等用户拍板
+
+
+## Session 40: P2 续：修订与页脚 op，compiler 面 baseline 10/10
+<!-- trellis-session: v=2 fp=4a1ef0def32d5273 -->
+
+**Date**: 2026-10-30
+**Task**: P2 续：修订与页脚 op，compiler 面 baseline 10/10
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- core 新增 Paragraph.replaceTrackedRange（范围级最小 diff 修订替换，下沉 addInsertionAfter 定位 ins）与 addSimpleField(instruction, cachedResult)（五 run 带缓存结果域）；PatchEngine op 集 6→10（tracked.insert/delete/replace + footer.set_page_number），同锚点改文本独占；MarkdownView 页脚元数据行；COMPILER_SYSTEM_PROMPT 增补
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fbf4b17` | feat(core,toolkit): 修订与页脚 op——compiler 面补齐最后两个缺口（P2 续） |
+
+### Testing
+
+- [OK] core 349 / toolkit 232 / examples 19 / demo 40 全绿；eval compiler 面 baseline 10/10（runId 20261030-010150-507），tracked-replace 6 次、footer-page-number 4 次均一次命中，首次反超 full 面 9/10
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- demo 切 compiler 面（新建 5/5、编辑 10/10 数据已齐）；insert-centered-title 记号混淆 prompt 治理（本次 26 次）；批注 op 视需要补
+
+
+## Session 41: demo 默认切 compiler 面（6 入口），env 可回退 full
+<!-- trellis-session: v=2 fp=2d172454d7cf2235 -->
+
+**Date**: 2026-10-30
+**Task**: demo 默认切 compiler 面（6 入口），env 可回退 full
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- AgentBridge 按面装配工具 registry（compiler=current_document+4 编译工具+review_intent=6 入口，与 eval 同构；full=原六组 scan）；systemPromptFor/skillRegistryFor 随面切换（compiler 面空 Skill——full 面 Skill 教的是不存在的工具）；validate_ 归只读前缀；/api/status+前端 chip 暴露 surface；NONDOCX_AGENT_SURFACE=full 回退；README/spec 更新
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bb95987` | feat(demo): 主工具面默认切 compiler（6 入口），NONDOCX_AGENT_SURFACE=full 可回退 |
+
+### Testing
+
+- [OK] SurfaceSwitchTest 7 条锁定双面装配；冒烟 /api/status 返回 surface=compiler；core 349/toolkit 232/examples 19/demo 47 全绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 带真实 key 的 demo 端到端对话体验；insert-centered-title 记号混淆 prompt 治理（评测 26 次波动）
+
+
+## Session 42: 复审可观测性：alignment + eastAsia 槽，compiler 面 10/10 @4.4 次
+<!-- trellis-session: v=2 fp=60c7aa8a01a75643 -->
+
+**Date**: 2026-10-30
+**Task**: 复审可观测性：alignment + eastAsia 槽，compiler 面 10/10 @4.4 次
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- trace 推翻 insert-centered-title 的记号混淆旧归因（主模型第 2 次调用即正确，8 次 review 误报驱动空转）；view_element paragraph 恒输出 alignment；core 新增 Run.fontEastAsia()，run 详情与 view_annotated 暴露 fontEastAsia（同族修复 heading-font 24 次循环）；docs/11 §6.6 + spec 属性可见性教训与盲区清单
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `876f3c3` | feat(core,toolkit): 复审可观测性——view_element 暴露 alignment 与 eastAsia 字体槽 |
+
+### Testing
+
+- [OK] compiler 面 baseline 10/10 平均 4.4（8.0→4.4；centered-title 26→3、heading-font 24→4、body-font 9→5），首次双指标超 full 面；core 350/toolkit 234/examples 19/demo 47 全绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 复审盲区（低频）：表格单元格内容进 view_element、修订查询进 review 面、页脚进 stats；或转向批注 op / 模板填充
+
+
+## Session 43: 复审盲区补齐：表格矩阵/修订明细/页脚文本，10/10 @4.2 次
+<!-- trellis-session: v=2 fp=1f016253de262089 -->
+
+**Date**: 2026-10-30
+**Task**: 复审盲区补齐：表格矩阵/修订明细/页脚文本，10/10 @4.2 次
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- view_element TABLE 详情含 cellTexts 矩阵预览 + CELL/REVISION 空实现补全；RevisionSummary/Overview 增加 countByAuthor 与 recent 明细（canonical ref 可直通 view_element）；StatsView 增加 footerText 预览；只富化既有工具输出，full 58 / compiler 6 基线不动
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8938f3c` | feat(toolkit): 补齐复审盲区——表格矩阵/修订明细/页脚文本进 view 层 |
+
+### Testing
+
+- [OK] 三任务复审从误报转为达成+具体证据；全组 10/10 平均 4.20（4.40→4.20；tracked-replace 6→4、footer 4→3、table-cell 6→5）；core 350/toolkit 237/examples 19/demo 47 全绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 批注创作 op（core 已有 addComment）；fill_template/render_preview（P2 收尾）；或 full 面对齐新观测面后复跑对照
+
+
+## Session 44: 批注创作 comment.add 与批注观测面
+<!-- trellis-session: v=2 fp=8c46580d30f3893e -->
+
+**Date**: 2026-10-30
+**Task**: 批注创作 comment.add 与批注观测面
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- PatchEngine 增 comment.add(op 10→11)；core 新增 Paragraph.comments()(comment→paragraph 映射,CTP 子树扫描下沉 CommentNodes;同段多条 LIFO)；view 三处恒出现批注观测(element comments/stats commentCount/outline CommentOverview)+read_document 批注元数据行；eval baseline 增至 11 条
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8abb488` | chore(task): archive 10-30-comment-authoring-op |
+
+### Testing
+
+- [OK] core 355/toolkit 244/examples 20/demo 47 全绿;eval 20261030-100451-694:compiler 11/11 平均 3.91,comment-add 4 调用复审达成
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- fill_template/render_preview(P2 收尾);full 面对齐新观测面复跑对照
+
+
+## Session 45: fill_template 与 render_preview:P2 收尾+POI 行缓存脱链陷阱
+<!-- trellis-session: v=2 fp=715e7a2174347321 -->
+
+**Date**: 2026-10-30
+**Task**: fill_template 与 render_preview:P2 收尾+POI 行缓存脱链陷阱
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- TemplateFiller(mustache 子集:值/条件块/表格模板行,首 run 承载全文防字体槽污染)+RenderPreview(soffice headless,独立 profile 防实例锁);core Table.copyRowTo 影子行技法破 POI 5.3 addRow 脱链陷阱(字节码验证:wrapper 进缓存/内容复制进树,内存对落盘错);compiler 面 6→8,full 58 不动
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3039e48` | chore(task): archive 10-30-fill-template-render-preview |
+
+### Testing
+
+- [OK] core 361/toolkit 266/examples 21/demo 47 全绿;eval 20261030-104446-951:compiler 12/12 平均 4.50,fill-template 5 调用,11 条回归零退化
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- P3:20~30 条任务评测集(模板填充/歧义指代/重复文本),14B+27B 双模型;full 面对齐新观测面复跑
+
+
+## Session 46: P3 第一步:eval baseline 12→22 条
+<!-- trellis-session: v=2 fp=d9808b8ac3623f5b -->
+
+**Date**: 2026-10-30
+**Task**: P3 第一步:eval baseline 12→22 条
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- 新增 10 条任务补齐歧义指代/重复文本/组合类缺口;22/22@4.68 首跑全过,12 条回归零退化;记录两个行为:replace-with-format 9 次(无既有文本加粗 op,delete+insert 自愈)、同段双修订独占拆分 6 次(契约可教学性)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d0b3db` | chore(task): archive 10-30-eval-baseline-expansion |
+
+### Testing
+
+- [OK] EvalTasksTest 22 条防恒真全绿;eval 20261030-113314-518:compiler 22/22 平均 4.68
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 14B 对比(待模型);set_style 加粗 op 视数据决定;full 面对齐观测面复跑;QualityCheckTools 升级为编译器 post-condition(P2 遗留项)
+
+
+## Session 47: P2 全部收尾:质检升级为编译器 post-condition
+<!-- trellis-session: v=2 fp=e5cbcd6fbd3ff905 -->
+
+**Date**: 2026-10-30
+**Task**: P2 全部收尾:质检升级为编译器 post-condition
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- create/edit/fill 成功路径自动附 10 项质检(qualityIssues+摘要,非阻塞);toc 建议项过滤防噪音,提示词护栏防修复循环;validate_document 对写后校验冗余(全程 0 调用)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9dfd8ec` | chore(task): archive 10-30-quality-postcondition |
+
+### Testing
+
+- [OK] eval 20261030-121824-988:22/22,平均 4.41(4.68→);toolkit 269/examples/demo 全绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- set_style 加粗 op(replace-with-format 信号);full 面对齐观测面复跑;14B 对比(待模型)
+
+
+## Session 48: replace_text 行内格式与 set_style 加粗
+<!-- trellis-session: v=2 fp=5188988dddf303d0 -->
+
+**Date**: 2026-10-30
+**Task**: replace_text 行内格式与 set_style 加粗
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- core Paragraph.copyRun（POI insertNewRun+set 影子技法，完整 rPr 含 eastAsia 继承）；PatchEngine replace_text 的 text 改按行内标记解析（单 run 外科手术式拆分、piece 倒序插入防格式逐份累积；跨 run 重建为 span 序列并修掉超链接幸存边角）；set_style 增加 bold/italic 整段布尔；eval baseline 23（新增 bold-existing-phrase）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c57ccc` | feat(core,toolkit): replace_text 支持行内格式 + set_style 加粗（补齐既有文本加粗） |
+
+### Testing
+
+- [OK] core 361 / toolkit 268 / examples 19 / demo 47 全绿，Spotless 通过；eval runId 20261030-124819-241：23/23 平均 4.26，replace-with-format 9→4 次（首个 op 即 text=**结论：通过** 一步命中），bold-existing-phrase 首跑过，validate_document 0 调用，22 条回归零退化
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- ① full 面对齐观测面复跑（9/10@6.2 数字已落后五个观测批次）② 14B 对比（等模型到位）③ tracked op 与行内格式叠加（本轮明确不做，看需求）
+
+
+## Session 49: full 面对齐观测面复跑
+<!-- trellis-session: v=2 fp=3264272495c48f03 -->
+
+**Date**: 2026-10-30
+**Task**: full 面对齐观测面复跑
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- 23 任务 baseline 复跑 full 面（runId 20261030-125616-728）：原始 15/23@11.83 vs compiler 23/23@4.26；8 失败逐 trace 归因全部静态缺口（页脚写/批注×2/模板×2/列表/段落删除/真空单元格/run 拆分），零行为失败；bold-existing-phrase 空洞通过被识破（整 run 全加粗），check 加严格子集断言后诚实口径 14/23，compiler 复验仍 4 次过；9 条缺口任务 capabilityGap flag + 锁测试；poi-bridge N2 真空单元格陷阱 eval 实证回写
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0a5b8f` | test(examples): full 面对齐复跑——8 失败全是静态缺口，check 防退化通过 |
+
+### Testing
+
+- [OK] examples 19 全绿（EvalTasksTest 23 任务防恒真 + 9 条缺口 flag 锁定）；双面单任务复验（full 131105-091 失败/compiler 131042-172 通过）；Spotless 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- ① 14B 对比（等模型到位）② tracked op 与行内格式叠加（按需）③ full 面缺口不补工具——compiler 已内建，A/B 数据已闭环
+
+
+## Session 50: tracked op 行内格式与修订格式证据
+<!-- trellis-session: v=2 fp=38a186c046017cec -->
+
+**Date**: 2026-10-30
+**Task**: tracked op 行内格式与修订格式证据
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- core addInsertion/replaceTrackedRange 多 run 变体（一条 ins 多 run、每 run 继承源 rPr）；PatchEngine tracked.insert/replace 解析行内标记（内容语言统一）；修订观测面 outline recent + REVISION 详情恒带 bold/italic（N14 下复审格式证据的唯一入口）；eval 探针 tracked-replace-format（baseline 24）。踩实三坑均修复并进 spec：accept unwrap 游标失效（多 run ins 丢文本）、text() live/reopen 语义差异（旧 javadoc 有误）、复审格式证据缺口（首跑模型 op 正确但复审误报→连插 6 条 ins 污染）；顺手修 heading-font 的 style=font=黑体 dry_run 循环（错误提示教正确写法）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `381276f` | feat(core,toolkit): tracked op 支持行内格式，修订观测面补格式证据 |
+
+### Testing
+
+- [OK] core 364 / toolkit 271 / examples 19 / demo 47 全绿，Spotless 通过；eval runId 20261030-152310-495：24/24 平均 4.21，tracked-replace-format 首个 op 即正确（text=**通过**），复审引用 ins bold=true 判达成，validate_document 0 调用，23 条回归零退化（过程 660→643→495 两坑迭代修复）
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- ① 14B 对比（等模型到位）② full 面对新任务 tracked-replace-format 尚未跑过（可随下次 full 复跑观察其 workaround 路径）③ 行内格式至此全链路统一，无已知字面文本路径

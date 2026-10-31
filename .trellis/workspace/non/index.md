@@ -7,9 +7,9 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 36
-- **Last Active**: 2026-07-17
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 56
+- **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1529 | Active |
+| `journal-2.md` | ~149 | Active |
+| `journal-1.md` | ~1995 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,24 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 56 | 2026-10-31 | 批注回复 comment.reply 与读侧批注 id/线程关系 | `b85de14`, `4c965cd`, `ae982d0`, `d601125` | `feat/paragraph-spacing-hf-refs` |
+| 55 | 2026-10-31 | 行内标记 <u> 下划线：内容语言补齐 | `cabea1d`, `655565f` | `feat/paragraph-spacing-hf-refs` |
+| 53 | 2026-10-31 | 页眉写 op:compiler 面 header.set_text 与读视图页眉元数据行(无人值守) | `e98d9f6`, `5fd458c` | `feat/paragraph-spacing-hf-refs` |
+| 51 | 2026-10-30 | full 面 24 任务复跑：tracked-replace-format 归因（首个「可过而未过」） | `65ba23a` | `feat/paragraph-spacing-hf-refs` |
+| 50 | 2026-10-30 | tracked op 行内格式与修订格式证据 | `381276f` | `feat/paragraph-spacing-hf-refs` |
+| 49 | 2026-10-30 | full 面对齐观测面复跑 | `a0a5b8f` | `feat/paragraph-spacing-hf-refs` |
+| 48 | 2026-10-30 | replace_text 行内格式与 set_style 加粗 | `4c57ccc` | `feat/paragraph-spacing-hf-refs` |
+| 47 | 2026-10-30 | P2 全部收尾:质检升级为编译器 post-condition | `9dfd8ec` | `feat/paragraph-spacing-hf-refs` |
+| 46 | 2026-10-30 | P3 第一步:eval baseline 12→22 条 | `8d0b3db` | `feat/paragraph-spacing-hf-refs` |
+| 45 | 2026-10-30 | fill_template 与 render_preview:P2 收尾+POI 行缓存脱链陷阱 | `3039e48` | `feat/paragraph-spacing-hf-refs` |
+| 44 | 2026-10-30 | 批注创作 comment.add 与批注观测面 | `8abb488` | `feat/paragraph-spacing-hf-refs` |
+| 43 | 2026-10-30 | 复审盲区补齐：表格矩阵/修订明细/页脚文本，10/10 @4.2 次 | `8938f3c` | `feat/paragraph-spacing-hf-refs` |
+| 42 | 2026-10-30 | 复审可观测性：alignment + eastAsia 槽，compiler 面 10/10 @4.4 次 | `876f3c3` | `feat/paragraph-spacing-hf-refs` |
+| 41 | 2026-10-30 | demo 默认切 compiler 面（6 入口），env 可回退 full | `bb95987` | `feat/paragraph-spacing-hf-refs` |
+| 40 | 2026-10-30 | P2 续：修订与页脚 op，compiler 面 baseline 10/10 | `fbf4b17` | `feat/paragraph-spacing-hf-refs` |
+| 39 | 2026-10-30 | demo 模型配置修复 + edit_document patch 引擎（P2）+ 评测 A/B | `780f3a2`, `421de01` | `feat/paragraph-spacing-hf-refs` |
+| 38 | 2026-10-29 | 任务 B：文档 IR 编译器 spike（P1）+ 评测 A/B | `2271ba0` | `feat/paragraph-spacing-hf-refs` |
+| 37 | 2026-10-29 | Agent 评测基线 + 正文行距与 header/footer ref 修复 | `67d89e3`, `bdeee48` | `feat/paragraph-spacing-hf-refs` |
 | 36 | 2026-07-17 | 质检目标改为只读复审 SubAgent 复审意图达成度 | `efce1d8`, `a6e8419`, `c3c39d5`, `494487e` | `feat/demo-single-agent-revert` |
 | 35 | 2026-07-16 | Demo 引入 nonchain 0.11.0 Skills | `dfd63f7` | `feat/demo-single-agent-revert` |
 | 34 | 2026-07-15 | demo 单 Agent 回归：撤销 SubAgent 委派层 | `82b9c57` | `feat/demo-single-agent-revert` |

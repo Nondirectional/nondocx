@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/agent-single.md", "reason": "评测基线约定（运行命令、check 防退化、capabilityGap flag 约定、结果块）——本轮 full 面复跑与 §6.12 口径对齐、结果块追加都以此为准"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "full 面已踩实的 POI 边界（真空单元格陷阱 N2、live/reopen 语义差异）——归因失败时区分静态缺口与行为失败的参照"}

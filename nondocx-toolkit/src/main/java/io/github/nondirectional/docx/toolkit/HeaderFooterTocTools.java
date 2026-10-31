@@ -6,6 +6,7 @@ import io.github.nondirectional.docx.core.api.Document;
 import io.github.nondirectional.docx.core.api.header.Footer;
 import io.github.nondirectional.docx.core.api.header.Header;
 import io.github.nondirectional.docx.core.api.text.Paragraph;
+import io.github.nondirectional.docx.core.api.text.Run;
 import io.github.nondirectional.docx.core.api.toc.TableOfContents;
 import io.github.nondirectional.docx.core.api.toc.TocEntry;
 import io.github.nondirectional.docx.toolkit.capability.CapabilityOperation;
@@ -66,7 +67,8 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
   @ToolDef(
       name = "read_header_footer",
       description =
-          "读取第 section_index 个 section 的默认页眉或页脚里第 paragraph_index 段的结构摘要。"
+          "读取第 section_index 个 section 的默认页眉或页脚里第 paragraph_index 段的结构摘要，"
+              + "返回 paragraph ref 与每个 run 的 run ref，可继续用 view_element/read_run 读取。"
               + "part 支持 HEADER/FOOTER（大小写不敏感）。")
   @ToolCapability(operation = CapabilityOperation.READ, element = "header_footer")
   public String readHeaderFooter(
@@ -99,7 +101,7 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
   /** 按稳定 HeaderFooterRef 读取整个页眉或页脚，并返回其中段落 ref。 */
   @ToolDef(
       name = "read_header_footer_ref",
-      description = "按 canonical HeaderFooterRef 读取整个页眉或页脚，返回文本与内部段落 ref")
+      description = "按 canonical HeaderFooterRef 读取整个页眉或页脚，返回文本、内部段落 ref 与 run ref")
   @ToolCapability(operation = CapabilityOperation.READ, element = "header_footer")
   public String readHeaderFooterRef(
       @ToolParam(name = "doc_id", description = "文档句柄") @ParamCapability(type = ParamType.STRING)
@@ -137,6 +139,15 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
             .append(resolver.reference(paragraph).canonical())
             .append("\n文本: ")
             .append(paragraph.text());
+        List<Run> runs = paragraph.runs();
+        for (int r = 0; r < runs.size(); r++) {
+          sb.append("\n  run ")
+              .append(r)
+              .append(" ref=")
+              .append(resolver.reference(runs.get(r)).canonical())
+              .append(" 文本: ")
+              .append(runs.get(r).text());
+        }
       }
       ToolResult<String> result = ToolResult.ok(ref, sb.toString());
       return ToolResultRenderer.render(result);
@@ -179,25 +190,34 @@ public final class HeaderFooterTocTools extends ToolkitToolContext {
     ElementResolver resolver = elementResolver(docId);
     HeaderFooterRef partRef =
         isHeader ? resolver.reference((Header) hf) : resolver.reference((Footer) hf);
-    int runCount = p.runs().size();
+    List<Run> runs = p.runs();
     long hyperlinkCount = hyperlinkCount(p);
-    String message =
-        (isHeader ? "页眉" : "页脚")
-            + " section="
-            + sectionIndex
-            + " 段落 "
-            + paragraphIndex
-            + "\npart ref: "
-            + partRef.canonical()
-            + "\nparagraph ref: "
-            + resolver.reference(p).canonical()
-            + "\n文本: "
-            + p.text()
-            + "\nrun 数: "
-            + runCount
-            + "\n超链接数: "
-            + hyperlinkCount;
-    ToolResult<Void> result = ToolResult.ok(message);
+    StringBuilder message =
+        new StringBuilder(isHeader ? "页眉" : "页脚")
+            .append(" section=")
+            .append(sectionIndex)
+            .append(" 段落 ")
+            .append(paragraphIndex)
+            .append("\npart ref: ")
+            .append(partRef.canonical())
+            .append("\nparagraph ref: ")
+            .append(resolver.reference(p).canonical())
+            .append("\n文本: ")
+            .append(p.text())
+            .append("\nrun 数: ")
+            .append(runs.size())
+            .append("\n超链接数: ")
+            .append(hyperlinkCount);
+    for (int r = 0; r < runs.size(); r++) {
+      message
+          .append("\nrun ")
+          .append(r)
+          .append(" ref: ")
+          .append(resolver.reference(runs.get(r)).canonical())
+          .append(" 文本: ")
+          .append(runs.get(r).text());
+    }
+    ToolResult<Void> result = ToolResult.ok(message.toString());
     return ToolResultRenderer.render(result);
   }
 

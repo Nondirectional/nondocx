@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/10-30-move-pair-accept-live-view-crash/research/crash-root-cause.md", "reason": "崩溃根因实证（悬空产生/存放/暴露三定点、POI 5.2.5 源码证据、探针时序）——修复设计的直接依据"}
+{"file": ".trellis/tasks/10-30-move-pair-accept-live-view-crash/research/code-map.md", "reason": "apply_tracked_changes 全调用链、手术点文件:行号、§6.13 修法现状、返回串构造位置"}
+{"file": ".trellis/tasks/10-30-move-pair-accept-live-view-crash/research/test-conventions.md", "reason": "save+reopen 锁定标杆、POI 裸构造 move 对写法、PARTIAL_FAILURE 断言惯例"}
+{"file": ".trellis/spec/backend/poi-bridge.md", "reason": "POI 桥接规范：包装缓存约定、N14/N17 影子包装条目、:510 accept 后须 save+reopen 的已知边界（本任务要升级）"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "零 POI 泄漏、内容相等、测试与禁用模式等 core 质量约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "DocxException 层级与 POI 异常包装规则"}

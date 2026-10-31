@@ -7,13 +7,18 @@ import io.github.nondirectional.docx.core.api.Document;
 import io.github.nondirectional.docx.core.api.style.HeadingLevel;
 import io.github.nondirectional.docx.core.api.table.Table;
 import io.github.nondirectional.docx.core.api.text.Paragraph;
+import io.github.nondirectional.docx.core.api.text.Run;
 import io.github.nondirectional.docx.toolkit.DocxToolkit;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedRun;
 import io.github.nondirectional.docx.toolkit.view.dto.AnnotatedView;
+import io.github.nondirectional.docx.toolkit.view.dto.CommentEntry;
+import io.github.nondirectional.docx.toolkit.view.dto.CommentOverview;
 import io.github.nondirectional.docx.toolkit.view.dto.ElementView;
 import io.github.nondirectional.docx.toolkit.view.dto.IssuesView;
 import io.github.nondirectional.docx.toolkit.view.dto.OutlineEntry;
 import io.github.nondirectional.docx.toolkit.view.dto.OutlineView;
+import io.github.nondirectional.docx.toolkit.view.dto.RevisionEntry;
+import io.github.nondirectional.docx.toolkit.view.dto.RevisionOverview;
 import io.github.nondirectional.docx.toolkit.view.dto.StatsView;
 import io.github.nondirectional.docx.toolkit.view.dto.TextView;
 import java.nio.file.Path;
@@ -146,9 +151,71 @@ class DocumentViewServiceTest {
       assertThat(run0.bold()).isTrue();
       assertThat(run0.fontSize()).isEqualTo(14);
       assertThat(run0.font()).isEqualTo("宋体");
+      // font() 四槽同写后 eastAsia 槽与西文槽一致
+      assertThat(run0.fontEastAsia()).isEqualTo("宋体");
       assertThat(run0.ref()).isNotBlank();
       AnnotatedRun run1 = view.paragraphs().get(0).runs().get(1);
       assertThat(run1.italic()).isTrue();
+    }
+  }
+
+  /**
+   * 槽分离排版的可观测性：编译器写「西文 TNR/Arial + 中文宋体/黑体」双槽后，annotated 与 view_element 都必须能读到 eastAsia
+   * 槽——只读复审靠它核对「设为宋体/黑体」类要求， 只见 ascii 槽会把已正确的中文字体误判成「未设置」（heading-font 曾因此空转 24 次）。
+   */
+  @Test
+  void annotatedAndElementExposeSplitFontSlots(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("split-font.docx");
+    try (Document doc = Docx.create()) {
+      Paragraph p = doc.addParagraph();
+      Run heading = p.addRun("标题");
+      var ctr = heading.raw().getCTR();
+      var rpr = ctr.isSetRPr() ? ctr.getRPr() : ctr.addNewRPr();
+      var fonts = rpr.sizeOfRFontsArray() > 0 ? rpr.getRFontsArray(0) : rpr.addNewRFonts();
+      fonts.setAscii("Arial");
+      fonts.setEastAsia("黑体");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      AnnotatedView ann =
+          svc.annotated(doc, "doc-1", 1L, ViewQuery.defaults().withExpandRuns(true));
+      AnnotatedRun run = ann.paragraphs().get(0).runs().get(0);
+      assertThat(run.font()).isEqualTo("Arial");
+      assertThat(run.fontEastAsia()).isEqualTo("黑体");
+
+      ElementView element = svc.element(doc, "doc-1", 1L, run.ref());
+      assertThat(element.properties()).containsEntry("font", "Arial");
+      assertThat(element.properties()).containsEntry("fontEastAsia", "黑体");
+    }
+  }
+
+  /**
+   * 下划线的复审可观测性：内容语言 {@code <u>…</u>} 写进 run 之后，只读复审（review_intent 只持 view_*）必须能直接读到
+   * underline——否则已正确的下划线会被判「未达成」，退回「逐格式重写」空转（fontEastAsia 同族教训）。
+   */
+  @Test
+  void annotatedAndElementExposeUnderline(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("underline.docx");
+    try (Document doc = Docx.create()) {
+      Paragraph p = doc.addParagraph();
+      p.addRun("正文");
+      p.addRun("下划线").underline();
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      AnnotatedView ann =
+          svc.annotated(doc, "doc-1", 1L, ViewQuery.defaults().withExpandRuns(true));
+      AnnotatedRun plain = ann.paragraphs().get(0).runs().get(0);
+      AnnotatedRun underlined = ann.paragraphs().get(0).runs().get(1);
+      assertThat(plain.underline()).isFalse();
+      assertThat(underlined.underline()).isTrue();
+
+      ElementView element = svc.element(doc, "doc-1", 1L, underlined.ref());
+      assertThat(element.properties()).containsEntry("underline", true);
+      ElementView plainElement = svc.element(doc, "doc-1", 1L, plain.ref());
+      assertThat(plainElement.properties()).containsEntry("underline", false);
     }
   }
 
@@ -239,6 +306,38 @@ class DocumentViewServiceTest {
       assertThat(view.kind()).isEqualTo("paragraph");
       assertThat(view.ref()).isEqualTo(ref);
       assertThat(view.properties()).containsKey("text");
+      // alignment 恒出现（未设置=left）——只读复审靠它核对居中类要求，属性缺失会被误读成「未设置」
+      assertThat(view.properties()).containsEntry("alignment", "left");
+    }
+  }
+
+  /** 居中段的元素详情暴露 alignment=center（命名与 {align=…} 写侧记号一致）。 */
+  @Test
+  void elementExposesAlignmentForReview(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("aligned.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("普通段");
+      io.github.nondirectional.docx.core.api.text.Paragraph centered =
+          doc.addParagraph("居中标题")
+              .heading(io.github.nondirectional.docx.core.api.style.HeadingLevel.H1);
+      centered.alignment(io.github.nondirectional.docx.core.api.style.Alignment.CENTER);
+      doc.addParagraph("两端对齐")
+          .alignment(io.github.nondirectional.docx.core.api.style.Alignment.JUSTIFY);
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      // 段落 ref 在 outline 里按正文顺序出现
+      assertThat(outline.entries()).hasSize(3);
+      ElementView plain = svc.element(doc, "doc-1", 1L, outline.entries().get(0).ref());
+      assertThat(plain.properties()).containsEntry("alignment", "left");
+      ElementView centered = svc.element(doc, "doc-1", 1L, outline.entries().get(1).ref());
+      assertThat(centered.properties()).containsEntry("alignment", "center");
+      assertThat(centered.properties()).containsEntry("headingLevel", 1);
+      ElementView justified = svc.element(doc, "doc-1", 1L, outline.entries().get(2).ref());
+      // JUSTIFY 用写侧记号名 both，让读者能与 {align=both} 对上
+      assertThat(justified.properties()).containsEntry("alignment", "both");
     }
   }
 
@@ -281,6 +380,245 @@ class DocumentViewServiceTest {
       assertThat(stats.meta().sessionGeneration()).isEqualTo(gen);
       assertThat(ann.meta().sessionGeneration()).isEqualTo(gen);
       assertThat(issues.meta().sessionGeneration()).isEqualTo(gen);
+    }
+  }
+
+  /** 表格详情含 cellTexts 矩阵——只读复审核对「某格改成了什么」的依据（只有行列数时无法确认）。 */
+  @Test
+  void elementTableShowsCellTextsMatrix(@TempDir Path tmp) throws Exception {
+    Path file = buildSampleDoc(tmp);
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      String tableRef =
+          outline.entries().stream()
+              .filter(e -> "table".equals(e.kind()))
+              .map(OutlineEntry::ref)
+              .findFirst()
+              .orElseThrow(() -> new AssertionError("outline 应含表格条目"));
+      ElementView view = svc.element(doc, "doc-1", 1L, tableRef);
+      assertThat(view.kind()).isEqualTo("table");
+      assertThat(view.properties()).containsEntry("rowCount", 2);
+      @SuppressWarnings("unchecked")
+      java.util.List<java.util.List<String>> cellTexts =
+          (java.util.List<java.util.List<String>>) view.properties().get("cellTexts");
+      assertThat(cellTexts).hasSize(2);
+      assertThat(cellTexts.get(0)).containsExactly("单元格00", "单元格01");
+      assertThat(cellTexts.get(1)).containsExactly("", "");
+    }
+  }
+
+  /** stats 暴露页脚文本预览：无页脚为 null；有页脚给截断文本（复审核对「第 1 页」类内容的依据）。 */
+  @Test
+  void statsShowsFooterTextPreview(@TempDir Path tmp) throws Exception {
+    DocumentViewService svc = newService();
+    Path plain = tmp.resolve("plain.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("正文");
+      doc.save(plain);
+    }
+    try (Document doc = Docx.open(plain)) {
+      assertThat(svc.stats(doc, "doc-1", 1L).footerText()).isNull();
+    }
+
+    Path withFooter = tmp.resolve("footer.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("正文");
+      doc.ensureFooter().addParagraph().addRun("第 1 页");
+      doc.save(withFooter);
+    }
+    try (Document doc = Docx.open(withFooter)) {
+      StatsView stats = svc.stats(doc, "doc-1", 1L);
+      assertThat(stats.hasFooter()).isTrue();
+      assertThat(stats.footerText()).contains("第 1 页");
+    }
+  }
+
+  /** outline 修订概览带作者计数与最近明细（type/author/片段）——复审核对「作者填了谁、改了什么」。 */
+  @Test
+  void outlineRevisionOverviewCarriesAuthorsAndRecentEntries(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("tracked.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("合同金额为一百万元。");
+      doc.paragraph(0).deleteTrackedRange("审查员", 5, 9);
+      doc.paragraph(0).addInsertion("审查员", "两百万元");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      RevisionOverview revision = outline.revision();
+      assertThat(revision.totalCount()).isEqualTo(2);
+      assertThat(revision.countByAuthor()).containsEntry("审查员", 2);
+      assertThat(revision.recent()).hasSize(2);
+      assertThat(revision.recent()).allMatch(e -> "审查员".equals(e.author()));
+      assertThat(revision.recent())
+          .extracting(RevisionEntry::snippet)
+          .containsExactlyInAnyOrder("一百万元", "两百万元");
+      // recent 的 ref 是完整 canonical，可直通 view_element 查修订详情
+      ElementView detail = svc.element(doc, "doc-1", 1L, revision.recent().get(0).ref());
+      assertThat(detail.kind()).isEqualTo("revision");
+      assertThat(detail.properties()).containsEntry("author", "审查员");
+      assertThat(detail.properties()).containsKey("type");
+      assertThat(detail.properties()).containsKey("text");
+    }
+  }
+
+  /**
+   * 带格式修订的证据链（2026-10-30 tracked-replace-format 实证缺口）：修订内 run 不被 paragraph.runs()
+   * 暴露（N14），复审核对「以修订加粗」只能靠修订条目的 bold/italic（恒出现） 与 REVISION 详情的同名字段。
+   */
+  @Test
+  void revisionEntriesCarryBoldItalicEvidence(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("tracked-bold.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("结论：待定。");
+      // core API 是字面文本（Markdown 解析在 toolkit PatchEngine），样式经返回 run 设置
+      doc.paragraph(0).replaceTrackedRange("审查员", 3, 5, java.util.List.of("通过")).get(0).bold();
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      RevisionEntry ins =
+          outline.revision().recent().stream()
+              .filter(e -> "ins".equals(e.type()) || "insertion".equals(e.type()))
+              .findFirst()
+              .orElseThrow();
+      assertThat(ins.snippet()).contains("通过");
+      assertThat(ins.bold()).isTrue();
+      assertThat(ins.italic()).isFalse();
+      ElementView detail = svc.element(doc, "doc-1", 1L, ins.ref());
+      assertThat(detail.kind()).isEqualTo("revision");
+      assertThat(detail.properties()).containsEntry("bold", true);
+      assertThat(detail.properties()).containsEntry("italic", false);
+      // 未带格式的修订证据同样恒出现（false）
+      RevisionEntry del =
+          outline.revision().recent().stream().filter(e -> e != ins).findFirst().orElseThrow();
+      assertThat(del.bold()).isFalse();
+    }
+  }
+
+  /**
+   * REVISION 详情对属性类修订（rPrChange）输出 property 摘要（kind + 新/旧，口径与 list_tracked_changes 对齐）；outline
+   * recent[] 的 bold/italic 对属性类从 newSummary 取证。 TextChangeDetails 分支的 text/bold/italic 呈现由 {@link
+   * #revisionEntriesCarryBoldItalicEvidence} 锁定，不回归。
+   */
+  @Test
+  void revisionDetailShowsPropertySummaryForRprChange(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("rpr-change.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("本月风险指标：逾期率 3.2%。");
+      Run run = doc.paragraph(0).run(0);
+      io.github.nondirectional.docx.core.api.style.RunStyle before = run.style();
+      run.bold();
+      run.commitStyleAsTracked("审查员", before);
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      RevisionEntry rpr =
+          outline.revision().recent().stream()
+              .filter(e -> "rpr_change".equals(e.type()))
+              .findFirst()
+              .orElseThrow();
+      // outline 格式证据：newSummary 含 b（§6.13「恒出现」原则的属性类延伸；方向不可区分为已知边界）
+      assertThat(rpr.bold()).isTrue();
+      assertThat(rpr.italic()).isFalse();
+      assertThat(rpr.snippet()).contains("RUN_PROPERTIES");
+      // REVISION 详情：property 摘要与 list_tracked_changes 的 property=RUN_PROPERTIES(新 [b]/旧 []) 对齐
+      ElementView detail = svc.element(doc, "doc-1", 1L, rpr.ref());
+      assertThat(detail.kind()).isEqualTo("revision");
+      assertThat(detail.properties()).containsEntry("property", "RUN_PROPERTIES(新 [b]/旧 [])");
+      assertThat(detail.properties()).containsEntry("author", "审查员");
+      assertThat(detail.properties()).containsEntry("type", "rpr_change");
+      // 属性类修订无 text/bold/italic 字段（那些是文本类分支的载荷）
+      assertThat(detail.properties()).doesNotContainKey("text");
+      assertThat(detail.properties()).doesNotContainKey("bold");
+    }
+  }
+
+  /** 段落详情恒出现 comments（空数组=无）——复审核对「这段挂了什么批注」的直接证据。 */
+  @Test
+  void elementParagraphShowsCommentsAlwaysPresent(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("commented.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("第一段");
+      doc.addParagraph("第二段");
+      doc.paragraph(1).addComment("审查员", "这段需要补充数据来源");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      String p0 = outline.entries().get(0).ref();
+      String p1 = outline.entries().get(1).ref();
+      // 无批注段：空数组（属性存在，不被读成「未知」）
+      ElementView e0 = svc.element(doc, "doc-1", 1L, p0);
+      assertThat((java.util.List<?>) e0.properties().get("comments")).isEmpty();
+      // 有批注段：id/author/text 齐全
+      ElementView e1 = svc.element(doc, "doc-1", 1L, p1);
+      java.util.List<java.util.Map<?, ?>> comments =
+          (java.util.List<java.util.Map<?, ?>>) e1.properties().get("comments");
+      assertThat(comments).hasSize(1);
+      assertThat(comments.get(0).get("author")).isEqualTo("审查员");
+      assertThat(comments.get(0).get("text")).isEqualTo("这段需要补充数据来源");
+      assertThat(comments.get(0).get("id")).isNotNull();
+    }
+  }
+
+  /** stats 恒出现 commentCount：无批注 0；加批注后按文档级计数。 */
+  @Test
+  void statsCountsComments(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("counted.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("第一段");
+      doc.addParagraph("第二段");
+      doc.paragraph(0).addComment("甲", "一条");
+      doc.paragraph(1).addComment("乙", "两条");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      assertThat(svc.stats(doc, "doc-1", 1L).commentCount()).isEqualTo(2);
+    }
+    Path plain = tmp.resolve("plain.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("正文");
+      doc.save(plain);
+    }
+    try (Document doc = Docx.open(plain)) {
+      assertThat(svc.stats(doc, "doc-1", 1L).commentCount()).isEqualTo(0);
+    }
+  }
+
+  /** outline 批注概览带作者计数与最近明细（锚定段落 ref/作者/片段），ref 可直通 view_element。 */
+  @Test
+  void outlineCommentOverviewCarriesAuthorsAndRecentEntries(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("overview.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("第一段");
+      doc.addParagraph("第二段");
+      doc.paragraph(0).addComment("审查员", "首段意见");
+      doc.paragraph(1).addComment("审查员", "次段意见");
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      CommentOverview comments = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults()).comments();
+      assertThat(comments.total()).isEqualTo(2);
+      assertThat(comments.countByAuthor()).containsEntry("审查员", 2);
+      assertThat(comments.recent()).hasSize(2);
+      assertThat(comments.recent())
+          .extracting(CommentEntry::snippet)
+          .containsExactlyInAnyOrder("首段意见", "次段意见");
+      // recent 的锚定段落 ref 可直通 view_element，其 comments 里能找到同一条批注
+      for (CommentEntry entry : comments.recent()) {
+        ElementView detail = svc.element(doc, "doc-1", 1L, entry.paragraph());
+        assertThat(detail.kind()).isEqualTo("paragraph");
+        assertThat((java.util.List<?>) detail.properties().get("comments")).isNotEmpty();
+      }
     }
   }
 }
