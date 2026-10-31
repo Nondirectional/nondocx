@@ -217,9 +217,9 @@ check_quality({
 | 工具 | 作用 |
 |---|---|
 | `create_document` | Markdown 子集 + 样式 profile 一次性编译整份 docx，**替换** doc_id 会话文档（句柄不变、generation+1） |
-| `read_document` | 整篇文档的紧凑 Markdown 视图，行内格式按 `**粗**`/`*斜*`/`<u>下划线</u>` 回显（粗+下划线为 `**<u>…</u>**`，读回可还原），段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页眉/页脚以 `<!-- 页眉: … -->`/`<!-- 页脚: … -->` 元数据行呈现，修订以文档尾 `<!-- 修订 … -->` 元数据行呈现（无修订不输出），与写侧同构（round-trip） |
+| `read_document` | 整篇文档的紧凑 Markdown 视图，行内格式按 `**粗**`/`*斜*`/`<u>下划线</u>` 回显（粗+下划线为 `**<u>…</u>**`，读回可还原），段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，批注以 `<!-- 批注 pN #id [作者]: 内容 -->` 元数据行紧跟被评段落（回复行带 `回复#父id`，标题段落同样输出），页眉/页脚以 `<!-- 页眉: … -->`/`<!-- 页脚: … -->` 元数据行呈现，修订以文档尾 `<!-- 修订 … -->` 元数据行呈现（无修订不输出），与写侧同构（round-trip） |
 | `validate_document` | 复用 10 项质量检查，输出带 `v1/v2` 编号的问题清单 |
-| `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number/header.set_text/comment.add），短 ID 锚点，支持 dry_run |
+| `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number/header.set_text/comment.add/comment.reply），短 ID 锚点，支持 dry_run |
 | `fill_template` | mustache 子集数据填充：`{{key}}` 值替换（跨 run 命中）、`{{#key}}…{{/key}}` 条件块、表格模板行按列表复制（保留格式） |
 | `render_preview` | LibreOffice headless 渲染 PDF/PNG（只读；soffice 路径经 `NONDOCX_SOFFICE` 配置，png 为首页） |
 
@@ -256,7 +256,7 @@ create_document({
 })
 ```
 
-**edit_document 的 op 集**（v5，锚点 = `read_document` 的短 ID）：
+**edit_document 的 op 集**（v6，锚点 = `read_document` 的短 ID）：
 
 ```json
 {"op":"insert","anchor":"p3","position":"after","block":"# 小节 {align=center}\n\n正文。"}
@@ -276,10 +276,12 @@ create_document({
 {"op":"footer.set_page_number"}                          // format 默认「第 {page} 页」
 {"op":"header.set_text","text":"**机密** 内部文档"}       // 页眉写文本（行内标记）
 {"op":"comment.add","anchor":"p1","text":"金额需复核","author":"审查员"}
+{"op":"comment.reply","comment_id":"3","text":"同意，请补充上季度数据。","author":"复核员"}  // 回复根批注（#N 取读侧批注行）
 ```
 
 先 preflight 全部 op 再统一写入：锚点不存在、`find` 不在文中、行列越界、表格块非 end
-插入、引用本 patch 前序删除的锚点、同一锚点多个改文本 op——任一失败**整体拒绝、零改动**。
+插入、引用本 patch 前序删除的锚点、同一锚点多个改文本 op、批注 id 不存在或是回复——任一失败
+**整体拒绝、零改动**。
 
 **replace_text 的行内格式**：`text` 与 create_document 正文、table.set_cell 同一内容语言，
 支持 `**粗体**`/`*斜体*`/`` `代码` ``/`<u>下划线</u>`（未闭合标记原样保留）。给既有文字加粗 = 身份替换
@@ -326,8 +328,25 @@ section 的默认页眉（core `ensureHeader`，不存在则创建）；重复�
 **comment.add（批注）**：给锚点段落加**整段范围**批注（core `Paragraph.addComment`），
 `text`/`author` 必传（`author` 是 Word 批注窗格显示的作者名）。批注不改段落文本，不受同锚点
 改文本独占约束（可与 `replace_text` 同批作用于同段）。读侧三处可见：`read_document` 的
-`<!-- 批注 pN [作者]: 内容 -->` 元数据行、view 层段落详情 `comments` 数组（core
-`Paragraph.comments()` 映射）与 outline 批注概览。
+`<!-- 批注 pN #id [作者]: 内容 -->` 元数据行（标题段落同样输出）、view 层段落详情
+`comments` 数组（core `Paragraph.comments()` 映射）与 outline 批注概览。
+
+**comment.reply（批注回复）**：回复一条**既有根批注**（core `Comments.reply`），
+`comment_id`/`text`/`author` 必传——`comment_id` 就是 `read_document` 批注行里的 `#N`
+（容忍模型复制的 `#` 前缀）。回复挂在批注上而不是段落上，因此**不需要 `anchor`**、不占段落
+锚点（与 `footer.set_page_number`/`header.set_text` 同型），可与正文 op 同批；同样不改正文，
+不受同锚点改文本独占约束。preflight（零写入）：`comment_id` 归一化后为空、批注不存在、
+目标是**一条回复**（MVP 只做一级线程，会提示改回它的根批注）都在写入前整体拒绝。
+读侧写读同批：回复行在 `#id` 之后、`[作者]` 之前多一段 `回复#父id`，父行在前、回复行紧随
+（回复锚点紧贴父批注 start）——
+
+```markdown
+<!-- 批注 p1 #3 [审查员]: 请核实该预算金额的数据来源。 -->
+<!-- 批注 p1 #4 回复#3 [复核员]: 同意，请补充上季度数据。 -->
+```
+
+已知边界：多级回复（回复的回复）不支持；表格单元格内段落的批注/回复不在读写通道内；同段
+多条根批注仍按 XML 出现序读取（可能是 LIFO，见 §6.7 记录）。
 
 **fill_template（模板填充）**：模板 = 当前文档，语法是 mustache 子集（不嵌套）——`{{key}}`
 值替换；`{{#key}}…{{/key}}` **整段标记**为条件块（falsy = false/缺失/空列表/空白串时删块，

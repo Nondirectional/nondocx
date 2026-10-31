@@ -161,9 +161,9 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 
 `nondocx-examples/.../examples/eval/` 是当前工具面的 headless 评测基线，不是生产代码：
 
-- baseline 27 条（12 初版 + 11 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
+- baseline 28 条（12 初版 + 12 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
   加行/多步组合/模板假值条件/同段双修订/多锚点行距/既有词加粗/修订带格式替换 + 页眉写
-  文本 + 修订格式变更 + 既有词加下划线），seed 由
+  文本 + 修订格式变更 + 既有词加下划线 + 批注回复），seed 由
   `Docx.create()` 构造，check 只读最终 docx；另有 create 组 5 条（工具面 A/B）；
 - 工具面与 demo 对齐（`current_document` + view/body/table/header/tracker + 只读 `review_intent`），
   但**不加载 6 条 Skill**，以隔离工具面本身；
@@ -175,8 +175,8 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
   （「其余未误加粗」找不到非目标 run 可检）。修法是严格子集断言（存在目标词以外的
   文字 ⇒ 必须存在非粗体 run）。写跨面任务的 check 时问一句：**能力不够的面会用什么
   退化解满足这条断言？**
-- full 面静态缺口任务 flag `capabilityGap=true`（12 条，`EvalTasksTest#
-  marksKnownCapabilityGapTasks` 锁定）：页脚写/批注/列表/段落删除/真空单元格表格行/
+- full 面静态缺口任务 flag `capabilityGap=true`（13 条，`EvalTasksTest#
+  marksKnownCapabilityGapTasks` 锁定）：页脚写/批注创建/批注回复/列表/段落删除/真空单元格表格行/
   模板填充×2/run 拆分/页眉写/修订格式变更/既有词加下划线（run 拆分同根因，full 面
   `update_run_style` 与 `mark_style_change_tracked` 都按 run 定位、无 run 拆分）。flag 只影响
   报告分类列，compiler 面全过时 inert；
@@ -299,7 +299,7 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   再作为 `create_document` 输入——解析器把 `<!-- … -->` 当元数据剥掉，round-trip 不产生
   脏块。改输出格式时保持这一性质（`CompilerPipelineTest#markdownViewRoundTripsCompiledDocument`）。
 - **edit_document 原子性**（P2）：`PatchEngine` 先 preflight 全部 op（锚点存在/参数合法/
-  find 在文中/行列在界/表格块仅 end/前序删除的锚点不得复用），任一失败抛
+  find 在文中/行列在界/表格块仅 end/前序删除的锚点不得复用/批注 id 存在且是根批注），任一失败抛
   `PatchException` 且**零写入**；执行期不应有可预期失败。锚点编号与 `read_document`
   同源（`pN`/`tN`），插入块复用 Markdown 解析器。执行期意外异常按「可能部分应用」上报，
   不得伪装成功——`PatchEngineTest#atomicPreflightFailureLeavesDocumentUntouched` 锁死零写入。
@@ -367,9 +367,18 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   `addComment` 把 `commentRangeStart` 插在段首，同段多条按 XML 出现序读取是**后写先出**
   （LIFO）——断言顺序时注意。新增「作者署名标记」类能力时写读必须同批落地：只有写侧
   op 没有读侧观测，复审会把已正确的文档误报「未达成」（§6.6 同族教训）。
-- **read_document 的批注元数据行**（v3）：`MarkdownView` 在被评段落行后输出整行
-  `<!-- 批注 pN [作者]: 内容 -->`（每条一行）；round-trip 由「解析器跳过整行注释」保证
-  （`CompilerPipelineTest#markdownViewShowsCommentAsMetadataAndKeepsRoundTrip`）。
+- **read_document 的批注元数据行**（v3；v6 起带 id 与线程关系）：`MarkdownView` 在被评段落行后输出整行
+  `<!-- 批注 pN #id [作者]: 内容 -->`（每条一行），**标题段落同样输出**（早期标题分支提前 return，
+  把挂在标题上的批注吞掉了——观测盲区已修）。`#id` 是 `comment.reply` 的寻址键；回复批注在 `#id`
+  之后、`[作者]` 之前插 `回复#父id`，父行在前、回复行紧随（回复锚点紧贴父批注 start）。round-trip 由
+  「解析器跳过整行注释」保证（`CompilerPipelineTest#markdownViewShowsCommentAsMetadataAndKeepsRoundTrip`、
+  `#markdownViewShowsReplyThreadWithParentIdAndKeepsRoundTrip`、`#markdownViewShowsCommentOnHeadingParagraph`）。
+- **comment.reply 批注回复 op**（v6，2026-10-31）：按**批注 id** 寻址（`comment_id` = 读侧批注行的 `#N`，
+  容忍前导 `#`），`text`/`author` 必传；与 `footer.set_page_number`/`header.set_text` 同型——**不需要
+  anchor、不占段落锚点、可与正文 op 同批**，也不改正文、不受同锚点改文本独占约束。preflight（零写入）：
+  id 归一化后为空、`Comments.get(id)` 未命中、目标本身是回复（**MVP 只允许一级回复**，拒绝时给出根批注 id）
+  都整体拒绝。执行期调 core `Comments.reply`，`changed` 记 `comment#<id>`。理由：core 早有 reply 能力，只加
+  写侧不补读侧观测，复审会把已写入的回复误判「没回复」（§6.6 同族）。多级回复与表格单元格内批注通道留 future。
 - **fill_template 的重写策略**（P2 收尾，2026-10-30）：跨 run 占位符按 `paragraph.text()`
   合并命中后，重写用「首 run 承载全文、其余 run 清空」——**不要**删光重建单 run：重建要克隆
   样式，而 `Run.font()` 写侧是四槽同写，会把西文字体名写进 eastAsia 槽污染中文。表格模板行

@@ -628,7 +628,8 @@ tracked-replace 6→4（复审首次给出「del: 一百万元 / ins: 两百万�
   `[{id,author,text}]`（空数组=无）；`view_stats` `commentCount`；`view_outline` 批注概览
   `CommentOverview{total,countByAuthor,recent[{paragraph,author,snippet}]}`（与修订概览
   同型，ref 可直通 view_element）。compiler 面的 `read_document` 以整行元数据注释呈现
-  `<!-- 批注 pN [作者]: 内容 -->`（round-trip 安全，解析器跳过整行注释）。
+  `<!-- 批注 pN #id [作者]: 内容 -->`（round-trip 安全，解析器跳过整行注释；`#id` 与
+  `回复#父id` 是 §6.18 补上的寻址键与线程标记）。
 - **评测**：baseline 增至 11 条（`comment-add`：锚定段/作者/内容关键词/正文不动四类
   check，防恒真由「批注存在」在 seed 上失败保证）。
 
@@ -1062,6 +1063,43 @@ core 侧 `Run.underline(boolean)` / `isUnderline()` 早已具备，缺的只是�
 **4 次调用一次通过**——模型的首个 op 就是 `replace_text find=逾期率 text=<u>逾期率</u>`，
 没有试 `set_style`、没有整段下划线自愈；26 条既有任务零退化，平均调用数与前批持平。
 `<u>` 的接口形态与 `**` 完全同构，模型不需要学新工具。
+
+---
+
+### 6.18 批注回复：一级线程的写读同批（2026-10-31）
+
+TODO #005 收敛成一句话：**core 早已有 `Comments.reply`，compiler 面只有 `comment.add`——
+能新建批注，不能回复既有批注**。本批补写侧 `comment.reply` op，并把读侧批注行从
+「作者+内容」升级成「id+线程关系」，否则回复对象无处寻址（§6.7 的写读同批原则）。
+
+- **写侧**：`edit_document` 新增 `comment.reply`（`comment_id`+`text`+`author` 必传）。按
+  **批注 id** 寻址而不是段落锚点——回复属于批注线程，不属于某一段；因此它和
+  `footer.set_page_number`/`header.set_text` 同型：**不需要 `anchor`、不占段落锚点、可与
+  正文 op 同批**。`comment_id` 容忍读侧复制过来的 `#` 前缀（一次无谓失败的消除，不承诺
+  `id=3` 等其它形态）。`changed` 记 `comment#<id>`（与 `footer`/`header` 的字面 token 同族）。
+- **preflight 语义（零写入）**：id 归一化后为空 → 拒；`Comments.get(id)` 未命中 → 拒并提示
+  「read_document 查看可用批注 id」；目标是**一条回复** → 拒并给出它的根批注 id。**MVP 只做
+  一级线程**：Word 的线程表达本就是根批注 + 扁平回复，多级回复在 OOXML 里能表达但在 UI 上
+  是伪层级；core 已支持，未来放开只需去掉这条 preflight 并让读侧按 parentId 展示。
+- **读侧格式**：`<!-- 批注 pN #id [作者]: 内容 -->`，回复行在 `#id` 之后、`[作者]` 之前插
+  `回复#父id`。`#id` 是 `comment.reply` 的寻址键——读侧不暴露它就等于模型无法回复。
+  顺序沿用 `paragraph.comments()` 的 XML 出现序：回复锚点紧贴父批注 start，故父行在前、
+  回复行紧随；同段多条根批注仍可能是 LIFO（§6.7 既定语义，本批不改）。
+- **标题段落的批注行是既有 bug 的顺手修复**：`MarkdownView.renderParagraph` 对标题提前
+  `return`，挂在标题上的批注（以及本批新增的回复）在 `read_document` 里完全不可见。修法
+  是把批注行输出抽成 `appendCommentLines`，标题/普通段落各自输出正文行后统一调用——标题
+  正文格式不变，只是不再吞观测行。读侧观测缺口的性质与 §6.6/§6.15 同类：不修就会把
+  「已写入的回复」判成「没回复」。
+- **契约同步清单**（少一处即漂移）：`PatchEngine` 类注释 op 集 v5/13 → v6/14 + default 错误
+  消息枚举、`CompilerTools` 的 `edit_document` 描述与 ops 示例（+`ops.comment_id` 嵌套参数
+  能力）、`read_document` 描述、eval/demo 两处 compiler 系统提示词、docs/07 工具表与 op 示例、
+  本小节、`.trellis/spec/backend/agent-single.md`。
+- **eval**：baseline 新增 `comment-reply`（第 28 条），seed 在预算段预置一条「审查员」根批注；
+  5 类 check——存在回复 / 回复作者=复核员 / 回复含「上季度」/ `parentId` 指向审查员根批注 /
+  三段正文与根批注内容未变。full 面无回复工具，flag `capabilityGap`（与 `comment-add` 同列）。
+- **已知边界**：表格单元格内段落的批注/回复不在读写通道内（`PatchEngine` 锚点与
+  `read_document` 表格渲染都不覆盖）；`view_*` 的 comments DTO 本批不扩 `parentId`
+  （`read_document` 已够用时不为只读面加字段）。
 
 ---
 
