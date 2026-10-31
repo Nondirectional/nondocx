@@ -225,6 +225,10 @@ find=逾期率 bold=true`），review_intent 复审直接引用 rpr_change 证�
 docs/11 §6.16）；bold-existing-phrase 5 次、tracked-replace-format 4 次不变，零回归。
 full 面本批未复跑：tracked-bold-phrase 的 gap flag 依据 bold-existing-phrase 同根因结构性
 归因（mark_style_change_tracked 按 run_index 定位、无 run 拆分）。
+**2026-10-31 批注回复 op 后**：28/28，平均 4.18（runId `20261031-235355-433`，compiler 面
+8 工具）——comment-reply 首跑即过（current_document → read_document → `comment.reply
+comment_id=0` → review 达成，4 次调用），27 条既有任务零退化；模型把读侧 `#0` 原样用作
+`comment_id`，寻址链一次命中。token 列仍 0（chain provider 已知限制）。
 
 ## Convention: ref 的容器边界（读/写分离）
 

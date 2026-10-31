@@ -1101,6 +1101,12 @@ TODO #005 收敛成一句话：**core 早已有 `Comments.reply`，compiler 面�
   `read_document` 表格渲染都不覆盖）；`view_*` 的 comments DTO 本批不扩 `parentId`
   （`read_document` 已够用时不为只读面加字段）。
 
+结果（runId `20261031-235355-433`，compiler 面 8 工具，27B）：**28/28，平均 4.18**。
+`comment-reply` 首跑即过，4 次调用（current_document → read_document → `comment.reply
+comment_id=0` → review 达成），27 条既有任务零退化；模型把读侧 `#0` 原样用作
+`comment_id`，寻址链一次命中。token 列仍为 0（chain provider 未返回 usage，见 §6.7 同款
+已知限制）。
+
 ---
 
 ## 7. 明确不做什么
