@@ -2,8 +2,8 @@
   "id": "hyperlink-text-color",
   "name": "hyperlink-text-color",
   "title": "Agent支持修改超链接文本颜色",
-  "description": "",
-  "status": "planning",
+  "description": "已放弃（2026-10-31）：不实现超链接文本颜色，未产生任何代码改动。",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "non",
   "assignee": "non",
   "createdAt": "2026-07-16",
-  "completedAt": null,
+  "completedAt": "2026-10-31",
   "branch": null,
   "base_branch": "feat/demo-single-agent-revert",
   "worktree_path": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "用户于 2026-10-31 决定按放弃处理：不转 TODO、不实现。本任务仅有规划期 prd.md，core/toolkit 无对应能力。",
   "meta": {}
 }
