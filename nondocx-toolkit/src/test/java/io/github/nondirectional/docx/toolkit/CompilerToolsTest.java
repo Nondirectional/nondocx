@@ -292,6 +292,44 @@ class CompilerToolsTest {
   }
 
   @Test
+  void editDocumentSupportsTrackedSetStyleWithReadBackRevisionLine(@TempDir Path temp)
+      throws Exception {
+    DocxToolkit tk = new DocxToolkit();
+    String docId = ToolTestSupport.extractDocId(tk.session.openDocx(seed(temp)));
+
+    // seed 无修订：读视图无修订元数据行（零噪声）
+    String before = tk.compiler.readDocument(docId, null);
+    assertThat(ToolTestSupport.parse(before).dataText()).doesNotContain("<!-- 修订");
+
+    // 以修订方式加粗既有词（目标词与邻文同 run，op 内部拆 run）；不改文本
+    java.util.Map<String, Object> style =
+        new java.util.LinkedHashMap<>(
+            java.util.Map.of(
+                "op", "tracked.set_style",
+                "anchor", "p0",
+                "find", "内容",
+                "bold", true,
+                "author", "审查员"));
+    String raw = tk.compiler.editDocument(docId, List.of(style), null, null, null);
+    ToolResultParser.Snapshot parsed = ToolTestSupport.parse(raw);
+    assertThat(parsed).isNotNull();
+    assertThat(parsed.success()).isTrue();
+
+    Document after = tk.session.getDocument(docId);
+    assertThat(after.trackedChanges().list()).hasSize(1);
+    assertThat(after.trackedChanges().list().get(0).type())
+        .isEqualTo(io.github.nondirectional.docx.core.api.track.TrackedChangeType.RPR_CHANGE);
+    assertThat(after.paragraph(0).text()).isEqualTo("旧内容");
+
+    // read_document 的 Markdown 视图带修订元数据行（写读同批：属性摘要可见）
+    String readBack = tk.compiler.readDocument(docId, null);
+    assertThat(ToolTestSupport.parse(readBack).dataText())
+        .contains("<!-- 修订 1 条 -->")
+        .contains("RPR_CHANGE author=审查员 属性=RUN_PROPERTIES 新[b] 旧[]");
+    tk.session.closeDocx(docId);
+  }
+
+  @Test
   void fillTemplateFillsPlaceholdersInSessionDocument(@TempDir Path temp) throws Exception {
     DocxToolkit tk = new DocxToolkit();
     Path template = temp.resolve("template.docx");

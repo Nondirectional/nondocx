@@ -470,6 +470,46 @@ class DocumentViewServiceTest {
     }
   }
 
+  /**
+   * REVISION 详情对属性类修订（rPrChange）输出 property 摘要（kind + 新/旧，口径与 list_tracked_changes 对齐）；outline
+   * recent[] 的 bold/italic 对属性类从 newSummary 取证。 TextChangeDetails 分支的 text/bold/italic 呈现由 {@link
+   * #revisionEntriesCarryBoldItalicEvidence} 锁定，不回归。
+   */
+  @Test
+  void revisionDetailShowsPropertySummaryForRprChange(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("rpr-change.docx");
+    try (Document doc = Docx.create()) {
+      doc.addParagraph("本月风险指标：逾期率 3.2%。");
+      Run run = doc.paragraph(0).run(0);
+      io.github.nondirectional.docx.core.api.style.RunStyle before = run.style();
+      run.bold();
+      run.commitStyleAsTracked("审查员", before);
+      doc.save(file);
+    }
+    DocumentViewService svc = newService();
+    try (Document doc = Docx.open(file)) {
+      OutlineView outline = svc.outline(doc, "doc-1", 1L, ViewQuery.defaults());
+      RevisionEntry rpr =
+          outline.revision().recent().stream()
+              .filter(e -> "rpr_change".equals(e.type()))
+              .findFirst()
+              .orElseThrow();
+      // outline 格式证据：newSummary 含 b（§6.13「恒出现」原则的属性类延伸；方向不可区分为已知边界）
+      assertThat(rpr.bold()).isTrue();
+      assertThat(rpr.italic()).isFalse();
+      assertThat(rpr.snippet()).contains("RUN_PROPERTIES");
+      // REVISION 详情：property 摘要与 list_tracked_changes 的 property=RUN_PROPERTIES(新 [b]/旧 []) 对齐
+      ElementView detail = svc.element(doc, "doc-1", 1L, rpr.ref());
+      assertThat(detail.kind()).isEqualTo("revision");
+      assertThat(detail.properties()).containsEntry("property", "RUN_PROPERTIES(新 [b]/旧 [])");
+      assertThat(detail.properties()).containsEntry("author", "审查员");
+      assertThat(detail.properties()).containsEntry("type", "rpr_change");
+      // 属性类修订无 text/bold/italic 字段（那些是文本类分支的载荷）
+      assertThat(detail.properties()).doesNotContainKey("text");
+      assertThat(detail.properties()).doesNotContainKey("bold");
+    }
+  }
+
   /** 段落详情恒出现 comments（空数组=无）——复审核对「这段挂了什么批注」的直接证据。 */
   @Test
   void elementParagraphShowsCommentsAlwaysPresent(@TempDir Path tmp) throws Exception {

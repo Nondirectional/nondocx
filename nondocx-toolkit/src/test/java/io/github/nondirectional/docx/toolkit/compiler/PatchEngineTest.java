@@ -796,6 +796,286 @@ class PatchEngineTest {
     }
   }
 
+  // ==================== tracked.set_style op（v5） ====================
+
+  @Test
+  void trackedSetStyleBoldsPhraseInsideSharedRunAndKeepsText() throws Exception {
+    java.nio.file.Path file = java.nio.file.Files.createTempFile("tracked-set-style", ".docx");
+    Document doc = Docx.create();
+    try {
+      // 目标词与邻文同 run：必须先拆 run 再只对目标 run 提交 rPrChange
+      doc.addParagraph("本月风险指标：逾期率 3.2%，环比上升 0.4 个百分点。");
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op",
+                      "tracked.set_style",
+                      "anchor",
+                      "p0",
+                      "find",
+                      "逾期率",
+                      "bold",
+                      true,
+                      "author",
+                      "审查员")),
+              REPORT_CN,
+              false);
+      assertThat(result.applied()).isEqualTo(1);
+      assertThat(result.changed()).containsExactly("p0");
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document opened = Docx.open(file)) {
+      // save+reopen：恰好 1 条 RPR_CHANGE，author 正确，newSummary 含 b、oldSummary 不含 b
+      var changes = opened.trackedChanges().list();
+      assertThat(changes).hasSize(1);
+      var change = changes.get(0);
+      assertThat(change.type())
+          .isEqualTo(io.github.nondirectional.docx.core.api.track.TrackedChangeType.RPR_CHANGE);
+      assertThat(change.author()).isEqualTo("审查员");
+      var details =
+          (io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) change.details();
+      assertThat(details.newSummary()).contains("b");
+      assertThat(details.oldSummary()).doesNotContain("b");
+      // 目标词加粗、邻文不加粗（严格子集）、段落文本不变
+      io.github.nondirectional.docx.core.api.text.Paragraph p = opened.paragraph(0);
+      assertThat(p.text()).isEqualTo("本月风险指标：逾期率 3.2%，环比上升 0.4 个百分点。");
+      boolean targetBold = false;
+      boolean neighborPlain = false;
+      for (var run : p.runs()) {
+        if (run.text().contains("逾期率")) {
+          targetBold = run.isBold();
+        } else if (!run.text().isBlank()) {
+          assertThat(run.isBold()).as("run「%s」不应被加粗", run.text()).isFalse();
+          neighborPlain = true;
+        }
+      }
+      assertThat(targetBold).as("含「逾期率」的 run 应为粗体").isTrue();
+      assertThat(neighborPlain).as("段内应有未加粗的邻文 run（严格子集，防整段加粗退化）").isTrue();
+    }
+  }
+
+  @Test
+  void trackedSetStyleAcceptKeepsBoldAndRejectRestores() throws Exception {
+    // accept：样式保留、修订消失；reject：还原旧样式（accept/reject 在 POI 缓存之下改动，一律 save+reopen 再断言）
+    java.nio.file.Path file = java.nio.file.Files.createTempFile("tracked-style-accept", ".docx");
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("本月风险指标：逾期率 3.2%。");
+      PatchEngine.apply(
+          doc,
+          ops(
+              op(
+                  "op",
+                  "tracked.set_style",
+                  "anchor",
+                  "p0",
+                  "find",
+                  "逾期率",
+                  "bold",
+                  true,
+                  "author",
+                  "审查员")),
+          REPORT_CN,
+          false);
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    // accept 路径：删 rPrChange 标记，新值（加粗）生效
+    try (Document opened = Docx.open(file)) {
+      String id = opened.trackedChanges().list().get(0).id();
+      opened.trackedChanges().acceptProperty(id);
+      java.nio.file.Path accepted = java.nio.file.Path.of(file + ".accepted.docx");
+      opened.save(accepted);
+      try (Document result = Docx.open(accepted)) {
+        assertThat(result.trackedChanges().list()).isEmpty();
+        assertThat(boldOfRunContaining(result.paragraph(0), "逾期率")).isTrue();
+      }
+    }
+    // reject 路径：旧值树整树覆盖（reject 后 POI 句柄断连，save+reopen 读）
+    try (Document opened = Docx.open(file)) {
+      String id = opened.trackedChanges().list().get(0).id();
+      opened.trackedChanges().rejectProperty(id);
+      java.nio.file.Path rejected = java.nio.file.Path.of(file + ".rejected.docx");
+      opened.save(rejected);
+      try (Document result = Docx.open(rejected)) {
+        assertThat(result.trackedChanges().list()).isEmpty();
+        assertThat(boldOfRunContaining(result.paragraph(0), "逾期率")).isFalse();
+        assertThat(result.paragraph(0).text()).isEqualTo("本月风险指标：逾期率 3.2%。");
+      }
+    }
+  }
+
+  @Test
+  void trackedSetStylePreflightRejectsMissingFormatFindMissAndAnchorConflict() {
+    Document doc = sample();
+    try {
+      // bold/italic 均缺省 → 拒绝并就地教学正确写法
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op(
+                              "op",
+                              "tracked.set_style",
+                              "anchor",
+                              "p0",
+                              "find",
+                              "第一",
+                              "author",
+                              "a")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("至少提供 bold 或 italic")
+          .hasMessageContaining("bold");
+      // find 未命中 → 拒绝并教学正确写法
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op(
+                              "op",
+                              "tracked.set_style",
+                              "anchor",
+                              "p0",
+                              "find",
+                              "没有的",
+                              "bold",
+                              true,
+                              "author",
+                              "a")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("找不到")
+          .hasMessageContaining("正确写法");
+      // 同锚点与 replace_text 同批 → 整体拒绝提示拆批（拆 run 重建 run 结构，纳入独占）
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op("op", "replace_text", "anchor", "p0", "find", "第一", "text", "x"),
+                          op(
+                              "op",
+                              "tracked.set_style",
+                              "anchor",
+                              "p0",
+                              "find",
+                              "第一",
+                              "bold",
+                              true,
+                              "author",
+                              "a")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("至多一个改文本 op");
+      // 原子性：零写入（无修订、未拆 run、文本未动）
+      assertThat(doc.paragraph(0).text()).isEqualTo("第一段");
+      assertThat(doc.paragraph(0).runs()).hasSize(1);
+      assertThat(doc.trackedChanges().list()).isEmpty();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void trackedSetStyleHandlesMultipleOccurrencesAndItalicOff() throws Exception {
+    java.nio.file.Path file = java.nio.file.Files.createTempFile("tracked-style-multi", ".docx");
+    Document doc = Docx.create();
+    try {
+      doc.addParagraph("关键 甲，关键 乙。"); // 单 run 两处命中 → 全部处理
+      doc.addParagraph("重点倾斜文字。"); // 斜体 run，取消其中「倾斜」的斜体
+      doc.paragraph(1).run(0).italic();
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op",
+                      "tracked.set_style",
+                      "anchor",
+                      "p0",
+                      "find",
+                      "关键",
+                      "bold",
+                      true,
+                      "author",
+                      "审查员"),
+                  op(
+                      "op",
+                      "tracked.set_style",
+                      "anchor",
+                      "p1",
+                      "find",
+                      "倾斜",
+                      "italic",
+                      false,
+                      "author",
+                      "审查员")),
+              REPORT_CN,
+              false);
+      assertThat(result.applied()).isEqualTo(2);
+      // 本 op 不改文本（拆 run 保持拼接文本不变）
+      assertThat(doc.paragraph(0).text()).isEqualTo("关键 甲，关键 乙。");
+      assertThat(doc.paragraph(1).text()).isEqualTo("重点倾斜文字。");
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document opened = Docx.open(file)) {
+      // 两处命中 → 2 条 + 取消斜体 1 条 = 3 条 RPR_CHANGE（无 DEL/INS——不是文本替换）
+      var changes = opened.trackedChanges().list();
+      assertThat(changes).hasSize(3);
+      assertThat(changes)
+          .allMatch(
+              c ->
+                  c.type()
+                      == io.github.nondirectional.docx.core.api.track.TrackedChangeType.RPR_CHANGE);
+      int boldHits = 0;
+      for (var run : opened.paragraph(0).runs()) {
+        if (run.text().contains("关键")) {
+          assertThat(run.isBold()).as("run「%s」应为粗体", run.text()).isTrue();
+          boldHits++;
+        } else if (!run.text().isBlank()) {
+          assertThat(run.isBold()).as("run「%s」不应被加粗", run.text()).isFalse();
+        }
+      }
+      assertThat(boldHits).isEqualTo(2);
+      // italic=false 写 w:val="off"：目标 run 取消斜体且仍有 RPR_CHANGE；邻文斜体保留
+      assertThat(italicOfRunContaining(opened.paragraph(1), "倾斜")).isFalse();
+      assertThat(italicOfRunContaining(opened.paragraph(1), "重点")).isTrue();
+    }
+  }
+
+  private static boolean boldOfRunContaining(
+      io.github.nondirectional.docx.core.api.text.Paragraph paragraph, String needle) {
+    for (var run : paragraph.runs()) {
+      if (run.text().contains(needle)) {
+        return run.isBold();
+      }
+    }
+    throw new IllegalStateException("未找到含「" + needle + "」的 run");
+  }
+
+  private static boolean italicOfRunContaining(
+      io.github.nondirectional.docx.core.api.text.Paragraph paragraph, String needle) {
+    for (var run : paragraph.runs()) {
+      if (run.text().contains(needle)) {
+        return run.isItalic();
+      }
+    }
+    throw new IllegalStateException("未找到含「" + needle + "」的 run");
+  }
+
   // ==================== footer.set_page_number op（v2） ====================
 
   @Test

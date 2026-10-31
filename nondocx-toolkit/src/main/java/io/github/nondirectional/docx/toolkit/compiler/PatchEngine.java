@@ -2,6 +2,7 @@ package io.github.nondirectional.docx.toolkit.compiler;
 
 import io.github.nondirectional.docx.core.api.Document;
 import io.github.nondirectional.docx.core.api.style.Alignment;
+import io.github.nondirectional.docx.core.api.style.RunStyle;
 import io.github.nondirectional.docx.core.api.table.Table;
 import io.github.nondirectional.docx.core.api.text.Paragraph;
 import io.github.nondirectional.docx.core.api.text.Run;
@@ -26,7 +27,7 @@ import java.util.Set;
  * <p><b>原子性。</b> 先 preflight 全部 op：锚点存在、参数合法、{@code find} 在段落文本中、 行列在界内、表格块只允许插到文档末尾、被本 patch 前序 op
  * 删除的锚点不得再引用。任一 失败抛 {@link PatchException}，<b>零写入</b>。执行期不存在可预期失败分支；POI 意外异常 直接上抛（由工具层报告「可能部分应用」）。
  *
- * <p><b>op 集（v4，12 种）：</b>
+ * <p><b>op 集（v5，13 种）：</b>
  *
  * <ul>
  *   <li>{@code insert}——Markdown 块插入 {@code before}/{@code after} 锚点或文档 {@code start}/{code
@@ -43,6 +44,9 @@ import java.util.Set;
  *       changes）写作：ins / del / del+ins 配对，{@code author} 必传，{@code text} 支持 {@code **粗**}/{@code
  *       *斜*}/{@code `代码`} 行内标记（多 span 为同一 ins 内多 run，各持 rPr）。替换是最小 diff——只 del「find」范围、ins
  *       紧随其后（core {@code replaceTrackedRange}）；
+ *   <li>{@code tracked.set_style}——以修订方式（rPrChange）变更<b>既有文字</b>的 bold/italic：{@code anchor}+
+ *       {@code find} 定位（多处命中全部处理），{@code bold}/{@code italic} 至少给一个（true 设置 / false 取消）， {@code
+ *       author} 必传。目标词与邻文同 run 时先拆 run 再逐 run 提交属性修订（core {@code Run.commitStyleAsTracked}），文本不变；
  *   <li>{@code footer.set_page_number}——页脚追加页码段落，{@code format} 支持 {@code {page}}/{@code {pages}}
  *       占位符（PAGE/NUMPAGES 域，带缓存结果 "1"，非渲染读者也能读到数字）；
  *   <li>{@code header.set_text}——页眉追加一段文本，{@code text} 必填非空、支持行内标记（{@code **粗**}/{@code *斜*}/{@code
@@ -53,7 +57,8 @@ import java.util.Set;
  *
  * <p><b>同锚点独占（v2）。</b> tracked.* 与 {@code replace_text} 都改段落文本，而修订的偏移量按 <b>执行时活文本</b> 计算（tracked
  * del 后 text() 会移除被删文本）——同批多个改文本 op 共享锚点会互相污染。 规则：每个段落锚点在一批 ops 里<b>至多一个改文本 op</b>（tracked.* 或
- * replace_text），违反则整体拒绝并提示拆批。
+ * replace_text），违反则整体拒绝并提示拆批。{@code tracked.set_style} 不改文本，但执行期拆 run 会<b>重建段落 run 结构</b>，同批其他改文本
+ * op 的 run 定位可能失效——保守纳入同一独占规则。
  *
  * <p>op 数组来自 nonchain 还原的 {@code List<LinkedHashMap>}；本类只读 Map，不依赖 JSON 库。
  */
@@ -197,6 +202,9 @@ public final class PatchEngine {
       case "tracked.replace":
         claimAnchor(index, anchor, "tracked.replace", textClaims);
         return planTrackedFindOp(index, op, anchor, snapshot, false);
+      case "tracked.set_style":
+        claimAnchor(index, anchor, "tracked.set_style", textClaims);
+        return planTrackedSetStyle(index, op, anchor, snapshot);
       case "footer.set_page_number":
         return planFooterPageNumber(index, op);
       case "header.set_text":
@@ -210,8 +218,8 @@ public final class PatchEngine {
                 + "] 未知操作类型: "
                 + kind
                 + "（可用: insert/replace_text/delete/set_style/table.set_cell/table.add_row/"
-                + "tracked.insert/tracked.delete/tracked.replace/footer.set_page_number/"
-                + "header.set_text/comment.add）");
+                + "tracked.insert/tracked.delete/tracked.replace/tracked.set_style/"
+                + "footer.set_page_number/header.set_text/comment.add）");
     }
   }
 
@@ -779,6 +787,169 @@ public final class PatchEngine {
         changed.add(anchor);
       }
     };
+  }
+
+  /**
+   * tracked.set_style：以修订方式（rPrChange）变更<b>既有文字</b>的 bold/italic（v5）。
+   *
+   * <p>{@code anchor}+{@code find} 定位（与 tracked.delete/replace 同模型，多处命中全部处理、 从右到左应用）；{@code
+   * bold}/{@code italic} 是显式布尔三态——<b>true 设置 / false 取消（{@code w:val="off"}）/ 缺省不动</b>，至少给一个；
+   * {@code author} 必传。执行语义：命中片段与邻文同 run 时先拆 run（{@link #trackedSetStyleOnRange}），再对每个目标 run 「拆分后快照
+   * → 改样式 → core {@code Run.commitStyleAsTracked}」两步式提交属性修订。段落文本不变。
+   *
+   * <p>幂等边界：对已含 rPrChange 的 run 再次 commit 会追加新 id 的 rPrChange（core 语义），本 op 不去重。方向性观测边界：取消加粗与设置加粗的
+   * newSummary 同为 {@code [b]}（summarize 只看本地名），方向证据看 run 实际属性呈现。
+   */
+  private static PlannedOp planTrackedSetStyle(
+      int index, Map<String, Object> op, String anchor, Snapshot snapshot) {
+    Paragraph paragraph = snapshot.requireParagraph(anchor, index);
+    String find = str(op, "find", index);
+    String author = author(op, index);
+    Boolean bold = op.get("bold") == null ? null : booleanValue(op.get("bold"), index, "bold");
+    Boolean italic =
+        op.get("italic") == null ? null : booleanValue(op.get("italic"), index, "italic");
+    if (bold == null && italic == null) {
+      throw new PatchException(
+          "op["
+              + index
+              + "] tracked.set_style 未指定任何格式变更；需至少提供 bold 或 italic（true 设置 / false 取消），"
+              + "如 {\"op\":\"tracked.set_style\",\"anchor\":\"p0\",\"find\":\"逾期率\",\"bold\":true,"
+              + "\"author\":\"审查员\"}");
+    }
+    if (!paragraph.text().contains(find)) {
+      throw new PatchException(
+          "op["
+              + index
+              + "] 段落 "
+              + anchor
+              + " 文本中找不到「"
+              + find
+              + "」（实际: "
+              + paragraph.text()
+              + "）；find 是段内既有文字的精确子串，正确写法如 "
+              + "{\"op\":\"tracked.set_style\",\"anchor\":\"p0\",\"find\":\"逾期率\",\"bold\":true,"
+              + "\"author\":\"审查员\"}");
+    }
+    String described =
+        "tracked.set_style "
+            + anchor
+            + " 「"
+            + find
+            + "」"
+            + (bold == null ? "" : " bold=" + bold)
+            + (italic == null ? "" : " italic=" + italic)
+            + " author="
+            + author;
+    return new PlannedOp(described) {
+      @Override
+      void execute(
+          Document doc,
+          Snapshot snap,
+          List<String> changed,
+          List<String> warningsOut,
+          StyleProfile profile) {
+        // 本 op 不改段落文本（拆 run 保持文本），occurrences 与 replace_text 同为非重叠语义；
+        // 从右到左应用与 tracked 家族一致（对纯格式变更是防御性习惯，保持同族口径）。
+        List<int[]> ranges = occurrencesOf(paragraph.text(), find);
+        if (ranges.isEmpty()) {
+          // 独占规则下不应发生；真发生说明契约被打破，按执行期意外上抛
+          throw new IllegalStateException(
+              "tracked.set_style 执行期未命中「" + find + "」（不应发生，文本在 preflight 后被改动）");
+        }
+        for (int i = ranges.size() - 1; i >= 0; i--) {
+          trackedSetStyleOnRange(
+              paragraph, ranges.get(i)[0], ranges.get(i)[1], bold, italic, author);
+        }
+        changed.add(anchor);
+      }
+    };
+  }
+
+  /**
+   * 对段落活文本 {@code [start, end)} 区间应用 tracked 格式变更：把与区间<b>部分相交</b>的 run 拆出「命中片段独占的 run」（copyRun
+   * 深拷贝完整 rPr 继承，<b>倒序插入</b>——顺序拷贝「上一份拷贝」会格式逐份累积，PatchEngineTest 抓过的真实坑），再对每个目标 run 两步式提交
+   * rPrChange（快照在拆分<b>后</b>取：拷贝继承源 run 样式）。
+   *
+   * <p>run 遍历<b>从右到左</b>：拆分插入的拷贝落在源 run 之后（索引更大），右到左处理不会重访已处理/新插入的 run。命中片段落在超链接等非普通 run
+   * 上时按执行期意外上抛（修订格式只能作用于普通 run）。
+   *
+   * @return 本区间内提交了属性修订的 run 数
+   */
+  private static int trackedSetStyleOnRange(
+      Paragraph paragraph, int start, int end, Boolean bold, Boolean italic, String author) {
+    // 先捕获普通 run 句柄与其文本区间（执行期拆分会改变 runs() 视图）
+    List<Run> runs = new ArrayList<>(paragraph.runs());
+    int[] starts = new int[runs.size()];
+    int cursor = 0;
+    for (int i = 0; i < runs.size(); i++) {
+      starts[i] = cursor;
+      String text = runs.get(i).text();
+      cursor += text == null ? 0 : text.length();
+    }
+    int styled = 0;
+    for (int i = runs.size() - 1; i >= 0; i--) {
+      Run source = runs.get(i);
+      String text = source.text() == null ? "" : source.text();
+      int runStart = starts[i];
+      int runEnd = runStart + text.length();
+      if (text.isEmpty() || runEnd <= start || runStart >= end) {
+        continue; // 与目标区间无交集
+      }
+      Run target;
+      if (runStart >= start && runEnd <= end) {
+        target = source; // 整 run 命中（或此前拆分的片段 run），无需再拆
+      } else {
+        // 部分相交：源 run 留前缀，命中片段 + 后缀以深拷贝承载、倒序插在源 run 紧后
+        int a = Math.max(start - runStart, 0);
+        int b = Math.min(end - runStart, text.length());
+        List<String> pieces = new ArrayList<>(2);
+        pieces.add(text.substring(a, b));
+        if (b < text.length()) {
+          pieces.add(text.substring(b));
+        }
+        for (int k = pieces.size() - 1; k >= 0; k--) {
+          paragraph.copyRun(i).text(pieces.get(k));
+        }
+        target = paragraph.run(i + 1);
+        source.text(a > 0 ? text.substring(0, a) : "");
+        if (a == 0) {
+          removeEmptyRun(paragraph, source);
+        }
+      }
+      RunStyle before = target.style();
+      if (bold != null) {
+        target.bold(bold);
+      }
+      if (italic != null) {
+        target.italic(italic);
+      }
+      target.commitStyleAsTracked(author, before);
+      styled++;
+    }
+    if (styled == 0) {
+      // 命中片段不落在任何普通 run 上（如整段在超链接内）——结构性边缘，按执行期意外上抛
+      throw new IllegalStateException(
+          "tracked.set_style 的命中区间 ["
+              + start
+              + ","
+              + end
+              + ") 未落在任何普通 run 上"
+              + "（只含超链接/图片等不可格式元素），无法提交属性修订");
+    }
+    return styled;
+  }
+
+  /** 按对象身份移除段落里的指定 run（用于拆分后源 run 剩空文本时清理，与 replaceFormattedInRun 同手法）。 */
+  private static void removeEmptyRun(Paragraph paragraph, Run run) {
+    for (int i = 0; i < paragraph.inlineElements().size(); i++) {
+      if (paragraph.inlineElement(i) instanceof Run) {
+        Run element = (Run) paragraph.inlineElement(i);
+        if (element.raw() == run.raw()) {
+          paragraph.removeInlineElement(i);
+          return;
+        }
+      }
+    }
   }
 
   /**

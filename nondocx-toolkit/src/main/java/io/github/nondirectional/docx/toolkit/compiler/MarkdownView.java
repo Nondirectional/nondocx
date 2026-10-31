@@ -19,12 +19,16 @@ import io.github.nondirectional.docx.core.api.text.Run;
  *
  * <p>已知取舍（v1）：超链接/图片折叠为其文本；表格单元格输出纯文本；正文之外的容器只有页眉/页脚以元数据注释行进视图 （{@code <!-- 页眉: … -->}/{@code <!--
  * 页脚: … -->}，页眉行在页脚行之前——与页面物理顺序一致；写入后供模型核对），表格内段落不在本视图内。批注以整行元数据注释紧跟被评段落（{@code <!-- 批注 pN [作者]: 内容
- * -->}，v3——comment.add 落地后模型可直接读到核对）。
+ * -->}，v3——comment.add 落地后模型可直接读到核对）。修订以文档尾整行元数据注释呈现（{@code <!-- 修订#N: TYPE author=… …
+ * -->}，v5——tracked 修订族与 tracked.set_style 写入后的读侧证据，无修订零输出）。
  */
 public final class MarkdownView {
 
   /** 默认输出上限（字符）；超过按行边界截断。 */
   public static final int DEFAULT_MAX_CHARS = 6000;
+
+  /** 修订元数据片段截断上限（字符），超长以「…」结尾。 */
+  private static final int REVISION_SNIPPET_MAX = 20;
 
   private MarkdownView() {}
 
@@ -100,7 +104,66 @@ public final class MarkdownView {
         sb.append("<!-- 页脚: ").append(footerText.trim().replace("\n", " / ")).append(" -->\n");
       }
     }
+    // 修订元数据行（v5）：文档级修订概览，每条一行整行注释——tracked 修订族与 tracked.set_style 写入后
+    // 模型/复审核对「改了什么、作者是谁、格式变更方向」的读侧证据（写读同批，§6.6/§6.13 教训：
+    // 只有写侧没有读侧观测，复审会把已正确的文档误报「未达成」）。无修订零输出（零噪声）。
+    appendRevisionLines(sb, doc);
     return new Rendered(sb.toString(), false, paragraphSeq, tableSeq);
+  }
+
+  /**
+   * 追加文档级修订元数据行：条数行 + 每条一行（{@code <!-- 修订#N: TYPE author=… … -->}）。 TEXT/移动类给文本片段「…」，PROPERTY
+   * 类给新旧属性摘要（{@code 属性=RUN_PROPERTIES 新[b] 旧[]}），CELL 类只给 type+author。 无修订零输出；整行注释在 round-trip
+   * 时被解析器跳过，不产生脏块。{@code trackedChanges()} 走 CT 树遍历，live 语义可读（rPrChange 不依赖 reopen）。
+   */
+  private static void appendRevisionLines(StringBuilder sb, Document doc) {
+    java.util.List<io.github.nondirectional.docx.core.api.track.TrackedChange> changes;
+    try {
+      changes = doc.trackedChanges().list();
+    } catch (RuntimeException e) {
+      return; // 修订枚举失败只丢观测行，不拖垮整个读视图
+    }
+    if (changes.isEmpty()) {
+      return;
+    }
+    sb.append("<!-- 修订 ").append(changes.size()).append(" 条 -->\n");
+    for (int i = 0; i < changes.size(); i++) {
+      io.github.nondirectional.docx.core.api.track.TrackedChange change = changes.get(i);
+      sb.append("<!-- 修订#")
+          .append(i)
+          .append(": ")
+          .append(change.type())
+          .append(" author=")
+          .append(change.author());
+      io.github.nondirectional.docx.core.api.track.ChangeDetails details = change.details();
+      if (details instanceof io.github.nondirectional.docx.core.api.track.TextChangeDetails) {
+        sb.append(" 「")
+            .append(
+                shorten(
+                    escapeText(
+                        ((io.github.nondirectional.docx.core.api.track.TextChangeDetails) details)
+                            .text())))
+            .append("」");
+      } else if (details
+          instanceof io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) {
+        io.github.nondirectional.docx.core.api.track.PropertyChangeDetails property =
+            (io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) details;
+        sb.append(" 属性=")
+            .append(property.kind())
+            .append(" 新")
+            .append(property.newSummary())
+            .append(" 旧")
+            .append(property.oldSummary());
+      }
+      sb.append(" -->\n");
+    }
+  }
+
+  /** 截断到上限（超长以「…」结尾），供修订片段展示。 */
+  private static String shorten(String text) {
+    return text.length() <= REVISION_SNIPPET_MAX
+        ? text
+        : text.substring(0, REVISION_SNIPPET_MAX - 1) + "…";
   }
 
   private static void renderParagraph(StringBuilder sb, Paragraph paragraph, int seq) {

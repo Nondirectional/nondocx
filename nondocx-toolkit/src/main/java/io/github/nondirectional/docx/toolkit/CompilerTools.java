@@ -263,6 +263,9 @@ public final class CompilerTools extends ToolkitToolContext {
               + "tracked.insert/tracked.delete/tracked.replace（修订模式，anchor+find/text+author 必传，"
               + "insert/replace 的 text 同样支持 **粗体**/*斜体*/`代码` 行内标记，"
               + "修订可被 Word 审阅 accept/reject）、"
+              + "tracked.set_style（以修订方式变更既有文字格式，anchor+find+bold/italic+author 必传，"
+              + "bold/italic 至少给一个：true 设置 / false 取消，只对 find 命中的文字提交格式修订，"
+              + "不改文本内容）、"
               + "footer.set_page_number（页脚页码，format 含 {page}/{pages} 占位符，默认「第 {page} 页」，不占 anchor）、"
               + "header.set_text（页眉写文本，text 必填、支持 **粗体**/*斜体*/`代码` 行内标记，向页眉追加一段，不占 anchor）、"
               + "comment.add（批注，anchor+text+author 必传，给整段加范围批注，不改正文）。"
@@ -284,6 +287,8 @@ public final class CompilerTools extends ToolkitToolContext {
                       + "\"block\":\"# 小节 {align=center}\"}, {\"op\":\"table.set_cell\",\"anchor\":\"t0\","
                       + "\"row\":1,\"col\":2,\"text\":\"完成\"}, {\"op\":\"tracked.replace\","
                       + "\"anchor\":\"p1\",\"find\":\"一百万元\",\"text\":\"两百万元\",\"author\":\"审查员\"}, "
+                      + "{\"op\":\"tracked.set_style\",\"anchor\":\"p1\",\"find\":\"逾期率\","
+                      + "\"bold\":true,\"author\":\"审查员\"}, "
                       + "{\"op\":\"comment.add\",\"anchor\":\"p1\",\"text\":\"金额需复核\","
                       + "\"author\":\"审查员\"}, {\"op\":\"footer.set_page_number\"}, "
                       + "{\"op\":\"header.set_text\",\"text\":\"**机密** 内部文档\"}]")

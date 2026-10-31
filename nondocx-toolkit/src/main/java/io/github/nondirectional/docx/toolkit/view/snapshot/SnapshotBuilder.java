@@ -202,6 +202,19 @@ public final class SnapshotBuilder {
         String author = ch.author() == null ? "unknown" : ch.author();
         byAuthor.merge(author, 1, Integer::sum);
         if (recent.size() < RECENT_REVISIONS_MAX) {
+          // 属性类修订（rPrChange）的 bold/italic 证据在 newSummary 本地名里（raw() 对 PROPERTY
+          // 家族抛异常，anyRunStyled 够不着）；已知边界：summarize 只看本地名，取消加粗（w:val="off"）
+          // 也报 true——复审核对方向要看 run 实际属性呈现
+          boolean propertyBold = false;
+          boolean propertyItalic = false;
+          if (ch.details()
+              instanceof io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) {
+            String newSummary =
+                ((io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) ch.details())
+                    .newSummary();
+            propertyBold = hasLocalName(newSummary, "b");
+            propertyItalic = hasLocalName(newSummary, "i");
+          }
           // ref 用完整 canonical（可直通 view_element 查详情），不是裸修订 id
           recent.add(
               new RevisionSummary.Entry(
@@ -209,8 +222,8 @@ public final class SnapshotBuilder {
                   ch.type() == null ? "unknown" : ch.type().name().toLowerCase(),
                   author,
                   changeSnippet(ch),
-                  anyRunStyled(ch, true),
-                  anyRunStyled(ch, false)));
+                  propertyBold || anyRunStyled(ch, true),
+                  propertyItalic || anyRunStyled(ch, false)));
         }
       }
       return new RevisionSummary(enabled, total, byType, byAuthor, recent);
@@ -242,7 +255,7 @@ public final class SnapshotBuilder {
     return false;
   }
 
-  /** 修订内容片段：文本类修订给改动的文本，其他家族给家族描述。 */
+  /** 修订内容片段：文本类修订给改动的文本，属性类给新旧摘要，其他家族给家族描述。 */
   private static String changeSnippet(
       io.github.nondirectional.docx.core.api.track.TrackedChange change) {
     var details = change.details();
@@ -251,7 +264,28 @@ public final class SnapshotBuilder {
           ((io.github.nondirectional.docx.core.api.track.TextChangeDetails) details).text();
       return truncate(text == null ? "" : text, RECENT_SNIPPET_MAX);
     }
+    if (details instanceof io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) {
+      io.github.nondirectional.docx.core.api.track.PropertyChangeDetails property =
+          (io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) details;
+      return truncate(
+          property.kind() + " 新" + property.newSummary() + " 旧" + property.oldSummary(),
+          RECENT_SNIPPET_MAX);
+    }
     return change.family() == null ? "" : change.family().name().toLowerCase();
+  }
+
+  /**
+   * 判断 summarize 摘要（如 {@code [b,i]}）是否含指定本地名——按逗号分 token 精确匹配， 避免 {@code contains("b")} 误中 {@code
+   * bCs} 等 b 前缀本地名。
+   */
+  private static boolean hasLocalName(String summary, String localName) {
+    String body = summary.replaceAll("\\[|\\]", "");
+    for (String token : body.split(",")) {
+      if (localName.equals(token)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ==================== 辅助 ====================

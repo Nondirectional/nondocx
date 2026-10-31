@@ -281,6 +281,37 @@ class CompilerPipelineTest {
   }
 
   @Test
+  void markdownViewShowsRevisionsAsMetadataAndKeepsRoundTrip() {
+    MarkdownDoc parsed = MarkdownParser.parse("正文一段。");
+    Document doc = DocumentCompiler.compile(parsed, StyleProfile.builtin("plain")).document();
+    try {
+      // 无修订：视图不出现修订行（零噪声）
+      assertThat(MarkdownView.render(doc, 0).markdown()).doesNotContain("修订");
+      // 写入文本类 + 属性类修订后：文档尾输出条数行 + 每条一行（trackedChanges 走 CT 树遍历，live 可读）
+      io.github.nondirectional.docx.core.api.text.Run run = doc.paragraph(0).run(0);
+      io.github.nondirectional.docx.core.api.style.RunStyle before = run.style();
+      run.bold();
+      run.commitStyleAsTracked("审查员", before);
+      doc.paragraph(0).addInsertion("审查员", "（补）");
+      String markdown = MarkdownView.render(doc, 0).markdown();
+      assertThat(markdown).contains("<!-- 修订 2 条 -->");
+      // 属性类：新旧属性摘要可见（rPrChange 的格式变更证据）
+      assertThat(markdown).contains("RPR_CHANGE author=审查员 属性=RUN_PROPERTIES 新[b] 旧[]");
+      // 文本类：插入文本片段
+      assertThat(markdown).contains("INS author=审查员 「（补）」");
+      // 修订行在文档尾（不打断正文阅读）
+      assertThat(markdown.indexOf("<!-- 修订 2 条 -->"))
+          .isGreaterThan(markdown.indexOf("<!-- p0 -->"));
+      // 整行注释 round-trip 被解析器跳过，不产生脏块
+      MarkdownDoc reparsed = MarkdownParser.parse(markdown);
+      assertThat(reparsed.blocks()).hasSize(1);
+      assertThat(reparsed.warnings()).isEmpty();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
   void markdownViewTruncatesAtLineBoundary() {
     StringBuilder big = new StringBuilder();
     for (int i = 0; i < 200; i++) {

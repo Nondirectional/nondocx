@@ -544,6 +544,20 @@ public final class DocumentViewService {
             }
             properties.put("bold", bold);
             properties.put("italic", italic);
+          } else if (details
+              instanceof io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) {
+            // 属性类修订（rPrChange）的格式变更证据：kind + 新/旧摘要，口径与 list_tracked_changes 的
+            // property=RUN_PROPERTIES(新 [b]/旧 []) 对齐。summarize 只含本地名，设置/取消方向不可区分（已知边界）
+            io.github.nondirectional.docx.core.api.track.PropertyChangeDetails property =
+                (io.github.nondirectional.docx.core.api.track.PropertyChangeDetails) details;
+            properties.put(
+                "property",
+                property.kind()
+                    + "(新 "
+                    + property.newSummary()
+                    + "/旧 "
+                    + property.oldSummary()
+                    + ")");
           }
           break;
         }

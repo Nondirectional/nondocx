@@ -109,6 +109,7 @@ class SurfaceSwitchTest {
     assertTrue(compiler.contains("create_document"), "compiler prompt 应教 create_document");
     assertTrue(compiler.contains("edit_document"), "compiler prompt 应教 edit_document");
     assertTrue(compiler.contains("tracked.replace"), "compiler prompt 应教修订 op");
+    assertTrue(compiler.contains("tracked.set_style"), "compiler prompt 应教修订格式 op");
     assertTrue(compiler.contains("footer.set_page_number"), "compiler prompt 应教页脚页码 op");
     assertTrue(compiler.contains("不得调用或寻找"), "两面 prompt 都必须禁止保存工具");
     assertFalse(compiler.contains("[Skill]"), "compiler prompt 不应引用 Skill（面内无 Skill）");
