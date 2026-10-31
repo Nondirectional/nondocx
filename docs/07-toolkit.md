@@ -217,7 +217,7 @@ check_quality({
 | 工具 | 作用 |
 |---|---|
 | `create_document` | Markdown 子集 + 样式 profile 一次性编译整份 docx，**替换** doc_id 会话文档（句柄不变、generation+1） |
-| `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页眉/页脚以 `<!-- 页眉: … -->`/`<!-- 页脚: … -->` 元数据行呈现，与写侧同构（round-trip） |
+| `read_document` | 整篇文档的紧凑 Markdown 视图，段落/表格带 `<!-- pN -->`/`<!-- tN -->` 短 ID，页眉/页脚以 `<!-- 页眉: … -->`/`<!-- 页脚: … -->` 元数据行呈现，修订以文档尾 `<!-- 修订 … -->` 元数据行呈现（无修订不输出），与写侧同构（round-trip） |
 | `validate_document` | 复用 10 项质量检查，输出带 `v1/v2` 编号的问题清单 |
 | `edit_document` | 对既有文档应用一批**原子**编辑 ops（insert/replace_text/delete/set_style/table.set_cell/table.add_row/tracked.*/footer.set_page_number/header.set_text/comment.add），短 ID 锚点，支持 dry_run |
 | `fill_template` | mustache 子集数据填充：`{{key}}` 值替换（跨 run 命中）、`{{#key}}…{{/key}}` 条件块、表格模板行按列表复制（保留格式） |
@@ -249,7 +249,7 @@ create_document({
 })
 ```
 
-**edit_document 的 op 集**（v4，锚点 = `read_document` 的短 ID）：
+**edit_document 的 op 集**（v5，锚点 = `read_document` 的短 ID）：
 
 ```json
 {"op":"insert","anchor":"p3","position":"after","block":"# 小节 {align=center}\n\n正文。"}
@@ -264,6 +264,7 @@ create_document({
 {"op":"tracked.replace","anchor":"p1","find":"待定","text":"**通过**","author":"审查员"}  // 修订也吃行内标记
 {"op":"tracked.insert","anchor":"p1","text":"补充说明。","author":"审查员"}
 {"op":"tracked.delete","anchor":"p1","find":"过期内容","author":"审查员"}
+{"op":"tracked.set_style","anchor":"p2","find":"逾期率","bold":true,"author":"审查员"}  // 格式变更本身算修订(rPrChange)
 {"op":"footer.set_page_number"}                          // format 默认「第 {page} 页」
 {"op":"header.set_text","text":"**机密** 内部文档"}       // 页眉写文本（行内标记）
 {"op":"comment.add","anchor":"p1","text":"金额需复核","author":"审查员"}
@@ -290,6 +291,18 @@ del 文本（delText）**永不**进入 `text()`；ins 文本在 **live 对象**
 走，reopen 时 iruns 重建自 XML）——eval 读落盘文档按 reopen 口径。两种状态下 `runs()`
 均不暴露 ins 内 run（run 级工具够不着，样式只能经创作 op 内部完成）——读修订用
 `trackedChanges()`。
+
+**tracked.set_style（格式变更修订）**：对既有文字的**格式变更本身算修订**（rPrChange 属性
+修订，区别于 tracked.replace 的 del+ins 文本修订）。`find` 定位段内既有文字（精确子串，
+多处命中全部处理）；`bold`/`italic` 三态显式设置——`true` 设置、`false` 取消
+（`w:val="off"`）、缺省不动，**至少给一个**；`author` 必传。命中片段与邻文同 run 时按
+`copyRun` 外科拆分（与 replace_text 同技法）后对目标 run 走两步式
+`commitStyleAsTracked`：拆分后快照 → 改格式 → 提交，旧值树进 `<w:rPrChange>`（accept
+保留新格式 / reject 还原旧格式）。段落 `text()` 不变；拆 run 重建段落结构，**参与**同锚点
+改文本独占。读侧三处可见：`read_document` 文档尾 `<!-- 修订#N: RPR_CHANGE author=… 属
+性=RUN_PROPERTIES 新[b] 旧[] -->` 元数据行、view REVISION 详情的 property 摘要、outline
+recent[] 的 bold/italic 取证。已知边界：属性摘要只记属性名不记方向（「取消加粗」的新摘要
+同为 `[b]`），方向以 run 实际格式呈现为准。
 
 **footer.set_page_number**：页脚**追加**页码段落（不触碰正文），`format` 支持 `{page}`/`{pages}`
 占位符（PAGE/NUMPAGES 域）。域带**缓存结果** "1"（五 run 形态：begin/instr/separate/result/end）

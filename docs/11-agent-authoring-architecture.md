@@ -977,6 +977,47 @@ header-write-text 的行为序列是本节核心发现：
 full 面按 §6.12 归因维持 gap flag（写 ref 容器边界，物理不可达）。追加语义 +
 元数据行读侧观测的组合让复审误报不再传导为文档损伤。
 
+### 6.16 格式变更修订 op：rPrChange 与观测面证据闭环（2026-10-31）
+
+「给既有文字加粗并留下修订痕迹」的严格形态是 **rPrChange 属性修订**，不是 del+ins：
+`replace_text find=X text=**X**` 身份替换无审阅痕迹，`tracked.replace` 是文本修订（格式
+证据藏在 run 属性里，审阅者看到的是「删旧插新」而非「改格式」）。本批补齐 compiler 面
+第 13 种 op，写读同批：
+
+- **`tracked.set_style` op**（op 集第 13 种，v5）：`find` 定位既有文字（精确子串、多处命中
+  全部处理），`bold`/`italic` 三态显式——true 设置 / false 取消（`w:val="off"`）/ 缺省不动，
+  至少给一个；`author` 必传。命中片段与邻文同 run 时按 `copyRun` 外科拆分（与
+  replace_text 同技法、同倒序插入防格式累积），拆分后快照 → 改格式 → core
+  `commitStyleAsTracked`（两步式契约，旧值树进 `CTRPrOriginal`）——**core 零改动**。
+  参与**同锚点独占**（不改 `text()` 但拆 run 重建段落结构，保守与 tracked 族同列）。
+- **观测面三层呈现**（写读同批）：`read_document` 文档尾 `<!-- 修订 … -->` 元数据行（全
+  修订类型，PROPERTY 类带新旧属性摘要，无修订零输出）；view REVISION 详情 property 摘要
+  （`RUN_PROPERTIES(新 [b]/旧 [])`，与 `list_tracked_changes` 口径一致）；outline recent[]
+  对 RPR_CHANGE 补 bold/italic/snippet 取证。
+- **eval**：`tracked-bold-phrase` 入组（第 26 条，与 `bold-existing-phrase` 同 seed 对照——
+  同一件事的修订版）；check 断言 **RPR_CHANGE 存在且无 DEL**（堵 `tracked.replace` 身份
+  替换冒充——§6.14 已实证该 workaround 可过全部非修订 check）+ 严格子集防退化。
+  capabilityGap flag：full 面 `mark_style_change_tracked` 按 run_index 定位、无 run 拆分，
+  目标词与邻文同 run 时物理不可达（与 bold-existing-phrase 同根因、同结构性归因；本批
+  未跑 full 面对照，flag 依据同根因先例）。
+
+**compiler 面复跑**（runId `20261031-092431-976` @0c5de5f，8 工具，同模型同温度）：
+**26/26，平均 4.23**（上次 25/25、4.28 @`20261031-021426-557`，零回归）。tracked-bold-phrase
+4 次调用 9.3s，行为序列是本节核心：
+
+1. `read_document` 定位 p1（seed 无修订——修订元数据行零输出，零噪声）；
+2. `edit_document` **首个 op 一步命中**：`tracked.set_style find=逾期率 bold=true
+   author=审阅者`（changed=`[p1]`）；
+3. `review_intent` 复审判「**达成**」，diff 直接引用修订证据——「rpr_change 修订，作者
+   『审阅者』，RUN_PROPERTIES 新[b]/旧[]」。
+
+比 §6.15 再进一步：页眉批是「复审误报 → 模型经读侧自证」闭合回路，本批复审**直接消费
+修订观测证据首判即中**，连误报都没有发生——PROPERTY 类修订的证据（type/author/新旧属性
+摘要）已进入复审查看面。写读同批的治理收益从「误报可自纠」推进到「证据在判位」。
+
+**已知边界**：属性摘要只记属性名不记方向（「取消加粗」的新摘要同为 `[b]`），方向证据看
+run 实际格式呈现；同一 run 重复 commit 追加新 rPrChange（core 语义，op 不去重）。
+
 ---
 
 ## 7. 明确不做什么

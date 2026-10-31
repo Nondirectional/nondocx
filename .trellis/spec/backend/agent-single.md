@@ -161,9 +161,9 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
 
 `nondocx-examples/.../examples/eval/` 是当前工具面的 headless 评测基线，不是生产代码：
 
-- baseline 25 条（12 初版 + 11 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
-  加行/多步组合/模板假值条件/同段双修订/多锚点行距/既有词加粗/修订带格式替换 + 1 条
-  页眉写文本），seed 由
+- baseline 26 条（12 初版 + 11 条 P3 扩展：列表/删除/歧义指代/范围限定替换/带格式替换/
+  加行/多步组合/模板假值条件/同段双修订/多锚点行距/既有词加粗/修订带格式替换 + 页眉写
+  文本 + 修订格式变更），seed 由
   `Docx.create()` 构造，check 只读最终 docx；另有 create 组 5 条（工具面 A/B）；
 - 工具面与 demo 对齐（`current_document` + view/body/table/header/tracker + 只读 `review_intent`），
   但**不加载 6 条 Skill**，以隔离工具面本身；
@@ -175,9 +175,11 @@ nonchain `Agent.Builder` 无 `onComplete`/`afterLoop`/`finally` 方法；`ChainC
   （「其余未误加粗」找不到非目标 run 可检）。修法是严格子集断言（存在目标词以外的
   文字 ⇒ 必须存在非粗体 run）。写跨面任务的 check 时问一句：**能力不够的面会用什么
   退化解满足这条断言？**
-- full 面静态缺口任务 flag `capabilityGap=true`（10 条，`EvalTasksTest#
+- full 面静态缺口任务 flag `capabilityGap=true`（11 条，`EvalTasksTest#
   marksKnownCapabilityGapTasks` 锁定）：页脚写/批注/列表/段落删除/真空单元格表格行/
-  模板填充×2/run 拆分/页眉写。flag 只影响报告分类列，compiler 面全过时 inert；
+  模板填充×2/run 拆分/页眉写/修订格式变更（run 拆分同根因，full 面
+  `mark_style_change_tracked` 按 run_index 定位）。flag 只影响报告分类列，compiler 面
+  全过时 inert；
 - 运行：`mvn -q -pl nondocx-examples -Dexec.mainClass=...EvalMain exec:java`；
   产物在 `target/eval/<runId>/`。
 
@@ -216,6 +218,13 @@ review_intent 复审一次「未达成」误报后模型经 read_document 页眉
 （runId `20261031-021922-108`）：11/25 受模型服务 502 干扰（8 任务 calls=0 未调通），
 通过集与 §6.14 完全兼容、零能力回归；header-write-text 干净归因 check_failed 撞
 24 轮（页眉写物理不可达），capabilityGap flag 成立（第 10 条 gap 任务）。
+**2026-10-31 格式变更修订 op 后**：26/26，平均 4.23（runId `20261031-092431-976` @0c5de5f，
+compiler 面 8 工具）——tracked-bold-phrase 首个 op 一步命中（`tracked.set_style
+find=逾期率 bold=true`），review_intent 复审直接引用 rpr_change 证据（作者+RUN_PROPERTIES
+新[b]/旧[]）判「达成」、无误报（PROPERTY 修订证据进复审查看面，比 §6.15 自证回路进一步，
+docs/11 §6.16）；bold-existing-phrase 5 次、tracked-replace-format 4 次不变，零回归。
+full 面本批未复跑：tracked-bold-phrase 的 gap flag 依据 bold-existing-phrase 同根因结构性
+归因（mark_style_change_tracked 按 run_index 定位、无 run 拆分）。
 
 ## Convention: ref 的容器边界（读/写分离）
 
@@ -327,6 +336,27 @@ check 捕获了它。仅靠 ref 校验无法阻止模型主动选正文索引，
   读视图不得触碰创建路径）；round-trip 由
   `CompilerPipelineTest#markdownViewShowsHeaderAsMetadataAndKeepsRoundTrip` 锁定。
   写读同批落地（§6.6/§6.13 教训：只有写侧 op 没有读侧观测，复审会误报「未达成」）。
+- **tracked.set_style 格式变更修订 op**（v5，2026-10-31）：对既有文字的**格式变更本身算
+  修订**（rPrChange 属性修订，非 tracked.replace 的 del+ins）——`find` 精确子串定位
+  （多处命中全部处理，从右到左），`bold`/`italic` 三态显式（true 设置/false 取消
+  `w:val="off"`/缺省不动，至少给一个），`author` 必传。core 零改动（`Run
+  .commitStyleAsTracked` 两步式契约既有）：**快照必须在 run 拆分后取**（`copyRun` 拷贝
+  继承源 run 完整 rPr，拆分后快照=源样式）→ 改格式 → commit。拆 run 复用 replace_text
+  的倒序插入技法（顺序拷贝「上一份拷贝」格式逐份累积，PatchEngineTest 抓过）。**参与**
+  同锚点独占（虽不改 `text()`，但拆 run 重建段落 run 结构，同批改文本 op 的定位可能失效
+  ——保守与 tracked 族同列；comment.add 的「不改文本不独占」先例不适用于会重建结构的 op）。
+  读侧三处写读同批：MarkdownView 文档尾 `<!-- 修订#N: … -->` 元数据行（全修订类型，
+  PROPERTY 类带新旧属性摘要，无修订零输出）、view REVISION 详情 property 摘要（口径与
+  `TrackedChangeQueryTools.appendDetails` 一致）、outline recent[] 对 RPR_CHANGE 的
+  bold/italic/snippet 取证（从 newSummary 按 token 精确匹配派生，`bCs` 不误中 `b`）。
+  已知边界：`PropertyChangeDetails.summarize` 只记属性名不记方向（取消加粗的新摘要同为
+  `[b]`），方向证据看 run 实际格式；同一 run 重复 commit 会追加新 rPrChange（core 语义，
+  op 不去重）。
+- **read_document 的修订元数据行**（v5，2026-10-31）：与页眉/页脚/批注元数据行同族——
+  文档尾（页脚行之后）输出 `<!-- 修订 N 条 -->` + 每条 `<!-- 修订#id: TYPE author=… -->`
+  （TEXT 类带截断 snippet、PROPERTY 类带 `属性=RUN_PROPERTIES 新[b] 旧[]`），无修订
+  **零输出**（零噪声）；round-trip 整行注释剥离；枚举失败防御性只丢观测行（与
+  SnapshotBuilder 既有 catch 手法一致）。
 - **comment.add 与批注观测**（v3，2026-10-30）：`comment.add`（`anchor+text+author` 必传）
   委托 core `Paragraph.addComment` 整段范围批注。批注**不改段落文本**，不参与同锚点
   改文本独占（`claimAnchor` 只管 tracked.\*/`replace_text`）——可与 `replace_text` 同批
