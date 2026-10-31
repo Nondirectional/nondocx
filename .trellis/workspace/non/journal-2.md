@@ -99,3 +99,26 @@ compiler 面新增第 13 种 op tracked.set_style(v5):以 rPrChange 属性修订
 ### Status
 
 [OK] **Completed**
+
+
+## Session 55: 行内标记 <u> 下划线：内容语言补齐
+<!-- trellis-session: v=2 fp=b54853374261de7a -->
+
+**Date**: 2026-10-31
+**Task**: 行内标记 <u> 下划线：内容语言补齐
+**Branch**: `feat/paragraph-spacing-hf-refs`
+
+### Summary
+
+实现 TODO #003（收窄为 <u>）：MarkdownParser 解析 + Span.underline + 四处 span→run sink + MarkdownView 写读同批 + view_* 观测字段；eval 新增 underline-existing-phrase（baseline 27，capabilityGap）；runId 20261031-232318-163 全量 27/27@4.19，738 测试全绿；docs/07、docs/11 §6.17、spec 同步；TODO 删除已完工 #004。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cabea1d` | feat(toolkit,demo,examples): <u> 行内下划线标记与既有词加下划线 eval 任务 |
+| `655565f` | docs(07,11),spec(agent-single): <u> 行内标记文档与已知边界 |
+
+### Status
+
+[OK] **Completed**

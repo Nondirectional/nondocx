@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 53
+- **Total Sessions**: 55
 - **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~76 | Active |
+| `journal-2.md` | ~124 | Active |
 | `journal-1.md` | ~1995 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 55 | 2026-10-31 | 行内标记 <u> 下划线：内容语言补齐 | `cabea1d`, `655565f` | `feat/paragraph-spacing-hf-refs` |
 | 53 | 2026-10-31 | 页眉写 op:compiler 面 header.set_text 与读视图页眉元数据行(无人值守) | `e98d9f6`, `5fd458c` | `feat/paragraph-spacing-hf-refs` |
 | 51 | 2026-10-30 | full 面 24 任务复跑：tracked-replace-format 归因（首个「可过而未过」） | `65ba23a` | `feat/paragraph-spacing-hf-refs` |
 | 50 | 2026-10-30 | tracked op 行内格式与修订格式证据 | `381276f` | `feat/paragraph-spacing-hf-refs` |
