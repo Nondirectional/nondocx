@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 评测集 baseline 组的 27 条任务（初版 12 条 + P3 系列扩展与探针；计数锁在 {@code EvalTasksTest}）。
+ * 评测集 baseline 组的 28 条任务（初版 12 条 + P3 系列扩展与探针；计数锁在 {@code EvalTasksTest}）。
  *
  * <p>每条任务都从代码构造 seed，断言只依赖最终 docx 的结构/文本/样式，不依赖模型自述。 任务选择的原则不是「覆盖全部能力」，而是「能区分模型问题、接口问题、能力缺失」：
  *
@@ -38,6 +38,7 @@ import java.util.Map;
  *       （tracked.set_style 的 rPrChange 语义 + 防 tracked.replace 身份替换 workaround）。
  *   <li>27：段内既有词加下划线（{@code <u>} 行内标记；check 用严格子集防「整段加下划线」退化通过，与 bold-existing-phrase 同型； full 面
  *       gap flag 同根因：无 run 拆分）。
+ *   <li>28：批注回复（{@code comment.reply} 的一级线程 + 读侧 id 寻址；full 面无回复工具，gap flag）。
  * </ul>
  */
 public final class EvalTasks {
@@ -47,7 +48,7 @@ public final class EvalTasks {
 
   private EvalTasks() {}
 
-  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 27 条任务。 */
+  /** 返回 baseline 任务组（固定顺序）：对既有文档做编辑的 28 条任务。 */
   public static List<EvalTask> all() {
     return TASKS;
   }
@@ -1113,6 +1114,92 @@ public final class EvalTasks {
                             requireParagraph(doc, 1, "第二段").text().trim(), "第二段文本"))),
             // full 面已知缺口：update_run_style 按 run 定位、无 run 拆分，只能整 run 加下划线
             // （bold-existing-phrase 同根因）；compiler 面 <u> 行内标记可过
+            true));
+
+    tasks.add(
+        new EvalTask(
+            "comment-reply",
+            "回复已有批注",
+            "第二段已有一条「审查员」的批注。请以「复核员」身份回复这条批注，" + "说明同意但要求补充上季度数据。不要修改正文。",
+            doc -> {
+              doc.addParagraph("项目背景");
+              Paragraph budget = doc.addParagraph("本季度预算为一百五十万元。");
+              budget.addComment("审查员", "请核实该预算金额的数据来源。");
+              doc.addParagraph("执行计划");
+            },
+            List.of(
+                EvalTask.NamedCheck.of(
+                    "存在回复批注",
+                    doc ->
+                        EvalAssert.isTrue(
+                            doc.comments().list().stream().anyMatch(c -> c.parentId().isPresent()),
+                            "期望至少 1 条回复批注（parentId 非空），实际 0 条")),
+                EvalTask.NamedCheck.of(
+                    "回复作者正确",
+                    doc -> {
+                      boolean found = false;
+                      for (io.github.nondirectional.docx.core.api.comment.Comment c :
+                          doc.comments().list()) {
+                        if (c.parentId().isPresent() && "复核员".equals(c.author())) {
+                          found = true;
+                          break;
+                        }
+                      }
+                      EvalAssert.isTrue(found, "期望存在作者为「复核员」的回复批注");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "回复提到上季度数据",
+                    doc -> {
+                      boolean found = false;
+                      for (io.github.nondirectional.docx.core.api.comment.Comment c :
+                          doc.comments().list()) {
+                        if (c.parentId().isPresent()
+                            && c.text() != null
+                            && c.text().contains("上季度")) {
+                          found = true;
+                          break;
+                        }
+                      }
+                      EvalAssert.isTrue(found, "期望回复内容包含「上季度」");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "回复挂在审查员根批注下",
+                    doc -> {
+                      io.github.nondirectional.docx.core.api.comment.Comment root = null;
+                      io.github.nondirectional.docx.core.api.comment.Comment reply = null;
+                      for (io.github.nondirectional.docx.core.api.comment.Comment c :
+                          doc.comments().list()) {
+                        if (c.parentId().isEmpty() && "审查员".equals(c.author())) {
+                          root = c;
+                        } else if (c.parentId().isPresent() && "复核员".equals(c.author())) {
+                          reply = c;
+                        }
+                      }
+                      EvalAssert.isTrue(root != null, "期望存在作者为「审查员」的根批注（seed 原有）");
+                      EvalAssert.isTrue(reply != null, "期望存在作者为「复核员」的回复批注");
+                      EvalAssert.equal(
+                          root.id(),
+                          reply.parentId().orElse(""),
+                          "回复批注的 parentId（应指向审查员根批注 #" + root.id() + "）");
+                    }),
+                EvalTask.NamedCheck.of(
+                    "正文与根批注未被修改",
+                    doc -> {
+                      EvalAssert.equal("项目背景", requireParagraph(doc, 0, "背景段").text(), "第 0 段");
+                      EvalAssert.equal(
+                          "本季度预算为一百五十万元。", requireParagraph(doc, 1, "预算段").text(), "第 1 段");
+                      EvalAssert.equal("执行计划", requireParagraph(doc, 2, "计划段").text(), "第 2 段");
+                      io.github.nondirectional.docx.core.api.comment.Comment root = null;
+                      for (io.github.nondirectional.docx.core.api.comment.Comment c :
+                          doc.comments().list()) {
+                        if (c.parentId().isEmpty() && "审查员".equals(c.author())) {
+                          root = c;
+                        }
+                      }
+                      EvalAssert.isTrue(root != null, "期望根批注仍在（回复不应替换根批注）");
+                      EvalAssert.equal("请核实该预算金额的数据来源。", root.text(), "审查员根批注内容");
+                    })),
+            // full 面已知缺口：无批注回复工具（full 面只有批注只读观测；回复与 comment.add 同属缺失的创作能力）
             true));
 
     return List.copyOf(tasks);

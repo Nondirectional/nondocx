@@ -21,7 +21,7 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFonts;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr;
 
 /**
- * {@link PatchEngine} 契约测试：6 种 op 的行为 + 原子性 + dry-run。
+ * {@link PatchEngine} 契约测试：各 op 的行为 + 原子性 + dry-run。
  *
  * <p>最重的断言是<b>原子性</b>：preflight 失败时文档必须保持原样（零写入）——这是 edit_document 对模型的承诺，坏了就是「部分应用」的静默错目标回归。
  */
@@ -1315,6 +1315,310 @@ class PatchEngineTest {
       assertThat(doc.paragraph(0).text()).isEqualTo("首段");
       assertThat(doc.paragraph(0).comments()).hasSize(1);
       assertThat(doc.paragraph(0).comments().get(0).text()).isEqualTo("已改写");
+    } finally {
+      doc.close();
+    }
+  }
+
+  // ==================== comment.reply op（v6） ====================
+
+  @Test
+  void commentReplyCreatesThreadedReplyOnRootComment(@TempDir Path tmp) throws Exception {
+    Path file = tmp.resolve("comment-reply.docx");
+    Document doc = sample();
+    try {
+      String rootId = doc.paragraph(1).addComment("审查员", "请核实该预算金额的数据来源。").id();
+      // comment_id 容忍读侧复制过来的前导「#」
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op", "comment.reply",
+                      "comment_id", "#" + rootId,
+                      "text", "同意，请补充上季度数据。",
+                      "author", "复核员")),
+              REPORT_CN,
+              false);
+      assertThat(result.applied()).isEqualTo(1);
+      assertThat(result.changed()).containsExactly("comment#" + rootId);
+      // 线程关系：回复的 parentId 命中根批注，根批注仍是根（parentId empty）
+      assertThat(doc.comments().list()).hasSize(2);
+      var reply =
+          doc.comments().list().stream()
+              .filter(c -> c.parentId().isPresent())
+              .findFirst()
+              .orElseThrow();
+      assertThat(reply.author()).isEqualTo("复核员");
+      assertThat(reply.text()).isEqualTo("同意，请补充上季度数据。");
+      assertThat(reply.parentId()).contains(rootId);
+      assertThat(doc.comments().get(rootId).parentId()).isEmpty();
+      // 不改正文，也不改原批注
+      assertThat(doc.paragraph(0).text()).isEqualTo("第一段");
+      assertThat(doc.paragraph(1).text()).isEqualTo("第二段");
+      assertThat(doc.comments().get(rootId).author()).isEqualTo("审查员");
+      assertThat(doc.comments().get(rootId).text()).isEqualTo("请核实该预算金额的数据来源。");
+      doc.save(file);
+    } finally {
+      doc.close();
+    }
+    try (Document reopened = Docx.open(file)) {
+      // save+reopen：线程字段来自 commentsExtended.xml 的 join，只有落盘后重开才验证真实结构
+      assertThat(reopened.comments().list()).hasSize(2);
+      var root =
+          reopened.comments().list().stream()
+              .filter(c -> c.parentId().isEmpty())
+              .findFirst()
+              .orElseThrow();
+      var reply =
+          reopened.comments().list().stream()
+              .filter(c -> c.parentId().isPresent())
+              .findFirst()
+              .orElseThrow();
+      assertThat(reply.author()).isEqualTo("复核员");
+      assertThat(reply.text()).isEqualTo("同意，请补充上季度数据。");
+      // 落盘后 parentId 必须精确指向根批注 id（只断言 isPresent 会漏掉「挂错父批注」）
+      assertThat(reply.parentId()).contains(root.id());
+    }
+  }
+
+  @Test
+  void commentReplySupportsMultipleRepliesAndMixesWithBodyOps() {
+    Document doc = sample();
+    try {
+      String firstRoot = doc.paragraph(0).addComment("审查员", "首段需要补数据").id();
+      String secondRoot = doc.paragraph(1).addComment("编辑", "第二段措辞待定").id();
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  // 同一根批注两条回复 + 另一根批注一条回复 + 正文改写同批（reply 不占锚点）
+                  op(
+                      "op",
+                      "comment.reply",
+                      "comment_id",
+                      firstRoot,
+                      "text",
+                      "同意一",
+                      "author",
+                      "复核员"),
+                  op(
+                      "op",
+                      "comment.reply",
+                      "comment_id",
+                      firstRoot,
+                      "text",
+                      "补充：上季度数据",
+                      "author",
+                      "复核员"),
+                  op(
+                      "op",
+                      "comment.reply",
+                      "comment_id",
+                      secondRoot,
+                      "text",
+                      "已改",
+                      "author",
+                      "复核员"),
+                  op("op", "replace_text", "anchor", "p0", "find", "第一段", "text", "首段")),
+              REPORT_CN,
+              false);
+      assertThat(result.applied()).isEqualTo(4);
+      assertThat(result.changed())
+          .containsExactly(
+              "comment#" + firstRoot, "comment#" + firstRoot, "comment#" + secondRoot, "p0");
+      assertThat(doc.paragraph(0).text()).isEqualTo("首段");
+      // 根 2 条 + 回复 3 条
+      assertThat(doc.comments().list()).hasSize(5);
+      long repliesToFirst =
+          doc.comments().list().stream()
+              .filter(c -> c.parentId().filter(firstRoot::equals).isPresent())
+              .count();
+      assertThat(repliesToFirst).isEqualTo(2);
+      assertThat(
+              doc.comments().list().stream()
+                  .filter(c -> c.parentId().filter(secondRoot::equals).isPresent())
+                  .count())
+          .isEqualTo(1);
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void commentReplyPreflightRejectsInvalidTargetsAtomically() {
+    Document doc = sample();
+    try {
+      String rootId = doc.paragraph(1).addComment("审查员", "根批注").id();
+      String replyId = doc.comments().reply(rootId, "复核员", "已有回复").id();
+      // comment_id 缺失 / 纯空白 / 只有前导 #
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(op("op", "comment.reply", "text", "x", "author", "甲")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("comment_id");
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op(
+                              "op", "comment.reply",
+                              "comment_id", " # ",
+                              "text", "x",
+                              "author", "甲")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("comment_id");
+      // 批注 id 不存在
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op(
+                              "op",
+                              "comment.reply",
+                              "comment_id",
+                              "999",
+                              "text",
+                              "x",
+                              "author",
+                              "甲")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("op[0]")
+          .hasMessageContaining("#999")
+          .hasMessageContaining("不存在");
+      // 目标本身是回复 → MVP 只支持一级回复，并提示改回根批注
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op(
+                              "op", "comment.reply",
+                              "comment_id", replyId,
+                              "text", "x",
+                              "author", "甲")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("op[0]")
+          .hasMessageContaining("只支持回复根批注")
+          .hasMessageContaining("#" + rootId);
+      // author 空白 / text 缺失
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op(
+                              "op",
+                              "comment.reply",
+                              "comment_id",
+                              rootId,
+                              "text",
+                              "x",
+                              "author",
+                              "  ")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("author");
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(op("op", "comment.reply", "comment_id", rootId, "author", "甲")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("text");
+      // 原子性：同批前一条合法回复 + 后一条非法 → 零写入（批注数不变）
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op(
+                              "op",
+                              "comment.reply",
+                              "comment_id",
+                              rootId,
+                              "text",
+                              "好",
+                              "author",
+                              "甲"),
+                          op(
+                              "op",
+                              "comment.reply",
+                              "comment_id",
+                              "999",
+                              "text",
+                              "坏",
+                              "author",
+                              "乙")),
+                      REPORT_CN,
+                      false))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("#999");
+      assertThat(doc.comments().list()).hasSize(2);
+      assertThat(doc.paragraph(1).text()).isEqualTo("第二段");
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void commentReplyDryRunPlansWithoutWriting() {
+    Document doc = sample();
+    try {
+      String rootId = doc.paragraph(0).addComment("审查员", "根批注").id();
+      PatchResult result =
+          PatchEngine.apply(
+              doc,
+              ops(
+                  op(
+                      "op", "comment.reply",
+                      "comment_id", rootId,
+                      "text", "同意，请补充上季度数据。",
+                      "author", "复核员")),
+              REPORT_CN,
+              true);
+      assertThat(result.dryRun()).isTrue();
+      assertThat(result.applied()).isEqualTo(1);
+      assertThat(result.planned()).hasSize(1);
+      assertThat(result.planned().get(0)).contains("comment.reply #" + rootId);
+      assertThat(result.changed()).isEmpty();
+      // 未写入：只有根批注
+      assertThat(doc.comments().list()).hasSize(1);
+      assertThat(doc.comments().list().get(0).parentId()).isEmpty();
+      // dry-run 同样做 preflight：非法目标整体报错
+      assertThatThrownBy(
+              () ->
+                  PatchEngine.apply(
+                      doc,
+                      ops(
+                          op(
+                              "op",
+                              "comment.reply",
+                              "comment_id",
+                              "999",
+                              "text",
+                              "x",
+                              "author",
+                              "甲")),
+                      REPORT_CN,
+                      true))
+          .isInstanceOf(PatchException.class)
+          .hasMessageContaining("不存在");
     } finally {
       doc.close();
     }

@@ -22,9 +22,9 @@ class EvalTasksTest {
   @TempDir Path temp;
 
   @Test
-  void hasTwentySevenUniqueTasks() {
+  void hasTwentyEightUniqueTasks() {
     List<EvalTask> tasks = EvalTasks.all();
-    assertThat(tasks).hasSize(27);
+    assertThat(tasks).hasSize(28);
 
     Set<String> ids = new HashSet<>();
     for (EvalTask task : tasks) {
@@ -96,7 +96,8 @@ class EvalTasksTest {
             "bold-existing-phrase",
             "header-write-text",
             "tracked-bold-phrase",
-            "underline-existing-phrase");
+            "underline-existing-phrase",
+            "comment-reply");
   }
 
   @Test

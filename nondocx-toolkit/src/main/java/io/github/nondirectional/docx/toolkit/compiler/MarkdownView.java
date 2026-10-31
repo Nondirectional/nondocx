@@ -18,9 +18,10 @@ import io.github.nondirectional.docx.core.api.text.Run;
  * Markdown</b>——模型读到什么，就能照着写什么给 {@code create_document}。两者共享「只读、不改文档」的边界。
  *
  * <p>已知取舍（v1）：超链接/图片折叠为其文本；表格单元格输出纯文本；正文之外的容器只有页眉/页脚以元数据注释行进视图 （{@code <!-- 页眉: … -->}/{@code <!--
- * 页脚: … -->}，页眉行在页脚行之前——与页面物理顺序一致；写入后供模型核对），表格内段落不在本视图内。批注以整行元数据注释紧跟被评段落（{@code <!-- 批注 pN [作者]: 内容
- * -->}，v3——comment.add 落地后模型可直接读到核对）。修订以文档尾整行元数据注释呈现（{@code <!-- 修订#N: TYPE author=… …
- * -->}，v5——tracked 修订族与 tracked.set_style 写入后的读侧证据，无修订零输出）。
+ * 页脚: … -->}，页眉行在页脚行之前——与页面物理顺序一致；写入后供模型核对），表格内段落不在本视图内。批注以整行元数据注释紧跟被评段落（{@code <!-- 批注 pN #id
+ * 回复#父id [作者]: 内容 -->}，v6——{@code #id} 是 {@code comment.reply} 的寻址键，{@code 回复#父id} 只在回复批注上出现；
+ * 标题段落同样输出，无 id 的旧格式已废弃）。修订以文档尾整行元数据注释呈现（{@code <!-- 修订#N: TYPE author=… … -->}，v5——tracked 修订族与
+ * tracked.set_style 写入后的读侧证据，无修订零输出）。
  */
 public final class MarkdownView {
 
@@ -183,20 +184,33 @@ public final class MarkdownView {
           .append(' ')
           .append(anchor)
           .append('\n');
-      return;
-    }
-    String body = renderRuns(paragraph);
-    if (marker.isEmpty()) {
-      sb.append(body.isEmpty() ? "" : body).append(attr).append(' ').append(anchor).append('\n');
     } else {
-      sb.append(marker).append(body).append(' ').append(anchor).append('\n');
+      String body = renderRuns(paragraph);
+      if (marker.isEmpty()) {
+        sb.append(body.isEmpty() ? "" : body).append(attr).append(' ').append(anchor).append('\n');
+      } else {
+        sb.append(marker).append(body).append(' ').append(anchor).append('\n');
+      }
     }
-    // 批注元数据行（整行注释）：模型核对「这段挂了什么批注」的读侧依据；
-    // 整行注释被解析器跳过，round-trip 不产生脏块。格式与页脚元数据行同族。
+    // 批注元数据行（整行注释）在标题/普通段落上统一输出——标题分支早期曾直接 return，
+    // 导致挂在标题上的批注（含回复）在 read_document 里完全不可见（观测盲区）。
+    appendCommentLines(sb, paragraph, seq);
+  }
+
+  /**
+   * 追加段落的批注元数据行：每条一行 {@code <!-- 批注 pN #id 回复#父id [作者]: 内容 -->}。
+   *
+   * <p>{@code #id} 是 {@code comment.reply} 的寻址键（写侧按批注 id 回复，读侧不暴露就无从寻址）；{@code 回复#父id} 只在
+   * 回复批注上输出——回复的锚点紧贴父批注的 {@code commentRangeStart}，故父行在前、回复行紧随（同段多条根批注仍可能是
+   * LIFO，属既有语义）。整行注释被解析器跳过，round-trip 不产生脏块（与页眉/页脚/修订行同族）。
+   */
+  private static void appendCommentLines(StringBuilder sb, Paragraph paragraph, int seq) {
     for (io.github.nondirectional.docx.core.api.comment.Comment c : paragraph.comments()) {
-      sb.append("<!-- 批注 p")
-          .append(seq)
-          .append(" [")
+      sb.append("<!-- 批注 p").append(seq).append(" #").append(c.id());
+      if (c.parentId().isPresent()) {
+        sb.append(" 回复#").append(c.parentId().get());
+      }
+      sb.append(" [")
           .append(c.author())
           .append("]: ")
           .append(escapeText(c.text()))

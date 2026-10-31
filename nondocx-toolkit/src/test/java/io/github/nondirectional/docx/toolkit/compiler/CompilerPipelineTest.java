@@ -268,10 +268,55 @@ class CompilerPipelineTest {
     try {
       // 无批注：视图不出现批注行
       assertThat(MarkdownView.render(doc, 0).markdown()).doesNotContain("批注");
-      // 有批注：整行元数据注释紧跟被评段落，round-trip 时被解析器跳过
-      doc.paragraph(1).addComment("审查员", "这段需要补充依据");
+      // 有批注：整行元数据注释紧跟被评段落，带 #id（comment.reply 的寻址键），round-trip 时被解析器跳过
+      String commentId = doc.paragraph(1).addComment("审查员", "这段需要补充依据").id();
       String markdown = MarkdownView.render(doc, 0).markdown();
-      assertThat(markdown).contains("第二段。 <!-- p1 -->\n<!-- 批注 p1 [审查员]: 这段需要补充依据 -->");
+      assertThat(markdown)
+          .contains("第二段。 <!-- p1 -->\n<!-- 批注 p1 #" + commentId + " [审查员]: 这段需要补充依据 -->");
+      MarkdownDoc reparsed = MarkdownParser.parse(markdown);
+      assertThat(reparsed.blocks()).hasSize(2);
+      assertThat(reparsed.warnings()).isEmpty();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void markdownViewShowsReplyThreadWithParentIdAndKeepsRoundTrip() {
+    MarkdownDoc parsed = MarkdownParser.parse("第一段。\n\n第二段。");
+    Document doc = DocumentCompiler.compile(parsed, StyleProfile.builtin("plain")).document();
+    try {
+      String rootId = doc.paragraph(1).addComment("审查员", "请核实该预算金额的数据来源。").id();
+      String replyId = doc.comments().reply(rootId, "复核员", "同意，请补充上季度数据。").id();
+
+      String markdown = MarkdownView.render(doc, 0).markdown();
+      // 根批注行只有 #id；回复行在 #id 之后、[作者] 之前插「回复#父id」
+      String rootLine = "<!-- 批注 p1 #" + rootId + " [审查员]: 请核实该预算金额的数据来源。 -->";
+      String replyLine = "<!-- 批注 p1 #" + replyId + " 回复#" + rootId + " [复核员]: 同意，请补充上季度数据。 -->";
+      assertThat(markdown).contains(rootLine).contains(replyLine);
+      // 父行在前、回复行紧随（回复锚点紧贴父批注 start）
+      assertThat(markdown.indexOf(rootLine)).isLessThan(markdown.indexOf(replyLine));
+      assertThat(markdown.indexOf(rootLine) + rootLine.length() + 1)
+          .isEqualTo(markdown.indexOf(replyLine));
+      // 整行注释 round-trip 被解析器跳过，不产生脏块
+      MarkdownDoc reparsed = MarkdownParser.parse(markdown);
+      assertThat(reparsed.blocks()).hasSize(2);
+      assertThat(reparsed.warnings()).isEmpty();
+    } finally {
+      doc.close();
+    }
+  }
+
+  @Test
+  void markdownViewShowsCommentOnHeadingParagraph() {
+    MarkdownDoc parsed = MarkdownParser.parse("# 项目周报\n\n正文一段。");
+    Document doc = DocumentCompiler.compile(parsed, StyleProfile.builtin("plain")).document();
+    try {
+      String commentId = doc.paragraph(0).addComment("审查员", "标题需要更具体").id();
+      String markdown = MarkdownView.render(doc, 0).markdown();
+      // 标题段落曾因早期 return 吞掉批注行（观测盲区）——回复挂在标题上时同样不可见
+      assertThat(markdown)
+          .contains("# 项目周报 <!-- p0 -->\n<!-- 批注 p0 #" + commentId + " [审查员]: 标题需要更具体 -->");
       MarkdownDoc reparsed = MarkdownParser.parse(markdown);
       assertThat(reparsed.blocks()).hasSize(2);
       assertThat(reparsed.warnings()).isEmpty();

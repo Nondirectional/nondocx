@@ -159,6 +159,8 @@ public final class CompilerTools extends ToolkitToolContext {
       description =
           "读取整份文档的紧凑 Markdown 视图：标题层级、粗斜体、列表、表格全保留，"
               + "每个段落/表格带 <!-- pN --> / <!-- tN --> 短 ID。"
+              + "批注以整行元数据注释紧跟被评段落：<!-- 批注 pN #id [作者]: 内容 -->，"
+              + "回复批注额外带「回复#父id」——#id 就是 edit_document 的 comment.reply 用的 comment_id。"
               + "了解整篇文档结构/内容时优先用它，不要逐段 read_paragraph。")
   @ToolCapability(
       operation = CapabilityOperation.READ,
@@ -268,7 +270,9 @@ public final class CompilerTools extends ToolkitToolContext {
               + "不改文本内容）、"
               + "footer.set_page_number（页脚页码，format 含 {page}/{pages} 占位符，默认「第 {page} 页」，不占 anchor）、"
               + "header.set_text（页眉写文本，text 必填、支持 **粗体**/*斜体*/`代码`/<u>下划线</u> 行内标记，向页眉追加一段，不占 anchor）、"
-              + "comment.add（批注，anchor+text+author 必传，给整段加范围批注，不改正文）。"
+              + "comment.add（批注，anchor+text+author 必传，给整段加范围批注，不改正文）、"
+              + "comment.reply（回复批注，comment_id+text+author 必传：comment_id 取 read_document 批注行的 #N，"
+              + "只允许回复根批注、不占 anchor、不改正文）。"
               + "先校验全部 op 再写入：任一 op 非法则整体拒绝、零改动。"
               + "每个段落锚点一批里至多一个改文本 op（tracked.*/replace_text），要改多处请拆两次调用。"
               + "多步编辑优先用它一次表达，不要逐段调用。dry_run=true 只返回计划。"
@@ -290,7 +294,9 @@ public final class CompilerTools extends ToolkitToolContext {
                       + "{\"op\":\"tracked.set_style\",\"anchor\":\"p1\",\"find\":\"逾期率\","
                       + "\"bold\":true,\"author\":\"审查员\"}, "
                       + "{\"op\":\"comment.add\",\"anchor\":\"p1\",\"text\":\"金额需复核\","
-                      + "\"author\":\"审查员\"}, {\"op\":\"footer.set_page_number\"}, "
+                      + "\"author\":\"审查员\"}, "
+                      + "{\"op\":\"comment.reply\",\"comment_id\":\"3\",\"text\":\"同意，请补充上季度数据。\","
+                      + "\"author\":\"复核员\"}, {\"op\":\"footer.set_page_number\"}, "
                       + "{\"op\":\"header.set_text\",\"text\":\"**机密** 内部文档\"}]")
           @NestedParamCapability(path = "ops.op", type = ParamType.STRING)
           @NestedParamCapability(path = "ops.anchor", type = ParamType.STRING)
@@ -307,6 +313,7 @@ public final class CompilerTools extends ToolkitToolContext {
           @NestedParamCapability(path = "ops.col", type = ParamType.INTEGER)
           @NestedParamCapability(path = "ops.cells", type = ParamType.STRING_ARRAY)
           @NestedParamCapability(path = "ops.author", type = ParamType.STRING)
+          @NestedParamCapability(path = "ops.comment_id", type = ParamType.STRING)
           @NestedParamCapability(path = "ops.format", type = ParamType.STRING)
           List<Map<String, Object>> ops,
       @ToolParam(name = "dry_run", description = "只返回计划不写入（默认 false）", required = false)

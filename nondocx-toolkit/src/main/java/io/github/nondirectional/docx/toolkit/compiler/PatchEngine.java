@@ -27,7 +27,7 @@ import java.util.Set;
  * <p><b>原子性。</b> 先 preflight 全部 op：锚点存在、参数合法、{@code find} 在段落文本中、 行列在界内、表格块只允许插到文档末尾、被本 patch 前序 op
  * 删除的锚点不得再引用。任一 失败抛 {@link PatchException}，<b>零写入</b>。执行期不存在可预期失败分支；POI 意外异常 直接上抛（由工具层报告「可能部分应用」）。
  *
- * <p><b>op 集（v5，13 种）：</b>
+ * <p><b>op 集（v6，14 种）：</b>
  *
  * <ul>
  *   <li>{@code insert}——Markdown 块插入 {@code before}/{@code after} 锚点或文档 {@code start}/{code
@@ -52,7 +52,10 @@ import java.util.Set;
  *   <li>{@code header.set_text}——页眉追加一段文本，{@code text} 必填非空、支持行内标记（{@code **粗**}/{@code *斜*}/{@code
  *       `代码`}/{@code <u>下划线</u>}，与 replace_text 同一内容语言）；追加语义（重复调用追加新段，不替换既有页眉）， 不占段落锚点；
  *   <li>{@code comment.add}——给锚点段落加整段范围批注（core {@code Paragraph.addComment}），{@code author}
- *       必传。不改段落文本，不受同锚点改文本独占约束。
+ *       必传。不改段落文本，不受同锚点改文本独占约束；
+ *   <li>{@code comment.reply}——回复一条<b>既有根批注</b>（core {@code Comments.reply}）：{@code comment_id}
+ *       （{@code read_document} 批注行的 {@code #N}，允许带前导 {@code #}）+ {@code text} + {@code author}
+ *       必传，<b>无 anchor</b>、不改正文、不占段落锚点。MVP 只允许一级回复——目标是回复时整体拒绝并提示改回根批注。
  * </ul>
  *
  * <p><b>同锚点独占（v2）。</b> tracked.* 与 {@code replace_text} 都改段落文本，而修订的偏移量按 <b>执行时活文本</b> 计算（tracked
@@ -211,6 +214,8 @@ public final class PatchEngine {
         return planHeaderSetText(index, op);
       case "comment.add":
         return planCommentAdd(index, op, anchor, snapshot);
+      case "comment.reply":
+        return planCommentReply(index, op, snapshot);
       default:
         throw new PatchException(
             "op["
@@ -219,7 +224,7 @@ public final class PatchEngine {
                 + kind
                 + "（可用: insert/replace_text/delete/set_style/table.set_cell/table.add_row/"
                 + "tracked.insert/tracked.delete/tracked.replace/tracked.set_style/"
-                + "footer.set_page_number/header.set_text/comment.add）");
+                + "footer.set_page_number/header.set_text/comment.add/comment.reply）");
     }
   }
 
@@ -985,6 +990,63 @@ public final class PatchEngine {
     };
   }
 
+  /**
+   * comment.reply（v6）：回复一条既有<b>根批注</b>（core {@code Comments.reply}）。
+   *
+   * <p>按 {@code comment_id} 寻址（{@code read_document} 批注行的 {@code #N}，容忍前导 {@code #}）——
+   * 回复挂在批注上而不是段落上，故<b>不需要 anchor</b>、不占段落锚点（与 {@code footer.set_page_number}/{@code
+   * header.set_text} 同型），可与正文 op 同批；也不改段落文本，不受同锚点改文本独占约束。
+   *
+   * <p>preflight 读文档校验（零写入）：id 归一化后为空、批注不存在、目标是回复（MVP 只做一级回复）都在这里整体拒绝。执行期 core 的 {@code
+   * replyToComment} 不应出现可预期失败。返回值在此丢弃——模型要核对应走 {@code read_document}（与 {@code comment.add}
+   * 只记锚点同姿态）。
+   */
+  private static PlannedOp planCommentReply(int index, Map<String, Object> op, Snapshot snapshot) {
+    String rawId = op.get("comment_id") == null ? "" : String.valueOf(op.get("comment_id")).trim();
+    // 模型常直接复制读侧的「#N」——归一化掉前导 #，避免一次无谓失败（不承诺接受 id=3 等其它形态）
+    if (rawId.startsWith("#")) {
+      rawId = rawId.substring(1).trim();
+    }
+    if (rawId.isEmpty()) {
+      throw new PatchException(
+          "op["
+              + index
+              + "] 缺少必填字段 comment_id（read_document 批注行的 #N，如 "
+              + "{\"op\":\"comment.reply\",\"comment_id\":\"3\",\"text\":\"同意\",\"author\":\"复核员\"}）");
+    }
+    String text = str(op, "text", index);
+    String author = author(op, index);
+    io.github.nondirectional.docx.core.api.comment.Comment parent;
+    try {
+      parent = snapshot.doc.comments().get(rawId);
+    } catch (java.util.NoSuchElementException e) {
+      throw new PatchException("op[" + index + "] 批注 #" + rawId + " 不存在（read_document 查看可用批注 id）");
+    }
+    if (parent.parentId().isPresent()) {
+      throw new PatchException(
+          "op["
+              + index
+              + "] 批注 #"
+              + rawId
+              + " 本身是回复，MVP 只支持回复根批注（请回复其根批注 #"
+              + parent.parentId().get()
+              + "）");
+    }
+    String commentId = rawId;
+    return new PlannedOp("comment.reply #" + commentId + " 「" + text + "」") {
+      @Override
+      void execute(
+          Document doc,
+          Snapshot snap,
+          List<String> changed,
+          List<String> warningsOut,
+          StyleProfile profile) {
+        doc.comments().reply(commentId, author, text);
+        changed.add("comment#" + commentId);
+      }
+    };
+  }
+
   /** footer.set_page_number：页脚追加页码段落（不触碰正文段落）。 */
   private static PlannedOp planFooterPageNumber(int index, Map<String, Object> op) {
     String format =
@@ -1221,10 +1283,14 @@ public final class PatchEngine {
   /** preflight 期对文档的一次快照：短 ID → 活对象。 */
   private static final class Snapshot {
 
+    /** 活文档本身：comment.reply 的批注存在性校验需要按 id 查批注（无段落/表格锚点可用）。 */
+    final Document doc;
+
     final Map<String, Paragraph> paragraphs = new HashMap<>();
     final Map<String, Table> tables = new HashMap<>();
 
     Snapshot(Document doc) {
+      this.doc = doc;
       int p = 0;
       int t = 0;
       for (var element : doc.bodyElements()) {
